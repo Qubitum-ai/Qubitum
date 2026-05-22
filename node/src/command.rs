@@ -44,19 +44,23 @@ impl SubstrateCli for Cli {
     }
 
     fn load_spec(&self, id: &str) -> Result<Box<dyn sc_service::ChainSpec>, String> {
-        Ok(match id {
-            "" | "dev" | "qubitum" | "qubitum-dev" => {
-                Box::new(chain_spec::localnet::localnet_config(true)?)
-            }
-            "local" | "qubitum-local" => Box::new(chain_spec::localnet::localnet_config(false)?),
-            "finney" => Box::new(chain_spec::finney::finney_mainnet_config()?),
-            "devnet" | "qubitum-devnet" => Box::new(chain_spec::devnet::devnet_config()?),
-            "test_finney" => Box::new(chain_spec::testnet::finney_testnet_config()?),
-            path => Box::new(chain_spec::ChainSpec::from_json_file(
-                std::path::PathBuf::from(path),
-            )?),
-        })
+        load_chain_spec(id)
     }
+}
+
+fn load_chain_spec(id: &str) -> Result<Box<dyn sc_service::ChainSpec>, String> {
+    Ok(match id {
+        "" | "dev" | "qubitum" | "qubitum-dev" => {
+            Box::new(chain_spec::localnet::localnet_config(true)?)
+        }
+        "local" | "qubitum-local" => Box::new(chain_spec::localnet::localnet_config(false)?),
+        "finney" => Box::new(chain_spec::finney::finney_mainnet_config()?),
+        "devnet" | "qubitum-devnet" => Box::new(chain_spec::devnet::devnet_config()?),
+        "test_finney" => Box::new(chain_spec::testnet::finney_testnet_config()?),
+        path => Box::new(chain_spec::ChainSpec::from_json_file(
+            std::path::PathBuf::from(path),
+        )?),
+    })
 }
 
 // Parse and run command line arguments
@@ -261,6 +265,40 @@ pub fn run() -> sc_cli::Result<()> {
                 start_aura_service(&arg_matches, skip_history_backfill)
             }
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn token_symbol(spec: &dyn sc_service::ChainSpec) -> Option<String> {
+        spec.properties()
+            .get("tokenSymbol")
+            .and_then(|value| value.as_str())
+            .map(ToOwned::to_owned)
+    }
+
+    #[test]
+    fn default_chain_is_qubitum_local() {
+        let spec = load_chain_spec("").expect("default chain spec should load");
+
+        assert_eq!(spec.name(), "Qubitum Local");
+        assert_eq!(spec.id(), "qubitum-local");
+        assert_eq!(spec.protocol_id(), Some("qubitum-local"));
+        assert_eq!(token_symbol(spec.as_ref()).as_deref(), Some("QBT"));
+        assert!(spec.boot_nodes().is_empty());
+    }
+
+    #[test]
+    fn qubitum_devnet_alias_uses_qbt_identity() {
+        let spec = load_chain_spec("qubitum-devnet").expect("devnet chain spec should load");
+
+        assert_eq!(spec.name(), "Qubitum Devnet");
+        assert_eq!(spec.id(), "qubitum-devnet");
+        assert_eq!(spec.protocol_id(), Some("qubitum-devnet"));
+        assert_eq!(token_symbol(spec.as_ref()).as_deref(), Some("QBT"));
+        assert!(spec.boot_nodes().is_empty());
     }
 }
 
