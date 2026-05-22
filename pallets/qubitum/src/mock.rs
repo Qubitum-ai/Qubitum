@@ -57,6 +57,7 @@ parameter_types! {
     pub const MinProofSizeBytes: u32 = qubitum_protocol::TARGET_PROOF_SIZE_MIN_BYTES;
     pub const MaxProofSizeBytes: u32 = qubitum_protocol::TARGET_PROOF_SIZE_MAX_BYTES;
     pub const MaxVerificationLatencyMs: u32 = qubitum_protocol::TARGET_VERIFICATION_MS;
+    pub const ProtocolTreasury: AccountId = 99;
 }
 
 #[derive_impl(frame_system::config_preludes::TestDefaultConfig)]
@@ -100,6 +101,7 @@ impl pallet_qubitum::Config for Test {
     type RuntimeHoldReason = RuntimeHoldReason;
     type WeightInfo = ();
     type ProofVerifier = TestProofVerifier;
+    type ProtocolTreasury = ProtocolTreasury;
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {

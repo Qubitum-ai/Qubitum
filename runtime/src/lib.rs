@@ -60,8 +60,8 @@ use sp_runtime::generic::Era;
 use sp_runtime::{
     AccountId32, ApplyExtrinsicResult, ConsensusEngineId, Percent, generic, impl_opaque_keys,
     traits::{
-        AccountIdLookup, BlakeTwo256, Block as BlockT, DispatchInfoOf, Dispatchable, One,
-        PostDispatchInfoOf, UniqueSaturatedInto, Verify,
+        AccountIdConversion, AccountIdLookup, BlakeTwo256, Block as BlockT, DispatchInfoOf,
+        Dispatchable, One, PostDispatchInfoOf, UniqueSaturatedInto, Verify,
     },
     transaction_validity::{
         TransactionPriority, TransactionSource, TransactionValidity, TransactionValidityError,
@@ -538,6 +538,7 @@ parameter_types! {
     pub const QubitumMinProofSizeBytes: u32 = qubitum_protocol::TARGET_PROOF_SIZE_MIN_BYTES;
     pub const QubitumMaxProofSizeBytes: u32 = qubitum_protocol::TARGET_PROOF_SIZE_MAX_BYTES;
     pub const QubitumMaxVerificationLatencyMs: u32 = qubitum_protocol::TARGET_VERIFICATION_MS;
+    pub QubitumProtocolTreasury: AccountId = PalletId(*b"qbt/trsy").into_account_truncating();
 }
 
 impl pallet_qubitum::Config for Runtime {
@@ -555,6 +556,7 @@ impl pallet_qubitum::Config for Runtime {
     type RuntimeHoldReason = RuntimeHoldReason;
     type WeightInfo = pallet_qubitum::weights::SubstrateWeight<Runtime>;
     type ProofVerifier = pallet_qubitum::ShapeProofVerifier;
+    type ProtocolTreasury = QubitumProtocolTreasury;
 }
 
 // Implement AuthorshipInfo trait for Runtime to satisfy pallet transaction
@@ -2586,6 +2588,12 @@ impl_runtime_apis! {
             validator_id: qubitum_protocol::ValidatorId,
         ) -> Option<pallet_qubitum::ChainValidator<AccountId32, TaoBalance>> {
             pallet_qubitum::Validators::<Runtime>::get(validator_id)
+        }
+
+        fn qubitum_inference_request(
+            request_id: qubitum_protocol::RequestId,
+        ) -> Option<pallet_qubitum::ChainInferenceRequest<AccountId32, TaoBalance>> {
+            pallet_qubitum::InferenceRequests::<Runtime>::get(request_id)
         }
 
         fn qubitum_proof_record(

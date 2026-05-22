@@ -28,6 +28,13 @@ pub trait QubitumRpcApi<BlockHash> {
     fn get_validator(&self, validator_id: ValidatorId, at: Option<BlockHash>)
     -> RpcResult<Vec<u8>>;
 
+    #[method(name = "qubitum_getInferenceRequest")]
+    fn get_inference_request(
+        &self,
+        request_id: RequestId,
+        at: Option<BlockHash>,
+    ) -> RpcResult<Vec<u8>>;
+
     #[method(name = "qubitum_getProofRecord")]
     fn get_proof_record(&self, request_id: RequestId, at: Option<BlockHash>) -> RpcResult<Vec<u8>>;
 
@@ -137,6 +144,22 @@ where
             .map(|result| result.encode())
             .map_err(|e| {
                 Error::RuntimeError(format!("Unable to get Qubitum proof record: {e:?}")).into()
+            })
+    }
+
+    fn get_inference_request(
+        &self,
+        request_id: RequestId,
+        at: Option<<Block as BlockT>::Hash>,
+    ) -> RpcResult<Vec<u8>> {
+        let api = self.client.runtime_api();
+        let at = self.at_or_best(at);
+
+        api.qubitum_inference_request(at, request_id)
+            .map(|result| result.encode())
+            .map_err(|e| {
+                Error::RuntimeError(format!("Unable to get Qubitum inference request: {e:?}"))
+                    .into()
             })
     }
 

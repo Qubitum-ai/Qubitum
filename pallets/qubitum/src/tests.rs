@@ -1,8 +1,8 @@
 #![allow(clippy::arithmetic_side_effects, clippy::unwrap_used)]
 
 use crate::{
-    Error, HoldReason, MinerCount, Miners, ProofRecords, SubnetCount, Subnets, TotalBurned,
-    ValidatorCount, Validators,
+    Error, HoldReason, InferenceRequestStatus, InferenceRequests, MinerCount, Miners, ProofRecords,
+    SubnetCount, Subnets, TotalBurned, ValidatorCount, Validators,
     mock::{Balances, Qubitum, RuntimeOrigin, Test, new_test_ext, set_verification_outcome},
 };
 use frame_support::{assert_noop, assert_ok, traits::fungible::InspectHold};
@@ -59,6 +59,18 @@ fn valid_submission(request_id: u64) -> InferenceProofSubmission {
         verification_latency_ms: 10,
         submitted_at: 77,
     }
+}
+
+fn request_inference(request_id: u64) {
+    assert_ok!(Qubitum::request_inference(
+        RuntimeOrigin::signed(4),
+        request_id,
+        0,
+        commitment(1),
+        1_000,
+        250,
+        50,
+    ));
 }
 
 #[test]
@@ -173,6 +185,7 @@ fn register_validator_locks_stake() {
 fn submit_proof_records_commitments_for_active_participants() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
+        request_inference(42);
 
         assert_ok!(Qubitum::submit_proof(
             RuntimeOrigin::signed(3),
@@ -189,6 +202,45 @@ fn submit_proof_records_commitments_for_active_participants() {
         assert_eq!(record.proof_size_bytes, TARGET_PROOF_SIZE_MIN_BYTES);
         assert_eq!(record.verification_latency_ms, 10);
         assert_eq!(record.submitted_at, 77);
+        assert_eq!(
+            InferenceRequests::<Test>::get(42).unwrap().status,
+            InferenceRequestStatus::Settled
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            0
+        );
+        assert_eq!(
+            Balances::free_balance(2),
+            1_000_000_000_000_000 - MINER_REGISTRATION_BURN - MIN_MINER_BOND + 970
+        );
+        assert_eq!(
+            Balances::free_balance(3),
+            1_000_000_000_000_000 - MIN_MINER_BOND + 25
+        );
+        assert_eq!(Balances::free_balance(99), 5);
+    });
+}
+
+#[test]
+fn request_inference_escrows_payment() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::Code,
+            ProofSystem::RiscZeroStark
+        ));
+
+        request_inference(7);
+
+        let request = InferenceRequests::<Test>::get(7).unwrap();
+        assert_eq!(request.user, 4);
+        assert_eq!(request.payment, 1_000);
+        assert_eq!(request.status, InferenceRequestStatus::Pending);
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            1_000
+        );
     });
 }
 
@@ -218,6 +270,7 @@ fn submit_proof_rejects_latency_or_missing_commitment() {
             Error::<Test>::MissingCommitment
         );
 
+        request_inference(44);
         assert_noop!(
             Qubitum::submit_proof(
                 RuntimeOrigin::signed(3),
@@ -259,6 +312,7 @@ fn submit_proof_rejects_latency_or_missing_commitment() {
 fn submit_proof_rejects_duplicate_wrong_validator_or_model() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
+        request_inference(45);
 
         assert_ok!(Qubitum::submit_proof(
             RuntimeOrigin::signed(3),
@@ -269,11 +323,13 @@ fn submit_proof_rejects_duplicate_wrong_validator_or_model() {
             Error::<Test>::DuplicateProof
         );
 
+        request_inference(46);
         assert_noop!(
             Qubitum::submit_proof(RuntimeOrigin::signed(4), valid_submission(46)),
             Error::<Test>::NotValidatorOperator
         );
 
+        request_inference(47);
         let mut wrong_model = valid_submission(47);
         wrong_model.model_commitment = commitment(99);
         assert_noop!(
@@ -287,6 +343,7 @@ fn submit_proof_rejects_duplicate_wrong_validator_or_model() {
 fn verifier_rejection_slashes_miner_without_recording_proof() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
+        request_inference(48);
         set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
 
         assert_ok!(Qubitum::submit_proof(
@@ -295,6 +352,10 @@ fn verifier_rejection_slashes_miner_without_recording_proof() {
         ));
 
         assert!(ProofRecords::<Test>::get(48).is_none());
+        assert_eq!(
+            InferenceRequests::<Test>::get(48).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
         let miner = Miners::<Test>::get(0).unwrap();
         assert_eq!(miner.bond, 90_000_000_000);
         assert_eq!(miner.status, RegistryStatus::Slashed);

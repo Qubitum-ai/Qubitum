@@ -15,9 +15,9 @@ use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use frame_support::{
     dispatch::DispatchResult,
     ensure,
-    pallet_prelude::{CheckedDiv, CheckedMul},
+    pallet_prelude::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub},
     traits::tokens::{
-        Fortitude, Precision, Preservation,
+        Fortitude, Precision, Preservation, Restriction,
         fungible::{self, Mutate as _, MutateHold as _},
     },
 };
@@ -198,6 +198,9 @@ pub mod pallet {
 
         /// Runtime proof verifier adapter.
         type ProofVerifier: VerifyProof;
+
+        /// Account receiving protocol treasury fees from inference settlement.
+        type ProtocolTreasury: Get<Self::AccountId>;
     }
 
     #[pallet::composite_enum]
@@ -206,6 +209,25 @@ pub mod pallet {
         MinerBond,
         /// Funds held as validator stake.
         ValidatorStake,
+        /// Funds held from a user until a valid inference proof settles.
+        InferencePayment,
+    }
+
+    #[derive(
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        TypeInfo,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Debug,
+        MaxEncodedLen,
+    )]
+    pub enum InferenceRequestStatus {
+        Pending,
+        Settled,
     }
 
     #[derive(
@@ -265,6 +287,20 @@ pub mod pallet {
         pub submitted_at: BlockNumber,
     }
 
+    #[derive(
+        Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
+    )]
+    pub struct ChainInferenceRequest<AccountId, Balance> {
+        pub request_id: RequestId,
+        pub user: AccountId,
+        pub subnet_id: SubnetId,
+        pub input_commitment: Commitment,
+        pub payment: Balance,
+        pub validator_fee_bps: u16,
+        pub treasury_fee_bps: u16,
+        pub status: InferenceRequestStatus,
+    }
+
     #[pallet::storage]
     pub type SubnetCount<T: Config> = StorageValue<_, SubnetId, ValueQuery>;
 
@@ -296,6 +332,15 @@ pub mod pallet {
         StorageMap<_, Twox64Concat, RequestId, ChainProofRecord, OptionQuery>;
 
     #[pallet::storage]
+    pub type InferenceRequests<T: Config> = StorageMap<
+        _,
+        Twox64Concat,
+        RequestId,
+        ChainInferenceRequest<T::AccountId, BalanceOf<T>>,
+        OptionQuery,
+    >;
+
+    #[pallet::storage]
     pub type TotalBurned<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
 
     #[pallet::event]
@@ -323,11 +368,25 @@ pub mod pallet {
             subnet_id: SubnetId,
             operator: T::AccountId,
         },
+        /// A user opened an inference request and escrowed QBT.
+        InferenceRequested {
+            request_id: RequestId,
+            user: T::AccountId,
+            subnet_id: SubnetId,
+            payment: BalanceOf<T>,
+        },
         /// A proof record was accepted.
         ProofAccepted {
             request_id: RequestId,
             miner_id: MinerId,
             validator_id: ValidatorId,
+        },
+        /// Escrowed request payment was settled.
+        InferenceSettled {
+            request_id: RequestId,
+            miner_payment: BalanceOf<T>,
+            validator_fee: BalanceOf<T>,
+            treasury_fee: BalanceOf<T>,
         },
         /// A proof was rejected by the verifier and the miner was slashed.
         ProofRejected {
@@ -371,6 +430,18 @@ pub mod pallet {
         ModelCommitmentMismatch,
         /// Proof record already exists for the request.
         DuplicateProof,
+        /// Inference request already exists.
+        DuplicateRequest,
+        /// Inference request is missing.
+        UnknownRequest,
+        /// Inference request has already been settled.
+        RequestAlreadySettled,
+        /// Proof submission does not match the escrowed request.
+        RequestMismatch,
+        /// Inference payment must be greater than zero.
+        InvalidPayment,
+        /// Validator and treasury fee split is invalid.
+        InvalidFeeSplit,
         /// Proof size metadata is outside accepted bounds.
         InvalidProofSize,
         /// Verification latency exceeds policy.
@@ -516,6 +587,7 @@ pub mod pallet {
         /// Submit a proof record after validator verification.
         #[pallet::call_index(4)]
         #[pallet::weight(T::WeightInfo::submit_proof())]
+        #[frame_support::transactional]
         pub fn submit_proof(
             origin: OriginFor<T>,
             submission: InferenceProofSubmission,
@@ -555,11 +627,19 @@ pub mod pallet {
                     submitted_at: submission.submitted_at,
                 },
             );
+            let (miner_payment, validator_fee, treasury_fee) =
+                Self::settle_request_payment(&submission)?;
 
             Self::deposit_event(Event::ProofAccepted {
                 request_id: submission.request_id,
                 miner_id: submission.miner_id,
                 validator_id: submission.validator_id,
+            });
+            Self::deposit_event(Event::InferenceSettled {
+                request_id: submission.request_id,
+                miner_payment,
+                validator_fee,
+                treasury_fee,
             });
             Ok(())
         }
@@ -581,6 +661,57 @@ pub mod pallet {
 
             let amount = Self::slash_miner_bond(miner_id, slash_bps)?;
             Self::deposit_event(Event::MinerSlashed { miner_id, amount });
+            Ok(())
+        }
+
+        /// Open an inference request and escrow QBT until a valid proof settles it.
+        #[pallet::call_index(6)]
+        #[pallet::weight(T::WeightInfo::request_inference())]
+        #[frame_support::transactional]
+        pub fn request_inference(
+            origin: OriginFor<T>,
+            request_id: RequestId,
+            subnet_id: SubnetId,
+            input_commitment: Commitment,
+            payment: BalanceOf<T>,
+            validator_fee_bps: u16,
+            treasury_fee_bps: u16,
+        ) -> DispatchResult {
+            let user = ensure_signed(origin)?;
+            ensure_commitment::<T>(input_commitment)?;
+            ensure!(
+                !InferenceRequests::<T>::contains_key(request_id),
+                Error::<T>::DuplicateRequest
+            );
+            ensure!(
+                payment > BalanceOf::<T>::default(),
+                Error::<T>::InvalidPayment
+            );
+            Self::validate_fee_split(validator_fee_bps, treasury_fee_bps)?;
+            let subnet = Subnets::<T>::get(subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
+            ensure!(subnet.active, Error::<T>::NotActive);
+
+            T::Currency::hold(&HoldReason::InferencePayment.into(), &user, payment)?;
+            InferenceRequests::<T>::insert(
+                request_id,
+                ChainInferenceRequest {
+                    request_id,
+                    user: user.clone(),
+                    subnet_id,
+                    input_commitment,
+                    payment,
+                    validator_fee_bps,
+                    treasury_fee_bps,
+                    status: InferenceRequestStatus::Pending,
+                },
+            );
+
+            Self::deposit_event(Event::InferenceRequested {
+                request_id,
+                user,
+                subnet_id,
+                payment,
+            });
             Ok(())
         }
     }
@@ -633,6 +764,17 @@ pub mod pallet {
                 !ProofRecords::<T>::contains_key(submission.request_id),
                 Error::<T>::DuplicateProof
             );
+            let request = InferenceRequests::<T>::get(submission.request_id)
+                .ok_or(Error::<T>::UnknownRequest)?;
+            ensure!(
+                request.status == InferenceRequestStatus::Pending,
+                Error::<T>::RequestAlreadySettled
+            );
+            ensure!(
+                request.subnet_id == submission.subnet_id
+                    && request.input_commitment == submission.input_commitment,
+                Error::<T>::RequestMismatch
+            );
 
             let subnet =
                 Subnets::<T>::get(submission.subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
@@ -678,6 +820,96 @@ pub mod pallet {
                 max_proof_size_bytes: T::MaxProofSizeBytes::get(),
                 max_verification_latency_ms: T::MaxVerificationLatencyMs::get(),
             })
+        }
+
+        fn settle_request_payment(
+            submission: &InferenceProofSubmission,
+        ) -> Result<(BalanceOf<T>, BalanceOf<T>, BalanceOf<T>), DispatchError> {
+            InferenceRequests::<T>::try_mutate(
+                submission.request_id,
+                |maybe_request| -> Result<(BalanceOf<T>, BalanceOf<T>, BalanceOf<T>), DispatchError> {
+                    let request = maybe_request.as_mut().ok_or(Error::<T>::UnknownRequest)?;
+                    ensure!(
+                        request.status == InferenceRequestStatus::Pending,
+                        Error::<T>::RequestAlreadySettled
+                    );
+                    ensure!(
+                        request.subnet_id == submission.subnet_id
+                            && request.input_commitment == submission.input_commitment,
+                        Error::<T>::RequestMismatch
+                    );
+
+                    let miner =
+                        Miners::<T>::get(submission.miner_id).ok_or(Error::<T>::UnknownMiner)?;
+                    let validator = Validators::<T>::get(submission.validator_id)
+                        .ok_or(Error::<T>::UnknownValidator)?;
+                    let (miner_payment, validator_fee, treasury_fee) = Self::payment_split(
+                        request.payment,
+                        request.validator_fee_bps,
+                        request.treasury_fee_bps,
+                    )?;
+
+                    Self::transfer_held_payment(&request.user, &miner.operator, miner_payment)?;
+                    Self::transfer_held_payment(&request.user, &validator.operator, validator_fee)?;
+                    Self::transfer_held_payment(
+                        &request.user,
+                        &T::ProtocolTreasury::get(),
+                        treasury_fee,
+                    )?;
+                    request.status = InferenceRequestStatus::Settled;
+
+                    Ok((miner_payment, validator_fee, treasury_fee))
+                },
+            )
+        }
+
+        fn validate_fee_split(validator_fee_bps: u16, treasury_fee_bps: u16) -> DispatchResult {
+            let combined = validator_fee_bps
+                .checked_add(treasury_fee_bps)
+                .ok_or(Error::<T>::ArithmeticOverflow)?;
+            ensure!(
+                combined <= qubitum_protocol::BPS_DENOMINATOR,
+                Error::<T>::InvalidFeeSplit
+            );
+            Ok(())
+        }
+
+        fn payment_split(
+            payment: BalanceOf<T>,
+            validator_fee_bps: u16,
+            treasury_fee_bps: u16,
+        ) -> Result<(BalanceOf<T>, BalanceOf<T>, BalanceOf<T>), DispatchError> {
+            Self::validate_fee_split(validator_fee_bps, treasury_fee_bps)?;
+            let validator_fee = pro_rata::<T>(payment, validator_fee_bps)?;
+            let treasury_fee = pro_rata::<T>(payment, treasury_fee_bps)?;
+            let assigned = validator_fee
+                .checked_add(&treasury_fee)
+                .ok_or(Error::<T>::ArithmeticOverflow)?;
+            let miner_payment = payment
+                .checked_sub(&assigned)
+                .ok_or(Error::<T>::ArithmeticOverflow)?;
+            Ok((miner_payment, validator_fee, treasury_fee))
+        }
+
+        fn transfer_held_payment(
+            source: &T::AccountId,
+            dest: &T::AccountId,
+            amount: BalanceOf<T>,
+        ) -> DispatchResult {
+            if amount == BalanceOf::<T>::default() {
+                return Ok(());
+            }
+
+            T::Currency::transfer_on_hold(
+                &HoldReason::InferencePayment.into(),
+                source,
+                dest,
+                amount,
+                Precision::Exact,
+                Restriction::Free,
+                Fortitude::Polite,
+            )?;
+            Ok(())
         }
 
         fn slash_miner_bond(

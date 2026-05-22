@@ -4,8 +4,8 @@
 #![allow(clippy::arithmetic_side_effects, clippy::unwrap_used)]
 
 use crate::{
-    BalanceOf, ChainProofRecord, Event, MinerCount, Miners, ProofRecords, SubnetCount, Subnets,
-    TotalBurned, ValidatorCount, Validators, pallet::*,
+    BalanceOf, ChainProofRecord, Event, InferenceRequestStatus, InferenceRequests, MinerCount,
+    Miners, ProofRecords, SubnetCount, Subnets, TotalBurned, ValidatorCount, Validators, pallet::*,
 };
 use frame_benchmarking::{account, v2::*};
 use frame_support::traits::{Get, fungible::Mutate};
@@ -104,6 +104,23 @@ fn proof_submission() -> InferenceProofSubmission {
         verification_latency_ms: 10,
         submitted_at: 77,
     }
+}
+
+fn request_bench_inference<T: Config>(request_id: u64) -> T::AccountId {
+    let user: T::AccountId = account("user", 0, SEED);
+    let payment = T::MinMinerBond::get();
+    fund::<T>(&user, payment.saturating_add(payment));
+    Pallet::<T>::request_inference(
+        RawOrigin::Signed(user.clone()).into(),
+        request_id,
+        0,
+        commitment(1),
+        T::MinMinerBond::get(),
+        250,
+        50,
+    )
+    .unwrap();
+    user
 }
 
 #[benchmarks]
@@ -214,6 +231,7 @@ mod benchmarks {
     fn submit_proof() {
         let _miner = activate_bench_miner::<T>();
         let validator = register_bench_validator::<T>();
+        let _user = request_bench_inference::<T>(42);
         let submission = proof_submission();
 
         #[extrinsic_call]
@@ -247,6 +265,38 @@ mod benchmarks {
         _(RawOrigin::Root, 0, T::MinInvalidProofSlashBps::get());
 
         assert!(TotalBurned::<T>::get() > before);
+    }
+
+    #[benchmark]
+    fn request_inference() {
+        let _owner = create_bench_subnet::<T>();
+        let user: T::AccountId = account("user", 0, SEED);
+        let payment = T::MinMinerBond::get();
+        fund::<T>(&user, payment.saturating_add(payment));
+
+        #[extrinsic_call]
+        _(
+            RawOrigin::Signed(user.clone()),
+            42,
+            0,
+            commitment(1),
+            payment,
+            250,
+            50,
+        );
+
+        let request = InferenceRequests::<T>::get(42).unwrap();
+        assert_eq!(request.user, user.clone());
+        assert_eq!(request.status, InferenceRequestStatus::Pending);
+        assert_last_event::<T>(
+            Event::<T>::InferenceRequested {
+                request_id: 42,
+                user,
+                subnet_id: 0,
+                payment,
+            }
+            .into(),
+        );
     }
 
     impl_benchmark_test_suite!(Pallet, crate::mock::new_test_ext(), crate::mock::Test);

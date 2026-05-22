@@ -8,6 +8,7 @@ Current Qubitum implementation entry points:
 - On-chain pallet surface: [`pallets/qubitum`](./pallets/qubitum)
 - Qubitum runtime API: [`pallets/qubitum/runtime-api`](./pallets/qubitum/runtime-api)
 - Qubitum JSON-RPC API: [`pallets/qubitum/rpc`](./pallets/qubitum/rpc)
+- Inference escrow settlement: users hold QBT, valid proofs pay miners/validators/treasury
 - Runtime integration: `Qubitum: pallet_qubitum` in [`runtime/src/lib.rs`](./runtime/src/lib.rs)
 - Development chain identity: `Qubitum Local` / `Qubitum Devnet` with QBT metadata
 - Protocol notes: [`docs/qubitum-protocol.md`](./docs/qubitum-protocol.md)
