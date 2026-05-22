@@ -139,7 +139,7 @@ pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
 
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(5);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(6);
     const MAX_VALIDATOR_ROUTING_ATTEMPTS: usize = 16;
 
     #[pallet::pallet]
@@ -258,6 +258,7 @@ pub mod pallet {
         Settled,
         Cancelled,
         Rejected,
+        Expired,
     }
 
     #[derive(
@@ -398,6 +399,7 @@ pub mod pallet {
         pub settled: RequestId,
         pub cancelled: RequestId,
         pub rejected: RequestId,
+        pub expired: RequestId,
     }
 
     #[derive(
@@ -492,6 +494,9 @@ pub mod pallet {
 
     #[pallet::storage]
     pub type RejectedInferenceRequestCount<T: Config> = StorageValue<_, RequestId, ValueQuery>;
+
+    #[pallet::storage]
+    pub type ExpiredInferenceRequestCount<T: Config> = StorageValue<_, RequestId, ValueQuery>;
 
     #[pallet::storage]
     pub type TotalBurned<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
@@ -1310,7 +1315,7 @@ pub mod pallet {
                             request.payment,
                             Precision::Exact,
                         )?;
-                        request.status = InferenceRequestStatus::Cancelled;
+                        request.status = InferenceRequestStatus::Expired;
                         Ok((
                             request.user.clone(),
                             request.payment,
@@ -1322,7 +1327,7 @@ pub mod pallet {
             Self::decrement_pending_assignment(miner_id, validator_id)?;
             Self::transition_request_status(
                 InferenceRequestStatus::Pending,
-                InferenceRequestStatus::Cancelled,
+                InferenceRequestStatus::Expired,
             )?;
             Self::record_inference_refund(payment);
 
@@ -1352,6 +1357,7 @@ pub mod pallet {
                 settled: SettledInferenceRequestCount::<T>::get(),
                 cancelled: CancelledInferenceRequestCount::<T>::get(),
                 rejected: RejectedInferenceRequestCount::<T>::get(),
+                expired: ExpiredInferenceRequestCount::<T>::get(),
             }
         }
 
@@ -1481,6 +1487,9 @@ pub mod pallet {
                 InferenceRequestStatus::Rejected => {
                     RejectedInferenceRequestCount::<T>::try_mutate(Self::increment_request_count)
                 }
+                InferenceRequestStatus::Expired => {
+                    ExpiredInferenceRequestCount::<T>::try_mutate(Self::increment_request_count)
+                }
             }
         }
 
@@ -1497,6 +1506,9 @@ pub mod pallet {
                 }
                 InferenceRequestStatus::Rejected => {
                     RejectedInferenceRequestCount::<T>::try_mutate(Self::decrement_request_count)
+                }
+                InferenceRequestStatus::Expired => {
+                    ExpiredInferenceRequestCount::<T>::try_mutate(Self::decrement_request_count)
                 }
             }
         }
@@ -1775,7 +1787,9 @@ pub mod pallet {
                             total_treasury_fees = total_treasury_fees.saturating_add(treasury_fee);
                         }
                     }
-                    InferenceRequestStatus::Cancelled | InferenceRequestStatus::Rejected => {
+                    InferenceRequestStatus::Cancelled
+                    | InferenceRequestStatus::Rejected
+                    | InferenceRequestStatus::Expired => {
                         total_refunded = total_refunded.saturating_add(request.payment);
                     }
                     InferenceRequestStatus::Pending => {}
@@ -1798,6 +1812,7 @@ pub mod pallet {
                 settled: 0,
                 cancelled: 0,
                 rejected: 0,
+                expired: 0,
             };
 
             for (_, request) in InferenceRequests::<T>::iter() {
@@ -1815,6 +1830,9 @@ pub mod pallet {
                     InferenceRequestStatus::Rejected => {
                         counts.rejected = counts.rejected.saturating_add(1);
                     }
+                    InferenceRequestStatus::Expired => {
+                        counts.expired = counts.expired.saturating_add(1);
+                    }
                 }
             }
 
@@ -1822,8 +1840,9 @@ pub mod pallet {
             SettledInferenceRequestCount::<T>::put(counts.settled);
             CancelledInferenceRequestCount::<T>::put(counts.cancelled);
             RejectedInferenceRequestCount::<T>::put(counts.rejected);
+            ExpiredInferenceRequestCount::<T>::put(counts.expired);
 
-            T::DbWeight::get().reads_writes(request_reads, 4)
+            T::DbWeight::get().reads_writes(request_reads, 5)
         }
 
         fn migrate_proof_record_timestamps(on_chain: StorageVersion) -> Weight {
@@ -1970,7 +1989,9 @@ pub mod pallet {
                             .total_treasury_fees
                             .saturating_add(treasury_fee);
                     }
-                    InferenceRequestStatus::Cancelled | InferenceRequestStatus::Rejected => {
+                    InferenceRequestStatus::Cancelled
+                    | InferenceRequestStatus::Rejected
+                    | InferenceRequestStatus::Expired => {
                         expected_accounting.total_inference_refunded = expected_accounting
                             .total_inference_refunded
                             .saturating_add(request.payment);
@@ -1988,6 +2009,7 @@ pub mod pallet {
                 settled: 0,
                 cancelled: 0,
                 rejected: 0,
+                expired: 0,
             };
             for (_, request) in InferenceRequests::<T>::iter() {
                 match request.status {
@@ -2006,6 +2028,10 @@ pub mod pallet {
                     InferenceRequestStatus::Rejected => {
                         expected_status_counts.rejected =
                             expected_status_counts.rejected.saturating_add(1);
+                    }
+                    InferenceRequestStatus::Expired => {
+                        expected_status_counts.expired =
+                            expected_status_counts.expired.saturating_add(1);
                     }
                 }
             }

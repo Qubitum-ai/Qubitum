@@ -444,6 +444,7 @@ fn submit_proof_records_commitments_for_active_participants() {
                 settled: 1,
                 cancelled: 0,
                 rejected: 0,
+                expired: 0,
             }
         );
         assert_eq!(
@@ -489,7 +490,7 @@ fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
         assert_eq!(record.accepted_at, 55);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(5)
+            StorageVersion::new(6)
         );
     });
 }
@@ -523,6 +524,7 @@ fn request_inference_escrows_payment() {
                 settled: 0,
                 cancelled: 0,
                 rejected: 0,
+                expired: 0,
             }
         );
     });
@@ -937,7 +939,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(5)
+            StorageVersion::new(6)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
@@ -948,6 +950,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
                 settled: 0,
                 cancelled: 0,
                 rejected: 0,
+                expired: 0,
             }
         );
         assert!(Qubitum::route_assignment(0, 42).is_some());
@@ -1028,6 +1031,7 @@ fn cancel_inference_releases_pending_escrow() {
                 settled: 0,
                 cancelled: 1,
                 rejected: 0,
+                expired: 0,
             }
         );
     });
@@ -1048,7 +1052,7 @@ fn expire_inference_releases_stale_request_for_any_signed_caller() {
         assert_ok!(Qubitum::expire_inference(RuntimeOrigin::signed(5), 10));
 
         let request = InferenceRequests::<Test>::get(10).unwrap();
-        assert_eq!(request.status, InferenceRequestStatus::Cancelled);
+        assert_eq!(request.status, InferenceRequestStatus::Expired);
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
             0
@@ -1061,8 +1065,9 @@ fn expire_inference_releases_stale_request_for_any_signed_caller() {
             ChainRequestStatusCounts {
                 pending: 0,
                 settled: 0,
-                cancelled: 1,
+                cancelled: 0,
                 rejected: 0,
+                expired: 1,
             }
         );
     });
@@ -1278,6 +1283,7 @@ fn verifier_rejection_slashes_and_refunds_request() {
                 settled: 0,
                 cancelled: 0,
                 rejected: 1,
+                expired: 0,
             }
         );
         let miner = Miners::<Test>::get(0).unwrap();
