@@ -272,7 +272,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     //   `spec_version`, and `authoring_version` are the same between Wasm and native.
     // This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
     //   the compatible custom types.
-    spec_version: 402,
+    spec_version: 403,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -524,6 +524,34 @@ impl pallet_balances::Config for Runtime {
     type FreezeIdentifier = RuntimeFreezeReason;
     type MaxFreezes = ConstU32<50>;
     type DoneSlashHandler = ();
+}
+
+parameter_types! {
+    pub const QubitumSubnetCreationBurn: TaoBalance = TaoBalance::new(10_000_000_000);
+    pub const QubitumMinerRegistrationBurn: TaoBalance = TaoBalance::new(10_000_000_000);
+    pub const QubitumMinMinerBond: TaoBalance = TaoBalance::new(100_000_000_000);
+    pub const QubitumMaxMinerBond: TaoBalance = TaoBalance::new(10_000_000_000_000);
+    pub const QubitumMinValidatorStake: TaoBalance = TaoBalance::new(100_000_000_000);
+    pub const QubitumMinInvalidProofSlashBps: u16 = qubitum_protocol::MIN_INVALID_PROOF_SLASH_BPS;
+    pub const QubitumMaxInvalidProofSlashBps: u16 = qubitum_protocol::MAX_INVALID_PROOF_SLASH_BPS;
+    pub const QubitumMinProofSizeBytes: u32 = qubitum_protocol::TARGET_PROOF_SIZE_MIN_BYTES;
+    pub const QubitumMaxProofSizeBytes: u32 = qubitum_protocol::TARGET_PROOF_SIZE_MAX_BYTES;
+    pub const QubitumMaxVerificationLatencyMs: u32 = qubitum_protocol::TARGET_VERIFICATION_MS;
+}
+
+impl pallet_qubitum::Config for Runtime {
+    type Currency = Balances;
+    type SubnetCreationBurn = QubitumSubnetCreationBurn;
+    type MinerRegistrationBurn = QubitumMinerRegistrationBurn;
+    type MinMinerBond = QubitumMinMinerBond;
+    type MaxMinerBond = QubitumMaxMinerBond;
+    type MinValidatorStake = QubitumMinValidatorStake;
+    type MinInvalidProofSlashBps = QubitumMinInvalidProofSlashBps;
+    type MaxInvalidProofSlashBps = QubitumMaxInvalidProofSlashBps;
+    type MinProofSizeBytes = QubitumMinProofSizeBytes;
+    type MaxProofSizeBytes = QubitumMaxProofSizeBytes;
+    type MaxVerificationLatencyMs = QubitumMaxVerificationLatencyMs;
+    type RuntimeHoldReason = RuntimeHoldReason;
 }
 
 // Implement AuthorshipInfo trait for Runtime to satisfy pallet transaction
@@ -1679,6 +1707,7 @@ construct_runtime!(
         Swap: pallet_subtensor_swap = 28,
         Contracts: pallet_contracts = 29,
         MevShield: pallet_shield = 30,
+        Qubitum: pallet_qubitum = 31,
     }
 );
 

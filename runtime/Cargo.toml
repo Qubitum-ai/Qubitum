@@ -149,6 +149,8 @@ ark-serialize = { workspace = true, features = ["derive"] }
 
 # Crowdloan
 pallet-crowdloan.workspace = true
+pallet-qubitum.workspace = true
+qubitum-protocol.workspace = true
 
 # Mev Shield
 pallet-shield.workspace = true
@@ -226,6 +228,8 @@ std = [
 	"subtensor-precompiles/std",
 	"subtensor-runtime-common/std",
 	"pallet-crowdloan/std",
+	"pallet-qubitum/std",
+	"qubitum-protocol/std",
 	"pallet-babe/std",
 	"pallet-session/std",
 	"pallet-staking/std",
@@ -302,6 +306,7 @@ runtime-benchmarks = [
 	"pallet-scheduler/runtime-benchmarks",
 	"pallet-sudo/runtime-benchmarks",
 	"pallet-crowdloan/runtime-benchmarks",
+	"pallet-qubitum/runtime-benchmarks",
 	"runtime-common/runtime-benchmarks",
 	"pallet-babe/runtime-benchmarks",
 	"pallet-staking/runtime-benchmarks",
@@ -354,6 +359,7 @@ try-runtime = [
 	"pallet-commitments/try-runtime",
 	"pallet-registry/try-runtime",
 	"pallet-crowdloan/try-runtime",
+	"pallet-qubitum/try-runtime",
 	"pallet-babe/try-runtime",
 	"pallet-session/try-runtime",
 	"pallet-staking/try-runtime",
