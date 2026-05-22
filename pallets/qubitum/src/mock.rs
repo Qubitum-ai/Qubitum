@@ -51,6 +51,8 @@ parameter_types! {
     pub const MinerRegistrationBurn: Balance = qubitum_protocol::MINER_REGISTRATION_BURN;
     pub const MinMinerBond: Balance = qubitum_protocol::MIN_MINER_BOND;
     pub const MaxMinerBond: Balance = qubitum_protocol::MAX_MINER_BOND;
+    pub const MaxActiveMinersPerSubnet: u32 = 16;
+    pub const MaxActiveValidatorsPerSubnet: u32 = 16;
     pub const MinValidatorStake: Balance = qubitum_protocol::MIN_MINER_BOND;
     pub const MinInvalidProofSlashBps: u16 = qubitum_protocol::MIN_INVALID_PROOF_SLASH_BPS;
     pub const MaxInvalidProofSlashBps: u16 = qubitum_protocol::MAX_INVALID_PROOF_SLASH_BPS;
@@ -95,6 +97,8 @@ impl pallet_qubitum::Config for Test {
     type MinerRegistrationBurn = MinerRegistrationBurn;
     type MinMinerBond = MinMinerBond;
     type MaxMinerBond = MaxMinerBond;
+    type MaxActiveMinersPerSubnet = MaxActiveMinersPerSubnet;
+    type MaxActiveValidatorsPerSubnet = MaxActiveValidatorsPerSubnet;
     type MinValidatorStake = MinValidatorStake;
     type MinInvalidProofSlashBps = MinInvalidProofSlashBps;
     type MaxInvalidProofSlashBps = MaxInvalidProofSlashBps;

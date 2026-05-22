@@ -272,7 +272,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     //   `spec_version`, and `authoring_version` are the same between Wasm and native.
     // This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
     //   the compatible custom types.
-    spec_version: 412,
+    spec_version: 413,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -532,6 +532,8 @@ parameter_types! {
     pub const QubitumMinerRegistrationBurn: TaoBalance = TaoBalance::new(10_000_000_000);
     pub const QubitumMinMinerBond: TaoBalance = TaoBalance::new(100_000_000_000);
     pub const QubitumMaxMinerBond: TaoBalance = TaoBalance::new(10_000_000_000_000);
+    pub const QubitumMaxActiveMinersPerSubnet: u32 = 4096;
+    pub const QubitumMaxActiveValidatorsPerSubnet: u32 = 4096;
     pub const QubitumMinValidatorStake: TaoBalance = TaoBalance::new(100_000_000_000);
     pub const QubitumMinInvalidProofSlashBps: u16 = qubitum_protocol::MIN_INVALID_PROOF_SLASH_BPS;
     pub const QubitumMaxInvalidProofSlashBps: u16 = qubitum_protocol::MAX_INVALID_PROOF_SLASH_BPS;
@@ -550,6 +552,8 @@ impl pallet_qubitum::Config for Runtime {
     type MinerRegistrationBurn = QubitumMinerRegistrationBurn;
     type MinMinerBond = QubitumMinMinerBond;
     type MaxMinerBond = QubitumMaxMinerBond;
+    type MaxActiveMinersPerSubnet = QubitumMaxActiveMinersPerSubnet;
+    type MaxActiveValidatorsPerSubnet = QubitumMaxActiveValidatorsPerSubnet;
     type MinValidatorStake = QubitumMinValidatorStake;
     type MinInvalidProofSlashBps = QubitumMinInvalidProofSlashBps;
     type MaxInvalidProofSlashBps = QubitumMaxInvalidProofSlashBps;

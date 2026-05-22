@@ -35,7 +35,7 @@ The core protocol structs and enums derive SCALE `Encode`/`Decode` plus `scale-i
 
 The pallet is wired into `node-subtensor-runtime` as `Qubitum`, with runtime-provided weights and a FRAME benchmarking suite for all dispatchables. Placeholder weights are isolated behind `pallet_qubitum::weights::WeightInfo` so generated benchmark output can replace them without changing call logic.
 
-Users open inference requests by escrowing QBT against a request ID, subnet, assigned miner, assigned validator, input commitment, and fee split. The pallet deterministically routes each request to active subnet participants and rejects non-canonical assignments before holding funds. Valid proof submission must match the request assignment, then settles that held payment atomically: miner payment, validator fee, and protocol treasury fee are transferred from escrow, and the request status moves from pending to settled. Invalid verifier outcomes slash both the miner bond and validator stake without settling the user escrow. Pending requests can be cancelled by the request owner after the configured cancellation delay to release escrow.
+Users open inference requests by escrowing QBT against a request ID, subnet, assigned miner, assigned validator, input commitment, and fee split. The pallet deterministically routes each request through bounded active-participant indexes and rejects non-canonical assignments before holding funds. Valid proof submission must match the request assignment, then settles that held payment atomically: miner payment, validator fee, and protocol treasury fee are transferred from escrow, and the request status moves from pending to settled. Invalid verifier outcomes slash both the miner bond and validator stake without settling the user escrow. Pending requests can be cancelled by the request owner after the configured cancellation delay to release escrow.
 
 Miners can exit by moving from active or slashed status into an on-chain cooldown. While exiting, they cannot submit new work, but their remaining held bond is still slashable. After the cooldown expires, the operator can withdraw the residual bond and the miner becomes disabled.
 
@@ -80,6 +80,7 @@ cargo test -p node-subtensor-runtime --test safe_mode
 - Emission split: 50% miners, 30% validators, 20% treasury
 - Miner registration burn: 10 QBT
 - Miner activation bond: 100-10,000 QBT
+- Active routing index bound: 4,096 miners and 4,096 validators per subnet in the current runtime
 - Invalid proof slash: 10-100%
 - Miner bond exit cooldown: 7 days in the current runtime
 - Validator stake exit cooldown: 7 days in the current runtime

@@ -1,9 +1,9 @@
 #![allow(clippy::arithmetic_side_effects, clippy::unwrap_used)]
 
 use crate::{
-    Error, HoldReason, InferenceRequestParams, InferenceRequestStatus, InferenceRequests,
-    MinerCount, Miners, ProofRecords, SubnetCount, Subnets, TotalBurned, ValidatorCount,
-    Validators,
+    ActiveMinersBySubnet, ActiveValidatorsBySubnet, Error, HoldReason, InferenceRequestParams,
+    InferenceRequestStatus, InferenceRequests, MinerCount, Miners, ProofRecords, SubnetCount,
+    Subnets, TotalBurned, ValidatorCount, Validators,
     mock::{
         Balances, Qubitum, RuntimeOrigin, System, Test, new_test_ext, set_verification_outcome,
     },
@@ -512,9 +512,26 @@ fn route_assignment_returns_active_participants_only() {
             }),
             Some((42, 0, 0, 0))
         );
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
 
         assert_ok!(Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0));
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
         assert_eq!(Qubitum::route_assignment(0, 42), None);
+    });
+}
+
+#[test]
+fn route_assignment_removes_slashed_participants() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+
+        assert_ok!(Qubitum::slash_miner(RuntimeOrigin::root(), 0, 1_000));
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert_eq!(Qubitum::route_assignment(0, 42), None);
+
+        assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 1_000));
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
     });
 }
 

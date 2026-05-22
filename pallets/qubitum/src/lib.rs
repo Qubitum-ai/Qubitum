@@ -27,7 +27,6 @@ use qubitum_protocol::{
 };
 use scale_info::TypeInfo;
 use sp_runtime::{DispatchError, Saturating, traits::SaturatedConversion};
-use sp_std::vec::Vec;
 
 type BalanceOf<T> =
     <<T as Config>::Currency as fungible::Inspect<<T as frame_system::Config>::AccountId>>::Balance;
@@ -166,6 +165,14 @@ pub mod pallet {
         /// Maximum miner bond.
         #[pallet::constant]
         type MaxMinerBond: Get<BalanceOf<Self>>;
+
+        /// Maximum active miners indexed per subnet for bounded routing.
+        #[pallet::constant]
+        type MaxActiveMinersPerSubnet: Get<u32>;
+
+        /// Maximum active validators indexed per subnet for bounded routing.
+        #[pallet::constant]
+        type MaxActiveValidatorsPerSubnet: Get<u32>;
 
         /// Minimum validator stake.
         #[pallet::constant]
@@ -390,6 +397,24 @@ pub mod pallet {
     >;
 
     #[pallet::storage]
+    pub type ActiveMinersBySubnet<T: Config> = StorageMap<
+        _,
+        Twox64Concat,
+        SubnetId,
+        BoundedVec<MinerId, T::MaxActiveMinersPerSubnet>,
+        ValueQuery,
+    >;
+
+    #[pallet::storage]
+    pub type ActiveValidatorsBySubnet<T: Config> = StorageMap<
+        _,
+        Twox64Concat,
+        SubnetId,
+        BoundedVec<ValidatorId, T::MaxActiveValidatorsPerSubnet>,
+        ValueQuery,
+    >;
+
+    #[pallet::storage]
     pub type TotalBurned<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
 
     #[pallet::event]
@@ -538,6 +563,10 @@ pub mod pallet {
         NoRouteAvailable,
         /// Submitted assignment does not match the deterministic route.
         AssignmentMismatch,
+        /// Subnet has reached the active miner routing index bound.
+        TooManyActiveMiners,
+        /// Subnet has reached the active validator routing index bound.
+        TooManyActiveValidators,
         /// Inference payment must be greater than zero.
         InvalidPayment,
         /// Validator and treasury fee split is invalid.
@@ -625,6 +654,7 @@ pub mod pallet {
         /// Lock a miner bond and activate the miner.
         #[pallet::call_index(2)]
         #[pallet::weight(T::WeightInfo::activate_miner())]
+        #[frame_support::transactional]
         pub fn activate_miner(
             origin: OriginFor<T>,
             miner_id: MinerId,
@@ -645,6 +675,7 @@ pub mod pallet {
                 );
 
                 T::Currency::hold(&HoldReason::MinerBond.into(), &operator, bond)?;
+                Self::insert_active_miner(miner.subnet_id, miner_id)?;
                 miner.bond = bond;
                 miner.status = RegistryStatus::Active;
                 Ok(())
@@ -657,6 +688,7 @@ pub mod pallet {
         /// Register and stake a validator for a subnet.
         #[pallet::call_index(3)]
         #[pallet::weight(T::WeightInfo::register_validator())]
+        #[frame_support::transactional]
         pub fn register_validator(
             origin: OriginFor<T>,
             subnet_id: SubnetId,
@@ -679,6 +711,7 @@ pub mod pallet {
                 status: RegistryStatus::Active,
             };
 
+            Self::insert_active_validator(subnet_id, validator_id)?;
             Validators::<T>::insert(validator_id, validator);
             Self::deposit_event(Event::ValidatorRegistered {
                 validator_id,
@@ -899,6 +932,7 @@ pub mod pallet {
                     ),
                     Error::<T>::InvalidMinerStatus
                 );
+                Self::remove_active_miner(miner.subnet_id, miner_id);
                 miner.status = RegistryStatus::Exiting { exit_available_at };
                 Ok(())
             })?;
@@ -974,6 +1008,7 @@ pub mod pallet {
                     ),
                     Error::<T>::InvalidValidatorStatus
                 );
+                Self::remove_active_validator(validator.subnet_id, validator_id);
                 validator.status = RegistryStatus::Exiting { exit_available_at };
                 Ok(())
             })?;
@@ -1105,37 +1140,63 @@ pub mod pallet {
         }
 
         fn route_active_miner(subnet_id: SubnetId, seed: u64) -> Option<MinerId> {
-            let mut ids: Vec<MinerId> = Miners::<T>::iter()
-                .filter_map(|(miner_id, miner)| {
-                    (miner.subnet_id == subnet_id && miner.status == RegistryStatus::Active)
-                        .then_some(miner_id)
-                })
-                .collect();
+            let ids = ActiveMinersBySubnet::<T>::get(subnet_id);
             if ids.is_empty() {
                 return None;
             }
 
-            ids.sort_unstable();
-            let count: u64 = ids.len().try_into().ok()?;
-            let target: usize = seed.checked_rem(count)?.try_into().ok()?;
+            let target = Self::route_index(seed, ids.len())?;
             ids.get(target).copied()
         }
 
         fn route_active_validator(subnet_id: SubnetId, seed: u64) -> Option<ValidatorId> {
-            let mut ids: Vec<ValidatorId> = Validators::<T>::iter()
-                .filter_map(|(validator_id, validator)| {
-                    (validator.subnet_id == subnet_id && validator.status == RegistryStatus::Active)
-                        .then_some(validator_id)
-                })
-                .collect();
+            let ids = ActiveValidatorsBySubnet::<T>::get(subnet_id);
             if ids.is_empty() {
                 return None;
             }
 
-            ids.sort_unstable();
-            let count: u64 = ids.len().try_into().ok()?;
-            let target: usize = seed.checked_rem(count)?.try_into().ok()?;
+            let target = Self::route_index(seed, ids.len())?;
             ids.get(target).copied()
+        }
+
+        fn route_index(seed: u64, len: usize) -> Option<usize> {
+            let count: u64 = len.try_into().ok()?;
+            seed.checked_rem(count)?.try_into().ok()
+        }
+
+        fn insert_active_miner(subnet_id: SubnetId, miner_id: MinerId) -> DispatchResult {
+            ActiveMinersBySubnet::<T>::try_mutate(subnet_id, |ids| {
+                if !ids.contains(&miner_id) {
+                    ids.try_push(miner_id)
+                        .map_err(|_| Error::<T>::TooManyActiveMiners)?;
+                }
+                Ok(())
+            })
+        }
+
+        fn remove_active_miner(subnet_id: SubnetId, miner_id: MinerId) {
+            ActiveMinersBySubnet::<T>::mutate(subnet_id, |ids| {
+                ids.retain(|indexed| *indexed != miner_id);
+            });
+        }
+
+        fn insert_active_validator(
+            subnet_id: SubnetId,
+            validator_id: ValidatorId,
+        ) -> DispatchResult {
+            ActiveValidatorsBySubnet::<T>::try_mutate(subnet_id, |ids| {
+                if !ids.contains(&validator_id) {
+                    ids.try_push(validator_id)
+                        .map_err(|_| Error::<T>::TooManyActiveValidators)?;
+                }
+                Ok(())
+            })
+        }
+
+        fn remove_active_validator(subnet_id: SubnetId, validator_id: ValidatorId) {
+            ActiveValidatorsBySubnet::<T>::mutate(subnet_id, |ids| {
+                ids.retain(|indexed| *indexed != validator_id);
+            });
         }
 
         fn burn_free(who: &T::AccountId, amount: BalanceOf<T>) -> DispatchResult {
@@ -1363,6 +1424,7 @@ pub mod pallet {
                 if miner.bond < T::MinMinerBond::get()
                     && !matches!(miner.status, RegistryStatus::Exiting { .. })
                 {
+                    Self::remove_active_miner(miner.subnet_id, miner_id);
                     miner.status = RegistryStatus::Slashed;
                 }
                 Ok::<BalanceOf<T>, DispatchError>(burned)
@@ -1403,6 +1465,7 @@ pub mod pallet {
                 if validator.stake < T::MinValidatorStake::get()
                     && !matches!(validator.status, RegistryStatus::Exiting { .. })
                 {
+                    Self::remove_active_validator(validator.subnet_id, validator_id);
                     validator.status = RegistryStatus::Slashed;
                 }
                 Ok::<BalanceOf<T>, DispatchError>(burned)
