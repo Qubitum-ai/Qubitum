@@ -606,6 +606,12 @@ pub mod pallet {
             user: T::AccountId,
             payment: BalanceOf<T>,
         },
+        /// Stale pending inference escrow was released back to the user.
+        InferenceExpired {
+            request_id: RequestId,
+            user: T::AccountId,
+            payment: BalanceOf<T>,
+        },
         /// A proof was rejected by the verifier and the miner was slashed.
         ProofRejected {
             request_id: RequestId,
@@ -1249,6 +1255,62 @@ pub mod pallet {
             Self::deposit_event(Event::ValidatorSlashed {
                 validator_id,
                 amount,
+            });
+            Ok(())
+        }
+
+        /// Expire a stale pending inference request and release escrow back to the user.
+        #[pallet::call_index(13)]
+        #[pallet::weight(T::WeightInfo::expire_inference())]
+        #[frame_support::transactional]
+        pub fn expire_inference(origin: OriginFor<T>, request_id: RequestId) -> DispatchResult {
+            let _keeper = ensure_signed(origin)?;
+            let (user, payment, miner_id, validator_id) =
+                InferenceRequests::<T>::try_mutate(
+                    request_id,
+                    |maybe_request| -> Result<
+                        (T::AccountId, BalanceOf<T>, MinerId, ValidatorId),
+                        DispatchError,
+                    > {
+                        let request = maybe_request.as_mut().ok_or(Error::<T>::UnknownRequest)?;
+                        ensure!(
+                            request.status == InferenceRequestStatus::Pending,
+                            Error::<T>::RequestAlreadySettled
+                        );
+                        let cancel_available_at = request
+                            .created_at
+                            .checked_add(T::RequestCancelDelayBlocks::get())
+                            .ok_or(Error::<T>::ArithmeticOverflow)?;
+                        ensure!(
+                            Self::current_block() >= cancel_available_at,
+                            Error::<T>::RequestCancelUnavailable
+                        );
+                        T::Currency::release(
+                            &HoldReason::InferencePayment.into(),
+                            &request.user,
+                            request.payment,
+                            Precision::Exact,
+                        )?;
+                        request.status = InferenceRequestStatus::Cancelled;
+                        Ok((
+                            request.user.clone(),
+                            request.payment,
+                            request.miner_id,
+                            request.validator_id,
+                        ))
+                    },
+                )?;
+            Self::decrement_pending_assignment(miner_id, validator_id)?;
+            Self::transition_request_status(
+                InferenceRequestStatus::Pending,
+                InferenceRequestStatus::Cancelled,
+            )?;
+            Self::record_inference_refund(payment);
+
+            Self::deposit_event(Event::InferenceExpired {
+                request_id,
+                user,
+                payment,
             });
             Ok(())
         }

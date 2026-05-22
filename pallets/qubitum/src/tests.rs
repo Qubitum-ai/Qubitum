@@ -985,6 +985,41 @@ fn cancel_inference_releases_pending_escrow() {
 }
 
 #[test]
+fn expire_inference_releases_stale_request_for_any_signed_caller() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(10);
+
+        assert_noop!(
+            Qubitum::expire_inference(RuntimeOrigin::signed(5), 10),
+            Error::<Test>::RequestCancelUnavailable
+        );
+
+        System::set_block_number(10);
+        assert_ok!(Qubitum::expire_inference(RuntimeOrigin::signed(5), 10));
+
+        let request = InferenceRequests::<Test>::get(10).unwrap();
+        assert_eq!(request.status, InferenceRequestStatus::Cancelled);
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            0
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 1_000);
+        assert_eq!(
+            Qubitum::request_status_counts(),
+            ChainRequestStatusCounts {
+                pending: 0,
+                settled: 0,
+                cancelled: 1,
+                rejected: 0,
+            }
+        );
+    });
+}
+
+#[test]
 fn cancel_inference_rejects_non_owner_or_settled_request() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();

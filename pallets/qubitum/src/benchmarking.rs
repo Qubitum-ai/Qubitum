@@ -441,5 +441,31 @@ mod benchmarks {
         );
     }
 
+    #[benchmark]
+    fn expire_inference() {
+        let _miner = activate_bench_miner::<T>();
+        let _validator = register_bench_validator::<T>();
+        let user = request_bench_inference::<T>(42);
+        let keeper: T::AccountId = account("keeper", 0, SEED);
+        frame_system::Pallet::<T>::set_block_number(
+            T::RequestCancelDelayBlocks::get().saturated_into(),
+        );
+
+        #[extrinsic_call]
+        _(RawOrigin::Signed(keeper), 42);
+
+        let request = InferenceRequests::<T>::get(42).unwrap();
+        assert_eq!(request.user, user.clone());
+        assert_eq!(request.status, InferenceRequestStatus::Cancelled);
+        assert_last_event::<T>(
+            Event::<T>::InferenceExpired {
+                request_id: 42,
+                user,
+                payment: T::MinMinerBond::get(),
+            }
+            .into(),
+        );
+    }
+
     impl_benchmark_test_suite!(Pallet, crate::mock::new_test_ext(), crate::mock::Test);
 }
