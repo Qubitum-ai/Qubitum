@@ -752,12 +752,12 @@ pub mod pallet {
                 return T::DbWeight::get().reads(1);
             }
 
-            let weight = Self::rebuild_active_routing_indexes()
+            let weight = Self::migrate_operator_commitments(on_chain)
+                .saturating_add(Self::rebuild_active_routing_indexes())
                 .saturating_add(Self::rebuild_pending_assignment_counters())
                 .saturating_add(Self::rebuild_inference_accounting())
                 .saturating_add(Self::rebuild_request_status_counts())
-                .saturating_add(Self::migrate_proof_record_timestamps(on_chain))
-                .saturating_add(Self::migrate_operator_commitments(on_chain));
+                .saturating_add(Self::migrate_proof_record_timestamps(on_chain));
             STORAGE_VERSION.put::<Pallet<T>>();
             weight.saturating_add(T::DbWeight::get().reads_writes(1, 1))
         }

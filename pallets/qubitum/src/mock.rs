@@ -61,7 +61,7 @@ parameter_types! {
     pub const MaxVerificationLatencyMs: u32 = qubitum_protocol::TARGET_VERIFICATION_MS;
     pub const MaxProofSubmissionAgeBlocks: u64 = 10;
     pub const SignatureMode: qubitum_protocol::SignatureMode =
-        qubitum_protocol::SignatureMode::ClassicalEcdsa;
+        qubitum_protocol::SignatureMode::FullPostQuantum;
     pub const ProtocolTreasury: AccountId = 99;
     pub const MinerExitCooldownBlocks: u64 = 20;
     pub const ValidatorExitCooldownBlocks: u64 = 20;

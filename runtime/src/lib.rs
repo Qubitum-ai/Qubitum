@@ -272,7 +272,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     //   `spec_version`, and `authoring_version` are the same between Wasm and native.
     // This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
     //   the compatible custom types.
-    spec_version: 434,
+    spec_version: 435,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 3,
@@ -545,7 +545,7 @@ parameter_types! {
     pub const QubitumMaxVerificationLatencyMs: u32 = qubitum_protocol::TARGET_VERIFICATION_MS;
     pub const QubitumMaxProofSubmissionAgeBlocks: u64 = 50;
     pub const QubitumSignatureMode: qubitum_protocol::SignatureMode =
-        qubitum_protocol::SignatureMode::ClassicalEcdsa;
+        qubitum_protocol::SignatureMode::FullPostQuantum;
     pub const QubitumMinerExitCooldownBlocks: u64 = prod_or_fast!(7 * 24 * 60 * 60 / 12, 50);
     pub const QubitumValidatorExitCooldownBlocks: u64 = prod_or_fast!(7 * 24 * 60 * 60 / 12, 50);
     pub const QubitumRequestCancelDelayBlocks: u64 = 50;

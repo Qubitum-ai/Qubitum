@@ -263,7 +263,7 @@ fn protocol_params_expose_runtime_policy() {
         assert_eq!(params.max_proof_size_bytes, TARGET_PROOF_SIZE_MAX_BYTES);
         assert_eq!(params.max_verification_latency_ms, TARGET_VERIFICATION_MS);
         assert_eq!(params.max_proof_submission_age_blocks, 10);
-        assert_eq!(params.signature_mode, SignatureMode::ClassicalEcdsa);
+        assert_eq!(params.signature_mode, SignatureMode::FullPostQuantum);
         assert_eq!(params.miner_exit_cooldown_blocks, 20);
         assert_eq!(params.validator_exit_cooldown_blocks, 20);
         assert_eq!(params.request_cancel_delay_blocks, 10);
@@ -555,7 +555,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
                 0,
                 Some(commitment(20)),
                 Some(commitment(21)),
-                post_quantum_signature_bundle(),
+                classical_signature_bundle(),
             ),
             Error::<Test>::InvalidSignatureBundle
         );
@@ -575,14 +575,14 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
             0,
             Some(commitment(20)),
             Some(commitment(21)),
-            classical_signature_bundle(),
+            post_quantum_signature_bundle(),
         ));
         assert_ok!(Qubitum::set_validator_identity_commitments(
             RuntimeOrigin::signed(3),
             0,
             Some(commitment(22)),
             Some(commitment(23)),
-            classical_signature_bundle(),
+            post_quantum_signature_bundle(),
         ));
 
         let miner_commitments = MinerIdentityCommitments::<Test>::get(0).unwrap();
@@ -593,7 +593,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         assert_eq!(miner_commitments.endpoint_commitment, Some(commitment(21)));
         assert_eq!(
             MinerIdentitySignatureBundles::<Test>::get(0),
-            Some(classical_signature_bundle())
+            Some(post_quantum_signature_bundle())
         );
         let validator_commitments = ValidatorIdentityCommitments::<Test>::get(0).unwrap();
         assert_eq!(
@@ -606,7 +606,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         );
         assert_eq!(
             ValidatorIdentitySignatureBundles::<Test>::get(0),
-            Some(classical_signature_bundle())
+            Some(post_quantum_signature_bundle())
         );
 
         for encoded in [
@@ -654,14 +654,14 @@ fn failed_identity_commitment_updates_do_not_clobber_existing_state() {
             0,
             Some(commitment(20)),
             Some(commitment(21)),
-            classical_signature_bundle(),
+            post_quantum_signature_bundle(),
         ));
         assert_ok!(Qubitum::set_validator_identity_commitments(
             RuntimeOrigin::signed(3),
             0,
             Some(commitment(22)),
             Some(commitment(23)),
-            classical_signature_bundle(),
+            post_quantum_signature_bundle(),
         ));
 
         let miner_commitments = MinerIdentityCommitments::<Test>::get(0);
@@ -685,7 +685,7 @@ fn failed_identity_commitment_updates_do_not_clobber_existing_state() {
                 0,
                 Some(commitment(24)),
                 Some(commitment(25)),
-                post_quantum_signature_bundle(),
+                classical_signature_bundle(),
             ),
             Error::<Test>::InvalidSignatureBundle
         );
