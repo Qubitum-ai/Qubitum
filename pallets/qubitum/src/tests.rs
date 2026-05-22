@@ -1,9 +1,9 @@
 #![allow(clippy::arithmetic_side_effects, clippy::unwrap_used)]
 
 use crate::{
-    ActiveMinersBySubnet, ActiveValidatorsBySubnet, Error, HoldReason, InferenceRequestParams,
-    InferenceRequestStatus, InferenceRequests, MinerCount, Miners, ProofRecords, SubnetCount,
-    Subnets, TotalBurned, ValidatorCount, Validators,
+    ActiveMinersBySubnet, ActiveValidatorsBySubnet, ChainInferenceRequest, Error, HoldReason,
+    InferenceRequestParams, InferenceRequestStatus, InferenceRequests, MinerCount, Miners,
+    ProofRecords, SubnetCount, Subnets, TotalBurned, ValidatorCount, Validators,
     mock::{
         Balances, Qubitum, RuntimeOrigin, System, Test, new_test_ext, set_verification_outcome,
     },
@@ -539,6 +539,51 @@ fn route_assignment_removes_slashed_participants() {
 }
 
 #[test]
+fn route_assignment_rejects_self_validation_operator() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::Code,
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(10),
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(2),
+            0,
+            MIN_MINER_BOND
+        ));
+
+        assert_eq!(Qubitum::route_assignment(0, 42), None);
+        assert_noop!(
+            Qubitum::request_inference(
+                RuntimeOrigin::signed(4),
+                42,
+                InferenceRequestParams {
+                    subnet_id: 0,
+                    miner_id: 0,
+                    validator_id: 0,
+                    input_commitment: commitment(1),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::NoRouteAvailable
+        );
+    });
+}
+
+#[test]
 fn active_miner_index_stays_sorted_by_id() {
     new_test_ext().execute_with(|| {
         assert_ok!(Qubitum::create_subnet(
@@ -571,6 +616,54 @@ fn active_miner_index_stays_sorted_by_id() {
         ));
 
         assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0, 1]);
+    });
+}
+
+#[test]
+fn submit_proof_rejects_self_validation_assignment() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::Code,
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(10),
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(2),
+            0,
+            MIN_MINER_BOND
+        ));
+        InferenceRequests::<Test>::insert(
+            88,
+            ChainInferenceRequest {
+                request_id: 88,
+                user: 4,
+                subnet_id: 0,
+                miner_id: 0,
+                validator_id: 0,
+                input_commitment: commitment(1),
+                payment: 1_000,
+                validator_fee_bps: 250,
+                treasury_fee_bps: 50,
+                created_at: 0,
+                status: InferenceRequestStatus::Pending,
+            },
+        );
+
+        assert_noop!(
+            Qubitum::submit_proof(RuntimeOrigin::signed(2), valid_submission(88)),
+            Error::<Test>::SelfValidation
+        );
     });
 }
 

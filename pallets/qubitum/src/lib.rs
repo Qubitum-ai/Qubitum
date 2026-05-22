@@ -592,6 +592,8 @@ pub mod pallet {
         RequestMismatch,
         /// Assigned miner or validator does not belong to the request subnet.
         ParticipantMismatch,
+        /// Miner and validator cannot be controlled by the same operator.
+        SelfValidation,
         /// No active miner and validator route is available for the subnet.
         NoRouteAvailable,
         /// Submitted assignment does not match the deterministic route.
@@ -1138,6 +1140,9 @@ pub mod pallet {
             let miner_id = Self::route_active_miner(subnet_id, request_id)?;
             let validator_seed = request_id.rotate_left(32) ^ u64::from(subnet_id);
             let validator_id = Self::route_active_validator(subnet_id, validator_seed)?;
+            let miner = Miners::<T>::get(miner_id)?;
+            let validator = Validators::<T>::get(validator_id)?;
+            Self::ensure_distinct_operators(&miner, &validator).ok()?;
 
             Some(ChainAssignment {
                 request_id,
@@ -1388,6 +1393,18 @@ pub mod pallet {
                     && validator.status == RegistryStatus::Active,
                 Error::<T>::NotActive
             );
+            Self::ensure_distinct_operators(&miner, &validator)?;
+            Ok(())
+        }
+
+        fn ensure_distinct_operators(
+            miner: &ChainMiner<T::AccountId, BalanceOf<T>>,
+            validator: &ChainValidator<T::AccountId, BalanceOf<T>>,
+        ) -> DispatchResult {
+            ensure!(
+                miner.operator != validator.operator,
+                Error::<T>::SelfValidation
+            );
             Ok(())
         }
 
@@ -1453,6 +1470,7 @@ pub mod pallet {
                 validator.operator == *validator_operator,
                 Error::<T>::NotValidatorOperator
             );
+            Self::ensure_distinct_operators(&miner, &validator)?;
 
             Ok(ProofVerificationPolicy {
                 proof_system: subnet.proof_system,
