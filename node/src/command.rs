@@ -20,7 +20,7 @@ use sc_service::{
 
 impl SubstrateCli for Cli {
     fn impl_name() -> String {
-        "Subtensor Node".into()
+        "Qubitum Node".into()
     }
 
     fn impl_version() -> String {
@@ -36,7 +36,7 @@ impl SubstrateCli for Cli {
     }
 
     fn support_url() -> String {
-        "support.anonymous.an".into()
+        "https://github.com/Qubitum-ai/Qubitum".into()
     }
 
     fn copyright_start_year() -> i32 {
@@ -45,11 +45,13 @@ impl SubstrateCli for Cli {
 
     fn load_spec(&self, id: &str) -> Result<Box<dyn sc_service::ChainSpec>, String> {
         Ok(match id {
-            "dev" => Box::new(chain_spec::localnet::localnet_config(true)?),
-            "local" => Box::new(chain_spec::localnet::localnet_config(false)?),
+            "" | "dev" | "qubitum" | "qubitum-dev" => {
+                Box::new(chain_spec::localnet::localnet_config(true)?)
+            }
+            "local" | "qubitum-local" => Box::new(chain_spec::localnet::localnet_config(false)?),
             "finney" => Box::new(chain_spec::finney::finney_mainnet_config()?),
-            "devnet" => Box::new(chain_spec::devnet::devnet_config()?),
-            "" | "test_finney" => Box::new(chain_spec::testnet::finney_testnet_config()?),
+            "devnet" | "qubitum-devnet" => Box::new(chain_spec::devnet::devnet_config()?),
+            "test_finney" => Box::new(chain_spec::testnet::finney_testnet_config()?),
             path => Box::new(chain_spec::ChainSpec::from_json_file(
                 std::path::PathBuf::from(path),
             )?),

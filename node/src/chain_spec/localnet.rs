@@ -8,7 +8,7 @@ pub fn localnet_config(single_authority: bool) -> Result<ChainSpec, String> {
 
     // Give front-ends necessary data to present to users
     let mut properties = sc_service::Properties::new();
-    properties.insert("tokenSymbol".into(), "TAO".into());
+    properties.insert("tokenSymbol".into(), "QBT".into());
     properties.insert("tokenDecimals".into(), 9.into());
     properties.insert("ss58Format".into(), 42.into());
 
@@ -25,9 +25,9 @@ pub fn localnet_config(single_authority: bool) -> Result<ChainSpec, String> {
             ..Default::default()
         },
     )
-    .with_name("Bittensor")
-    .with_protocol_id("bittensor")
-    .with_id("bittensor")
+    .with_name("Qubitum Local")
+    .with_protocol_id("qubitum-local")
+    .with_id("qubitum-local")
     .with_chain_type(ChainType::Local)
     .with_genesis_config_patch(localnet_genesis(
         // Initial PoA authorities (Validators)
@@ -103,16 +103,18 @@ fn localnet_genesis(
         ),
     ];
 
-    // Check if the environment variable is set
-    if let Ok(bt_wallet) = env::var("BT_DEFAULT_TOKEN_WALLET") {
-        if let Ok(decoded_wallet) = Ss58Codec::from_ss58check(&bt_wallet) {
+    let default_token_wallet =
+        env::var("QBT_DEFAULT_TOKEN_WALLET").or_else(|_| env::var("BT_DEFAULT_TOKEN_WALLET"));
+
+    if let Ok(wallet) = default_token_wallet {
+        if let Ok(decoded_wallet) = Ss58Codec::from_ss58check(&wallet) {
             if let Some(existing) = balances.iter_mut().find(|(acc, _)| acc == &decoded_wallet) {
                 existing.1 = 1_000_000_000_000_000u128;
             } else {
                 balances.push((decoded_wallet, 1_000_000_000_000_000u128));
             }
         } else {
-            eprintln!("Invalid format for BT_DEFAULT_TOKEN_WALLET.");
+            eprintln!("Invalid format for QBT_DEFAULT_TOKEN_WALLET or BT_DEFAULT_TOKEN_WALLET.");
         }
     }
 

@@ -19,6 +19,12 @@ cargo run -p qubitum-protocol --example single_subnet
 
 The example creates a QBT genesis ledger, burns QBT to create a subnet, registers and bonds a miner, registers and stakes a validator, verifies a proof through the mock verifier, records the inference, and settles user payment between miner, validator, and treasury.
 
+## Node Chain Identity
+
+The development and local chains now identify as Qubitum networks and expose QBT token metadata through the chain spec. A plain node start, `--chain dev`, `--chain qubitum`, and `--chain qubitum-dev` all resolve to the single-authority Qubitum local chain; `--chain qubitum-local` resolves to the multi-authority local chain; and `--chain qubitum-devnet` resolves to the checked-in devnet configuration.
+
+Finney and test-Finney remain explicit legacy imports because those specs are backed by OpenTensor snapshots and bootnodes.
+
 ## Runtime Wire Format
 
 The core protocol structs and enums derive SCALE `Encode`/`Decode` plus `scale-info` metadata. That keeps the primitives usable for Substrate storage, extrinsics, runtime APIs, RPC metadata, and future migration tooling instead of being test-only Rust structs.

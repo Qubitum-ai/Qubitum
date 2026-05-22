@@ -9,9 +9,18 @@ Current Qubitum implementation entry points:
 - Qubitum runtime API: [`pallets/qubitum/runtime-api`](./pallets/qubitum/runtime-api)
 - Qubitum JSON-RPC API: [`pallets/qubitum/rpc`](./pallets/qubitum/rpc)
 - Runtime integration: `Qubitum: pallet_qubitum` in [`runtime/src/lib.rs`](./runtime/src/lib.rs)
+- Development chain identity: `Qubitum Local` / `Qubitum Devnet` with QBT metadata
 - Protocol notes: [`docs/qubitum-protocol.md`](./docs/qubitum-protocol.md)
 - Single-subnet flow: `cargo run -p qubitum-protocol --example single_subnet`
 - Focused verification: `cargo test -p qubitum-protocol && cargo test -p pallet-qubitum --features runtime-benchmarks`
+
+Quick local node start:
+
+```sh
+cargo run --release -- --chain qubitum-dev
+```
+
+Legacy Finney imports remain available through explicit `--chain finney` and `--chain test_finney`.
 
 ---
 

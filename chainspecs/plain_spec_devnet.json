@@ -1,14 +1,14 @@
 {
-  "name": "Bittensor",
-  "id": "bittensor",
+  "name": "Qubitum Devnet",
+  "id": "qubitum-devnet",
   "chainType": "Development",
   "bootNodes": [],
   "telemetryEndpoints": null,
-  "protocolId": "bittensor",
+  "protocolId": "qubitum-devnet",
   "properties": {
     "ss58Format": 42,
     "tokenDecimals": 9,
-    "tokenSymbol": "testTAO"
+    "tokenSymbol": "QBT"
   },
   "forkBlocks": null,
   "badBlocks": [],

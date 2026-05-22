@@ -8,7 +8,7 @@ pub fn devnet_config() -> Result<ChainSpec, String> {
 
     // Give front-ends necessary data to present to users
     let mut properties = sc_service::Properties::new();
-    properties.insert("tokenSymbol".into(), "testTAO".into());
+    properties.insert("tokenSymbol".into(), "QBT".into());
     properties.insert("tokenDecimals".into(), 9.into());
     properties.insert("ss58Format".into(), 42.into());
 
@@ -19,9 +19,9 @@ pub fn devnet_config() -> Result<ChainSpec, String> {
             ..Default::default()
         },
     )
-    .with_name("Bittensor")
-    .with_protocol_id("bittensor")
-    .with_id("bittensor")
+    .with_name("Qubitum Devnet")
+    .with_protocol_id("qubitum-devnet")
+    .with_id("qubitum-devnet")
     .with_chain_type(ChainType::Development)
     .with_genesis_config_patch(devnet_genesis(
         // Initial PoA authorities (Validators)
