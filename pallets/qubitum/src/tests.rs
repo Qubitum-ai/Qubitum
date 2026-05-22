@@ -1032,7 +1032,7 @@ fn submit_proof_rejects_unassigned_participants() {
 }
 
 #[test]
-fn verifier_rejection_slashes_miner_without_recording_proof() {
+fn verifier_rejection_slashes_and_refunds_request() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         request_inference(48);
@@ -1046,8 +1046,14 @@ fn verifier_rejection_slashes_miner_without_recording_proof() {
         assert!(ProofRecords::<Test>::get(48).is_none());
         assert_eq!(
             InferenceRequests::<Test>::get(48).unwrap().status,
-            InferenceRequestStatus::Pending
+            InferenceRequestStatus::Rejected
         );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            0
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
         let miner = Miners::<Test>::get(0).unwrap();
         assert_eq!(miner.bond, 90_000_000_000);
         assert_eq!(miner.status, RegistryStatus::Slashed);

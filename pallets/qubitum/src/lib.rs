@@ -253,6 +253,7 @@ pub mod pallet {
         Pending,
         Settled,
         Cancelled,
+        Rejected,
     }
 
     #[derive(
@@ -536,6 +537,12 @@ pub mod pallet {
             user: T::AccountId,
             payment: BalanceOf<T>,
         },
+        /// Rejected proof released escrow back to the user.
+        InferenceRefunded {
+            request_id: RequestId,
+            user: T::AccountId,
+            payment: BalanceOf<T>,
+        },
         /// A proof was rejected by the verifier and the miner was slashed.
         ProofRejected {
             request_id: RequestId,
@@ -792,6 +799,7 @@ pub mod pallet {
                     let amount = Self::slash_miner_bond(submission.miner_id, slash_bps)?;
                     let validator_amount =
                         Self::slash_validator_stake(submission.validator_id, slash_bps)?;
+                    let (user, payment) = Self::refund_rejected_request(&submission)?;
                     Self::deposit_event(Event::ProofRejected {
                         request_id: submission.request_id,
                         miner_id: submission.miner_id,
@@ -801,6 +809,11 @@ pub mod pallet {
                     Self::deposit_event(Event::ValidatorSlashed {
                         validator_id: submission.validator_id,
                         amount: validator_amount,
+                    });
+                    Self::deposit_event(Event::InferenceRefunded {
+                        request_id: submission.request_id,
+                        user,
+                        payment,
                     });
                     return Ok(());
                 }
@@ -1711,6 +1724,39 @@ pub mod pallet {
                     Self::decrement_pending_assignment(request.miner_id, request.validator_id)?;
 
                     Ok((miner_payment, validator_fee, treasury_fee))
+                },
+            )
+        }
+
+        fn refund_rejected_request(
+            submission: &InferenceProofSubmission,
+        ) -> Result<(T::AccountId, BalanceOf<T>), DispatchError> {
+            InferenceRequests::<T>::try_mutate(
+                submission.request_id,
+                |maybe_request| -> Result<(T::AccountId, BalanceOf<T>), DispatchError> {
+                    let request = maybe_request.as_mut().ok_or(Error::<T>::UnknownRequest)?;
+                    ensure!(
+                        request.status == InferenceRequestStatus::Pending,
+                        Error::<T>::RequestAlreadySettled
+                    );
+                    ensure!(
+                        request.subnet_id == submission.subnet_id
+                            && request.miner_id == submission.miner_id
+                            && request.validator_id == submission.validator_id
+                            && request.input_commitment == submission.input_commitment,
+                        Error::<T>::RequestMismatch
+                    );
+
+                    T::Currency::release(
+                        &HoldReason::InferencePayment.into(),
+                        &request.user,
+                        request.payment,
+                        Precision::Exact,
+                    )?;
+                    request.status = InferenceRequestStatus::Rejected;
+                    Self::decrement_pending_assignment(request.miner_id, request.validator_id)?;
+
+                    Ok((request.user.clone(), request.payment))
                 },
             )
         }
