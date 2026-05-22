@@ -315,6 +315,43 @@ pub mod pallet {
         Debug,
         MaxEncodedLen,
     )]
+    pub struct ChainPublicMiner {
+        pub id: MinerId,
+        pub subnet_id: SubnetId,
+        pub proof_system: ProofSystem,
+        pub status: RegistryStatus,
+    }
+
+    #[derive(
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        TypeInfo,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Debug,
+        MaxEncodedLen,
+    )]
+    pub struct ChainPublicValidator {
+        pub id: ValidatorId,
+        pub subnet_id: SubnetId,
+        pub status: RegistryStatus,
+    }
+
+    #[derive(
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        TypeInfo,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Debug,
+        MaxEncodedLen,
+    )]
     pub struct ChainIdentityCommitments {
         pub shielded_identity_commitment: Option<Commitment>,
         pub endpoint_commitment: Option<Commitment>,
@@ -1592,6 +1629,23 @@ pub mod pallet {
 
         pub fn next_route_availability(subnet_id: SubnetId) -> ChainRouteAvailability {
             Self::route_availability(subnet_id, RequestCount::<T>::get())
+        }
+
+        pub fn public_miner(miner_id: MinerId) -> Option<ChainPublicMiner> {
+            Miners::<T>::get(miner_id).map(|miner| ChainPublicMiner {
+                id: miner.id,
+                subnet_id: miner.subnet_id,
+                proof_system: miner.proof_system,
+                status: miner.status,
+            })
+        }
+
+        pub fn public_validator(validator_id: ValidatorId) -> Option<ChainPublicValidator> {
+            Validators::<T>::get(validator_id).map(|validator| ChainPublicValidator {
+                id: validator.id,
+                subnet_id: validator.subnet_id,
+                status: validator.status,
+            })
         }
 
         pub fn public_inference_request(

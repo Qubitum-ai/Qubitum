@@ -1,9 +1,9 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use pallet_qubitum::{
-    ChainAccounting, ChainIdentityCommitments, ChainMiner, ChainProtocolParams,
-    ChainPublicInferenceRequest, ChainPublicProofRecord, ChainRequestStatusCounts,
-    ChainRouteAvailability, ChainSubnet, ChainValidator,
+    ChainAccounting, ChainIdentityCommitments, ChainProtocolParams, ChainPublicInferenceRequest,
+    ChainPublicMiner, ChainPublicProofRecord, ChainPublicValidator, ChainRequestStatusCounts,
+    ChainRouteAvailability, ChainSubnet,
 };
 use qubitum_protocol::{MinerId, RequestId, SignatureBundle, SubnetId, ValidatorId};
 use sp_runtime::AccountId32;
@@ -12,8 +12,8 @@ use subtensor_runtime_common::TaoBalance;
 sp_api::decl_runtime_apis! {
     pub trait QubitumRuntimeApi {
         fn qubitum_subnet(subnet_id: SubnetId) -> Option<ChainSubnet<AccountId32, TaoBalance>>;
-        fn qubitum_miner(miner_id: MinerId) -> Option<ChainMiner<AccountId32, TaoBalance>>;
-        fn qubitum_validator(validator_id: ValidatorId) -> Option<ChainValidator<AccountId32, TaoBalance>>;
+        fn qubitum_miner(miner_id: MinerId) -> Option<ChainPublicMiner>;
+        fn qubitum_validator(validator_id: ValidatorId) -> Option<ChainPublicValidator>;
         fn qubitum_miner_identity_commitments(miner_id: MinerId) -> Option<ChainIdentityCommitments>;
         fn qubitum_miner_identity_signature_bundle(miner_id: MinerId) -> Option<SignatureBundle>;
         fn qubitum_validator_identity_commitments(validator_id: ValidatorId) -> Option<ChainIdentityCommitments>;

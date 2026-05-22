@@ -3,13 +3,13 @@
 use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, AutoRouteInferenceRequestParams,
     CancelledInferenceRequestCount, ChainInferenceRequest, ChainPublicInferenceRequest,
-    ChainPublicProofRecord, ChainRequestStatusCounts, ChainRouteAvailability, Error, HoldReason,
-    InferenceRequestParams, InferenceRequestStatus, InferenceRequests, MinerCount,
-    MinerIdentityCommitments, MinerIdentitySignatureBundles, Miners, PendingInferenceRequestCount,
-    PendingMinerRequests, PendingValidatorRequests, ProofRecords, RejectedInferenceRequestCount,
-    RequestCount, SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned,
-    TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees,
-    TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
+    ChainPublicMiner, ChainPublicProofRecord, ChainPublicValidator, ChainRequestStatusCounts,
+    ChainRouteAvailability, Error, HoldReason, InferenceRequestParams, InferenceRequestStatus,
+    InferenceRequests, MinerCount, MinerIdentityCommitments, MinerIdentitySignatureBundles, Miners,
+    PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests, ProofRecords,
+    RejectedInferenceRequestCount, RequestCount, SettledInferenceRequestCount, SubnetCount,
+    Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
+    TotalTreasuryFees, TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
     ValidatorIdentitySignatureBundles, Validators,
     mock::{
         Balances, Qubitum, RuntimeEvent, RuntimeOrigin, System, Test, new_test_ext,
@@ -869,6 +869,46 @@ fn public_request_and_proof_views_redact_private_route_payment_and_timing() {
             proof(11).encode(),
         ] {
             assert!(!contains_subsequence(&encoded_proof, &hidden));
+        }
+    });
+}
+
+#[test]
+fn public_registry_views_redact_operator_capital_and_model_commitments() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+
+        let public_miner = Qubitum::public_miner(0).unwrap();
+        assert_eq!(
+            public_miner,
+            ChainPublicMiner {
+                id: 0,
+                subnet_id: 0,
+                proof_system: ProofSystem::RiscZeroStark,
+                status: RegistryStatus::Active,
+            }
+        );
+        let encoded_miner = public_miner.encode();
+        for hidden in [
+            2_u64.encode(),
+            MIN_MINER_BOND.encode(),
+            commitment(10).encode(),
+        ] {
+            assert!(!contains_subsequence(&encoded_miner, &hidden));
+        }
+
+        let public_validator = Qubitum::public_validator(0).unwrap();
+        assert_eq!(
+            public_validator,
+            ChainPublicValidator {
+                id: 0,
+                subnet_id: 0,
+                status: RegistryStatus::Active,
+            }
+        );
+        let encoded_validator = public_validator.encode();
+        for hidden in [3_u64.encode(), MIN_MINER_BOND.encode()] {
+            assert!(!contains_subsequence(&encoded_validator, &hidden));
         }
     });
 }
