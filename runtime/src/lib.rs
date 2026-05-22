@@ -478,6 +478,7 @@ impl Contains<RuntimeCall> for SafeModeWhitelistedCalls {
                         | pallet_subtensor::Call::serve_axon { .. }
                 )
                 | RuntimeCall::Commitments(pallet_commitments::Call::set_commitment { .. })
+                | RuntimeCall::Qubitum(pallet_qubitum::Call::submit_proof { .. })
         )
     }
 }

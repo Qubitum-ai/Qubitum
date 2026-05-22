@@ -33,6 +33,8 @@ Proof submission is constrained to the registered validator operator for the sub
 
 `pallet-qubitum-runtime-api` exposes typed runtime queries for subnet, miner, validator, proof-record, registry-count, and total-burned state. `pallet-qubitum-rpc` wires those queries into node JSON-RPC methods under the `qubitum_*` namespace, returning SCALE-encoded bytes for complex structs and a direct balance for total burned state.
 
+Runtime safe mode explicitly allows Qubitum `submit_proof` so already-routed verified work can keep settling, while blocking Qubitum subnet creation and participant registration until safe mode exits.
+
 Current focused checks:
 
 ```sh
@@ -44,6 +46,7 @@ cargo check -p node-subtensor-runtime --features runtime-benchmarks
 cargo clippy -p pallet-qubitum-runtime-api -- -D warnings
 cargo clippy -p pallet-qubitum-rpc -- -D warnings
 cargo check -p node-subtensor
+cargo test -p node-subtensor-runtime --test safe_mode
 ```
 
 ## Core Constants

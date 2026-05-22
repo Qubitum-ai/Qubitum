@@ -1,0 +1,45 @@
+use frame_support::traits::Contains;
+use node_subtensor_runtime::{RuntimeCall, SafeModeWhitelistedCalls};
+use qubitum_protocol::{
+    InferenceProofSubmission, ProofSystem, SubnetDomain, TARGET_PROOF_SIZE_MIN_BYTES,
+};
+
+fn commitment(seed: u8) -> [u8; 32] {
+    [seed; 32]
+}
+
+fn valid_submission() -> InferenceProofSubmission {
+    InferenceProofSubmission {
+        request_id: 1,
+        subnet_id: 0,
+        miner_id: 0,
+        validator_id: 0,
+        input_commitment: commitment(1),
+        output_commitment: commitment(2),
+        model_commitment: commitment(3),
+        proof_commitment: commitment(4),
+        proof_system: ProofSystem::RiscZeroStark,
+        proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
+        verification_latency_ms: 10,
+        submitted_at: 1,
+    }
+}
+
+#[test]
+fn qubitum_submit_proof_is_allowed_in_safe_mode() {
+    let call = RuntimeCall::Qubitum(pallet_qubitum::Call::submit_proof {
+        submission: valid_submission(),
+    });
+
+    assert!(SafeModeWhitelistedCalls::contains(&call));
+}
+
+#[test]
+fn qubitum_registration_is_blocked_in_safe_mode() {
+    let call = RuntimeCall::Qubitum(pallet_qubitum::Call::create_subnet {
+        domain: SubnetDomain::Code,
+        proof_system: ProofSystem::RiscZeroStark,
+    });
+
+    assert!(!SafeModeWhitelistedCalls::contains(&call));
+}
