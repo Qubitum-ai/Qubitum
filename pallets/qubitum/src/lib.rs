@@ -141,7 +141,7 @@ pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
 
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(12);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(13);
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -530,6 +530,20 @@ pub mod pallet {
         pub payment: Balance,
         pub validator_fee_bps: u16,
         pub treasury_fee_bps: u16,
+        pub timing_commitment: Commitment,
+        pub status: InferenceRequestStatus,
+    }
+
+    #[derive(Decode)]
+    struct ChainInferenceRequestV12<Balance> {
+        pub request_id: RequestId,
+        pub user_commitment: Commitment,
+        pub subnet_id: SubnetId,
+        pub assignment_commitment: Commitment,
+        pub input_commitment: Commitment,
+        pub payment: Balance,
+        pub validator_fee_bps: u16,
+        pub treasury_fee_bps: u16,
         pub created_at: BlockNumber,
         pub status: InferenceRequestStatus,
     }
@@ -815,6 +829,7 @@ pub mod pallet {
                 .saturating_add(Self::migrate_participant_capital_commitments(on_chain))
                 .saturating_add(Self::migrate_request_assignment_commitments(on_chain))
                 .saturating_add(Self::migrate_request_owner_commitments(on_chain))
+                .saturating_add(Self::migrate_request_timing_commitments(on_chain))
                 .saturating_add(Self::rebuild_active_routing_indexes())
                 .saturating_add(Self::rebuild_inference_accounting())
                 .saturating_add(Self::rebuild_request_status_counts())
@@ -1338,6 +1353,7 @@ pub mod pallet {
             request_id: RequestId,
             miner_id: MinerId,
             validator_id: ValidatorId,
+            created_at: BlockNumber,
         ) -> DispatchResult {
             let user = ensure_signed(origin)?;
             let payment = InferenceRequests::<T>::try_mutate(
@@ -1346,12 +1362,12 @@ pub mod pallet {
                     let request = maybe_request.as_mut().ok_or(Error::<T>::UnknownRequest)?;
                     Self::ensure_request_user(request, &user)?;
                     Self::ensure_request_assignment_witness(request, miner_id, validator_id)?;
+                    Self::ensure_request_timing_witness(request, created_at)?;
                     ensure!(
                         request.status == InferenceRequestStatus::Pending,
                         Error::<T>::RequestAlreadySettled
                     );
-                    let cancel_available_at = request
-                        .created_at
+                    let cancel_available_at = created_at
                         .checked_add(T::RequestCancelDelayBlocks::get())
                         .ok_or(Error::<T>::ArithmeticOverflow)?;
                     ensure!(
@@ -1558,6 +1574,7 @@ pub mod pallet {
             request_user: T::AccountId,
             miner_id: MinerId,
             validator_id: ValidatorId,
+            created_at: BlockNumber,
         ) -> DispatchResult {
             let _keeper = ensure_signed(origin)?;
             let payment = InferenceRequests::<T>::try_mutate(
@@ -1566,12 +1583,12 @@ pub mod pallet {
                     let request = maybe_request.as_mut().ok_or(Error::<T>::UnknownRequest)?;
                     Self::ensure_request_user(request, &request_user)?;
                     Self::ensure_request_assignment_witness(request, miner_id, validator_id)?;
+                    Self::ensure_request_timing_witness(request, created_at)?;
                     ensure!(
                         request.status == InferenceRequestStatus::Pending,
                         Error::<T>::RequestAlreadySettled
                     );
-                    let cancel_available_at = request
-                        .created_at
+                    let cancel_available_at = created_at
                         .checked_add(T::RequestCancelDelayBlocks::get())
                         .ok_or(Error::<T>::ArithmeticOverflow)?;
                     ensure!(
@@ -1845,6 +1862,7 @@ pub mod pallet {
             Self::increment_pending_assignment(miner_id, validator_id)?;
             Self::increment_request_status_count(InferenceRequestStatus::Pending)?;
             Self::record_inference_escrow(payment);
+            let created_at = Self::current_block();
             InferenceRequests::<T>::insert(
                 request_id,
                 ChainInferenceRequest {
@@ -1861,7 +1879,7 @@ pub mod pallet {
                     payment,
                     validator_fee_bps,
                     treasury_fee_bps,
-                    created_at: Self::current_block(),
+                    timing_commitment: Self::request_timing_commitment(request_id, created_at),
                     status: InferenceRequestStatus::Pending,
                 },
             );
@@ -2063,6 +2081,13 @@ pub mod pallet {
             (request_id, subnet_id, miner_id, validator_id).using_encoded(blake2_256)
         }
 
+        pub(crate) fn request_timing_commitment(
+            request_id: RequestId,
+            created_at: BlockNumber,
+        ) -> Commitment {
+            (request_id, created_at).using_encoded(blake2_256)
+        }
+
         fn held_miner_bond(operator: &T::AccountId) -> BalanceOf<T> {
             T::Currency::balance_on_hold(&HoldReason::MinerBond.into(), operator)
         }
@@ -2126,6 +2151,18 @@ pub mod pallet {
                         validator_id,
                     ),
                 Error::<T>::AssignmentMismatch
+            );
+            Ok(())
+        }
+
+        fn ensure_request_timing_witness(
+            request: &ChainInferenceRequest<BalanceOf<T>>,
+            created_at: BlockNumber,
+        ) -> DispatchResult {
+            ensure!(
+                request.timing_commitment
+                    == Self::request_timing_commitment(request.request_id, created_at),
+                Error::<T>::RequestMismatch
             );
             Ok(())
         }
@@ -2585,7 +2622,10 @@ pub mod pallet {
                     payment: old.payment,
                     validator_fee_bps: old.validator_fee_bps,
                     treasury_fee_bps: old.treasury_fee_bps,
-                    created_at: old.created_at,
+                    timing_commitment: Self::request_timing_commitment(
+                        old.request_id,
+                        old.created_at,
+                    ),
                     status: old.status,
                 })
             });
@@ -2620,13 +2660,46 @@ pub mod pallet {
                         payment: old.payment,
                         validator_fee_bps: old.validator_fee_bps,
                         treasury_fee_bps: old.treasury_fee_bps,
-                        created_at: old.created_at,
+                        timing_commitment: Self::request_timing_commitment(
+                            old.request_id,
+                            old.created_at,
+                        ),
                         status: old.status,
                     })
                 },
             );
 
             clear_weight.saturating_add(T::DbWeight::get().reads_writes(migrated, migrated))
+        }
+
+        fn migrate_request_timing_commitments(on_chain: StorageVersion) -> Weight {
+            if on_chain < StorageVersion::new(11) || on_chain >= StorageVersion::new(13) {
+                return Weight::zero();
+            }
+
+            let mut migrated = 0_u64;
+            InferenceRequests::<T>::translate::<ChainInferenceRequestV12<BalanceOf<T>>, _>(
+                |_, old| {
+                    migrated = migrated.saturating_add(1);
+                    Some(ChainInferenceRequest {
+                        request_id: old.request_id,
+                        user_commitment: old.user_commitment,
+                        subnet_id: old.subnet_id,
+                        assignment_commitment: old.assignment_commitment,
+                        input_commitment: old.input_commitment,
+                        payment: old.payment,
+                        validator_fee_bps: old.validator_fee_bps,
+                        treasury_fee_bps: old.treasury_fee_bps,
+                        timing_commitment: Self::request_timing_commitment(
+                            old.request_id,
+                            old.created_at,
+                        ),
+                        status: old.status,
+                    })
+                },
+            );
+
+            T::DbWeight::get().reads_writes(migrated, migrated)
         }
 
         #[cfg(feature = "try-runtime")]

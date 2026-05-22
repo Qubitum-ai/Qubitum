@@ -419,7 +419,7 @@ mod benchmarks {
         );
 
         #[extrinsic_call]
-        _(RawOrigin::Signed(user.clone()), 42, 0, 0);
+        _(RawOrigin::Signed(user.clone()), 42, 0, 0, 0);
 
         let request = InferenceRequests::<T>::get(42).unwrap();
         assert_eq!(
@@ -441,7 +441,7 @@ mod benchmarks {
         );
 
         #[extrinsic_call]
-        _(RawOrigin::Signed(keeper), 42, user.clone(), 0, 0);
+        _(RawOrigin::Signed(keeper), 42, user.clone(), 0, 0, 0);
 
         let request = InferenceRequests::<T>::get(42).unwrap();
         assert_eq!(

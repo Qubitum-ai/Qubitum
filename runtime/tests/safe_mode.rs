@@ -115,6 +115,7 @@ fn qubitum_cancel_inference_is_blocked_in_safe_mode() {
         request_id: 1,
         miner_id: 0,
         validator_id: 0,
+        created_at: 0,
     });
 
     assert!(!SafeModeWhitelistedCalls::contains(&call));
@@ -127,6 +128,7 @@ fn qubitum_expire_inference_is_blocked_in_safe_mode() {
         request_user: account(4),
         miner_id: 0,
         validator_id: 0,
+        created_at: 0,
     });
 
     assert!(!SafeModeWhitelistedCalls::contains(&call));
