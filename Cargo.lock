@@ -8304,6 +8304,8 @@ dependencies = [
  "pallet-balances",
  "pallet-commitments",
  "pallet-drand",
+ "pallet-qubitum-rpc",
+ "pallet-qubitum-runtime-api",
  "pallet-shield",
  "pallet-subtensor",
  "pallet-subtensor-swap-rpc",
@@ -10333,6 +10335,20 @@ dependencies = [
  "sp-io",
  "sp-runtime",
  "sp-std",
+]
+
+[[package]]
+name = "pallet-qubitum-rpc"
+version = "0.1.0"
+dependencies = [
+ "jsonrpsee",
+ "pallet-qubitum-runtime-api",
+ "parity-scale-codec",
+ "qubitum-protocol",
+ "sp-api",
+ "sp-blockchain",
+ "sp-runtime",
+ "subtensor-runtime-common",
 ]
 
 [[package]]

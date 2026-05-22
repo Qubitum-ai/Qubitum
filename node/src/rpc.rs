@@ -120,6 +120,7 @@ where
     CIDP: CreateInherentDataProviders<Block, ()> + Send + Clone + 'static,
     CT: fp_rpc::ConvertTransaction<<Block as BlockT>::Extrinsic> + Send + Sync + Clone + 'static,
 {
+    use pallet_qubitum_rpc::{Qubitum, QubitumRpcApiServer};
     use pallet_subtensor_swap_rpc::{Swap, SwapRpcApiServer};
     use pallet_transaction_payment_rpc::{TransactionPayment, TransactionPaymentApiServer};
     use sc_consensus_manual_seal::rpc::{ManualSeal, ManualSealApiServer};
@@ -139,6 +140,9 @@ where
 
     // Swap RPC
     module.merge(Swap::new(client.clone()).into_rpc())?;
+
+    // Qubitum protocol state RPC
+    module.merge(Qubitum::new(client.clone()).into_rpc())?;
 
     module.merge(System::new(client.clone(), pool.clone()).into_rpc())?;
     module.merge(TransactionPayment::new(client.clone()).into_rpc())?;

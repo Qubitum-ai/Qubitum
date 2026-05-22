@@ -7,6 +7,7 @@ Current Qubitum implementation entry points:
 - Core protocol primitives: [`primitives/qubitum-protocol`](./primitives/qubitum-protocol)
 - On-chain pallet surface: [`pallets/qubitum`](./pallets/qubitum)
 - Qubitum runtime API: [`pallets/qubitum/runtime-api`](./pallets/qubitum/runtime-api)
+- Qubitum JSON-RPC API: [`pallets/qubitum/rpc`](./pallets/qubitum/rpc)
 - Runtime integration: `Qubitum: pallet_qubitum` in [`runtime/src/lib.rs`](./runtime/src/lib.rs)
 - Protocol notes: [`docs/qubitum-protocol.md`](./docs/qubitum-protocol.md)
 - Single-subnet flow: `cargo run -p qubitum-protocol --example single_subnet`

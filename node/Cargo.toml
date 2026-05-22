@@ -128,6 +128,8 @@ node-subtensor-runtime = { workspace = true, features = ["std"] }
 subtensor-runtime-common = { workspace = true, features = ["std"] }
 subtensor-custom-rpc = { workspace = true, features = ["std"] }
 subtensor-custom-rpc-runtime-api = { workspace = true, features = ["std"] }
+pallet-qubitum-rpc = { workspace = true, features = ["std"] }
+pallet-qubitum-runtime-api = { workspace = true, features = ["std"] }
 pallet-subtensor-swap-rpc = { workspace = true, features = ["std"] }
 pallet-subtensor-swap-runtime-api = { workspace = true, features = ["std"] }
 subtensor-macros.workspace = true
