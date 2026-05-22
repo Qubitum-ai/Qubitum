@@ -573,6 +573,88 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
 }
 
 #[test]
+fn failed_identity_commitment_updates_do_not_clobber_existing_state() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(2),
+            0,
+            Some(commitment(20)),
+            Some(commitment(21)),
+            classical_signature_bundle(),
+        ));
+        assert_ok!(Qubitum::set_validator_identity_commitments(
+            RuntimeOrigin::signed(3),
+            0,
+            Some(commitment(22)),
+            Some(commitment(23)),
+            classical_signature_bundle(),
+        ));
+
+        let miner_commitments = MinerIdentityCommitments::<Test>::get(0);
+        let miner_signature = MinerIdentitySignatureBundles::<Test>::get(0);
+        let validator_commitments = ValidatorIdentityCommitments::<Test>::get(0);
+        let validator_signature = ValidatorIdentitySignatureBundles::<Test>::get(0);
+
+        assert_noop!(
+            Qubitum::set_miner_identity_commitments(
+                RuntimeOrigin::signed(2),
+                0,
+                Some(commitment(24)),
+                Some([0; 32]),
+                classical_signature_bundle(),
+            ),
+            Error::<Test>::MissingCommitment
+        );
+        assert_noop!(
+            Qubitum::set_miner_identity_commitments(
+                RuntimeOrigin::signed(2),
+                0,
+                Some(commitment(24)),
+                Some(commitment(25)),
+                post_quantum_signature_bundle(),
+            ),
+            Error::<Test>::InvalidSignatureBundle
+        );
+        assert_noop!(
+            Qubitum::set_validator_identity_commitments(
+                RuntimeOrigin::signed(3),
+                0,
+                Some(commitment(26)),
+                Some([0; 32]),
+                classical_signature_bundle(),
+            ),
+            Error::<Test>::MissingCommitment
+        );
+        assert_noop!(
+            Qubitum::set_validator_identity_commitments(
+                RuntimeOrigin::signed(3),
+                0,
+                Some(commitment(26)),
+                Some(commitment(27)),
+                zero_signature_bundle(),
+            ),
+            Error::<Test>::InvalidSignatureBundle
+        );
+
+        assert_eq!(MinerIdentityCommitments::<Test>::get(0), miner_commitments);
+        assert_eq!(
+            MinerIdentitySignatureBundles::<Test>::get(0),
+            miner_signature
+        );
+        assert_eq!(
+            ValidatorIdentityCommitments::<Test>::get(0),
+            validator_commitments
+        );
+        assert_eq!(
+            ValidatorIdentitySignatureBundles::<Test>::get(0),
+            validator_signature
+        );
+    });
+}
+
+#[test]
 fn validator_exit_requires_cooldown_and_releases_stake() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
@@ -1747,6 +1829,79 @@ fn valid_proof_challenge_is_rejected_without_state_changes() {
             Validators::<Test>::get(0).unwrap().status,
             RegistryStatus::Active
         );
+    });
+}
+
+#[test]
+fn malformed_proof_challenges_are_rejected_without_state_changes() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(53);
+        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
+
+        let assert_unchanged = || {
+            assert!(ProofRecords::<Test>::get(53).is_none());
+            assert_eq!(
+                InferenceRequests::<Test>::get(53).unwrap().status,
+                InferenceRequestStatus::Pending
+            );
+            assert_eq!(
+                Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+                1_000
+            );
+            assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+            assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+            assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
+            assert_eq!(
+                Miners::<Test>::get(0).unwrap().status,
+                RegistryStatus::Active
+            );
+            assert_eq!(
+                Validators::<Test>::get(0).unwrap().status,
+                RegistryStatus::Active
+            );
+        };
+
+        let mut zero_proof_commitment = valid_submission(53);
+        zero_proof_commitment.proof.proof_commitment = [0; 32];
+        assert_noop!(
+            Qubitum::challenge_proof(RuntimeOrigin::signed(4), zero_proof_commitment),
+            Error::<Test>::MissingCommitment
+        );
+        assert_unchanged();
+
+        let mut too_small = valid_submission(53);
+        too_small.proof_size_bytes = TARGET_PROOF_SIZE_MIN_BYTES - 1;
+        assert_noop!(
+            Qubitum::challenge_proof(RuntimeOrigin::signed(4), too_small),
+            Error::<Test>::InvalidProofSize
+        );
+        assert_unchanged();
+
+        let mut future = valid_submission(53);
+        future.submitted_at = System::block_number() + 1;
+        assert_noop!(
+            Qubitum::challenge_proof(RuntimeOrigin::signed(4), future),
+            Error::<Test>::ProofSubmittedFromFuture
+        );
+        assert_unchanged();
+
+        System::set_block_number(50);
+        let mut stale = valid_submission(53);
+        stale.submitted_at = 1;
+        assert_noop!(
+            Qubitum::challenge_proof(RuntimeOrigin::signed(4), stale),
+            Error::<Test>::ProofSubmissionExpired
+        );
+        assert_unchanged();
+
+        let mut wrong_assignment = valid_submission(53);
+        wrong_assignment.input_commitment = commitment(9);
+        assert_noop!(
+            Qubitum::challenge_proof(RuntimeOrigin::signed(4), wrong_assignment),
+            Error::<Test>::RequestMismatch
+        );
+        assert_unchanged();
     });
 }
 
