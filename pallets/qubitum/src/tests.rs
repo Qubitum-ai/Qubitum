@@ -618,6 +618,37 @@ fn route_assignment_returns_active_participants_only() {
 }
 
 #[test]
+fn next_route_assignment_uses_chain_next_request_id() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        RequestCount::<Test>::put(42);
+
+        let assignment = Qubitum::next_route_assignment(0).unwrap();
+        assert_eq!(assignment.request_id, 42);
+        assert_eq!(assignment.subnet_id, 0);
+        assert_eq!(assignment.miner_id, 0);
+        assert_eq!(assignment.validator_id, 0);
+
+        assert_ok!(Qubitum::request_inference(
+            RuntimeOrigin::signed(4),
+            assignment.request_id,
+            InferenceRequestParams {
+                subnet_id: assignment.subnet_id,
+                miner_id: assignment.miner_id,
+                validator_id: assignment.validator_id,
+                input_commitment: commitment(1),
+                payment: 1_000,
+                validator_fee_bps: 250,
+                treasury_fee_bps: 50,
+            },
+        ));
+
+        assert_eq!(RequestCount::<Test>::get(), 43);
+        assert_eq!(Qubitum::next_route_assignment(0).unwrap().request_id, 43);
+    });
+}
+
+#[test]
 fn route_assignment_removes_slashed_participants() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();

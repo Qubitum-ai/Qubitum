@@ -1251,6 +1251,10 @@ pub mod pallet {
             })
         }
 
+        pub fn next_route_assignment(subnet_id: SubnetId) -> Option<ChainAssignment> {
+            Self::route_assignment(subnet_id, RequestCount::<T>::get())
+        }
+
         fn next_subnet_id() -> Result<SubnetId, DispatchError> {
             let id = SubnetCount::<T>::get();
             let next = id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;

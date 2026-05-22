@@ -46,6 +46,13 @@ pub trait QubitumRpcApi<BlockHash> {
         at: Option<BlockHash>,
     ) -> RpcResult<Vec<u8>>;
 
+    #[method(name = "qubitum_nextRouteAssignment")]
+    fn next_route_assignment(
+        &self,
+        subnet_id: SubnetId,
+        at: Option<BlockHash>,
+    ) -> RpcResult<Vec<u8>>;
+
     #[method(name = "qubitum_nextRequestId")]
     fn next_request_id(&self, at: Option<BlockHash>) -> RpcResult<RequestId>;
 
@@ -204,6 +211,22 @@ where
             .map(|result| result.encode())
             .map_err(|e| {
                 Error::RuntimeError(format!("Unable to route Qubitum assignment: {e:?}")).into()
+            })
+    }
+
+    fn next_route_assignment(
+        &self,
+        subnet_id: SubnetId,
+        at: Option<<Block as BlockT>::Hash>,
+    ) -> RpcResult<Vec<u8>> {
+        let api = self.client.runtime_api();
+        let at = self.at_or_best(at);
+
+        api.qubitum_next_route_assignment(at, subnet_id)
+            .map(|result| result.encode())
+            .map_err(|e| {
+                Error::RuntimeError(format!("Unable to route next Qubitum assignment: {e:?}"))
+                    .into()
             })
     }
 

@@ -16,6 +16,7 @@ sp_api::decl_runtime_apis! {
         fn qubitum_inference_request(request_id: RequestId) -> Option<ChainInferenceRequest<AccountId32, TaoBalance>>;
         fn qubitum_proof_record(request_id: RequestId) -> Option<ChainProofRecord>;
         fn qubitum_route_assignment(subnet_id: SubnetId, request_id: RequestId) -> Option<ChainAssignment>;
+        fn qubitum_next_route_assignment(subnet_id: SubnetId) -> Option<ChainAssignment>;
         fn qubitum_next_request_id() -> RequestId;
         fn qubitum_pending_miner_requests(miner_id: MinerId) -> RequestId;
         fn qubitum_pending_validator_requests(validator_id: ValidatorId) -> RequestId;

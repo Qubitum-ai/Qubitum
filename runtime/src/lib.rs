@@ -2621,6 +2621,12 @@ impl_runtime_apis! {
             pallet_qubitum::Pallet::<Runtime>::route_assignment(subnet_id, request_id)
         }
 
+        fn qubitum_next_route_assignment(
+            subnet_id: qubitum_protocol::SubnetId,
+        ) -> Option<pallet_qubitum::ChainAssignment> {
+            pallet_qubitum::Pallet::<Runtime>::next_route_assignment(subnet_id)
+        }
+
         fn qubitum_next_request_id() -> qubitum_protocol::RequestId {
             pallet_qubitum::RequestCount::<Runtime>::get()
         }
