@@ -428,14 +428,7 @@ mod benchmarks {
         let request = InferenceRequests::<T>::get(42).unwrap();
         assert_eq!(request.user, user.clone());
         assert_eq!(request.status, InferenceRequestStatus::Cancelled);
-        assert_last_event::<T>(
-            Event::<T>::InferenceCancelled {
-                request_id: 42,
-                user,
-                payment: T::MinMinerBond::get(),
-            }
-            .into(),
-        );
+        assert_last_event::<T>(Event::<T>::InferenceCancelled { request_id: 42 }.into());
     }
 
     #[benchmark]
@@ -454,14 +447,7 @@ mod benchmarks {
         let request = InferenceRequests::<T>::get(42).unwrap();
         assert_eq!(request.user, user.clone());
         assert_eq!(request.status, InferenceRequestStatus::Expired);
-        assert_last_event::<T>(
-            Event::<T>::InferenceExpired {
-                request_id: 42,
-                user,
-                payment: T::MinMinerBond::get(),
-            }
-            .into(),
-        );
+        assert_last_event::<T>(Event::<T>::InferenceExpired { request_id: 42 }.into());
     }
 
     impl_benchmark_test_suite!(Pallet, crate::mock::new_test_ext(), crate::mock::Test);

@@ -729,59 +729,23 @@ pub mod pallet {
             subnet_id: SubnetId,
         },
         /// A proof record was accepted.
-        ProofAccepted {
-            request_id: RequestId,
-            miner_id: MinerId,
-            validator_id: ValidatorId,
-        },
+        ProofAccepted { request_id: RequestId },
         /// An invalid proof challenge was accepted and the request was rejected.
-        ProofChallengeAccepted {
-            request_id: RequestId,
-            challenger: T::AccountId,
-            miner_id: MinerId,
-        },
+        ProofChallengeAccepted { request_id: RequestId },
         /// Escrowed request payment was settled.
-        InferenceSettled {
-            request_id: RequestId,
-            miner_payment: BalanceOf<T>,
-            validator_fee: BalanceOf<T>,
-            treasury_fee: BalanceOf<T>,
-        },
+        InferenceSettled { request_id: RequestId },
         /// Pending inference request escrow was released back to the user.
-        InferenceCancelled {
-            request_id: RequestId,
-            user: T::AccountId,
-            payment: BalanceOf<T>,
-        },
+        InferenceCancelled { request_id: RequestId },
         /// Rejected proof released escrow back to the user.
-        InferenceRefunded {
-            request_id: RequestId,
-            user: T::AccountId,
-            payment: BalanceOf<T>,
-        },
+        InferenceRefunded { request_id: RequestId },
         /// Stale pending inference escrow was released back to the user.
-        InferenceExpired {
-            request_id: RequestId,
-            user: T::AccountId,
-            payment: BalanceOf<T>,
-        },
+        InferenceExpired { request_id: RequestId },
         /// A proof was rejected by the verifier and the miner was slashed.
-        ProofRejected {
-            request_id: RequestId,
-            miner_id: MinerId,
-            slash_bps: u16,
-            amount: BalanceOf<T>,
-        },
+        ProofRejected { request_id: RequestId },
         /// A miner was slashed.
-        MinerSlashed {
-            miner_id: MinerId,
-            amount: BalanceOf<T>,
-        },
+        MinerSlashed { miner_id: MinerId },
         /// A validator was slashed.
-        ValidatorSlashed {
-            validator_id: ValidatorId,
-            amount: BalanceOf<T>,
-        },
+        ValidatorSlashed { validator_id: ValidatorId },
     }
 
     #[pallet::error]
@@ -1028,24 +992,14 @@ pub mod pallet {
             match T::ProofVerifier::verify(&submission, policy)? {
                 VerificationOutcome::Valid => {}
                 VerificationOutcome::Invalid { slash_bps } => {
-                    let amount = Self::slash_miner_bond(submission.miner_id, slash_bps)?;
-                    let validator_amount =
-                        Self::slash_validator_stake(submission.validator_id, slash_bps)?;
-                    let (user, payment) = Self::refund_rejected_request(&submission)?;
+                    Self::slash_miner_bond(submission.miner_id, slash_bps)?;
+                    Self::slash_validator_stake(submission.validator_id, slash_bps)?;
+                    Self::refund_rejected_request(&submission)?;
                     Self::deposit_event(Event::ProofRejected {
                         request_id: submission.request_id,
-                        miner_id: submission.miner_id,
-                        slash_bps,
-                        amount,
-                    });
-                    Self::deposit_event(Event::ValidatorSlashed {
-                        validator_id: submission.validator_id,
-                        amount: validator_amount,
                     });
                     Self::deposit_event(Event::InferenceRefunded {
                         request_id: submission.request_id,
-                        user,
-                        payment,
                     });
                     return Ok(());
                 }
@@ -1070,19 +1024,13 @@ pub mod pallet {
                     accepted_at: Self::current_block(),
                 },
             );
-            let (miner_payment, validator_fee, treasury_fee) =
-                Self::settle_request_payment(&submission)?;
+            Self::settle_request_payment(&submission)?;
 
             Self::deposit_event(Event::ProofAccepted {
                 request_id: submission.request_id,
-                miner_id: submission.miner_id,
-                validator_id: submission.validator_id,
             });
             Self::deposit_event(Event::InferenceSettled {
                 request_id: submission.request_id,
-                miner_payment,
-                validator_fee,
-                treasury_fee,
             });
             Ok(())
         }
@@ -1095,28 +1043,21 @@ pub mod pallet {
             origin: OriginFor<T>,
             submission: InferenceProofSubmission,
         ) -> DispatchResult {
-            let challenger = ensure_signed(origin)?;
+            ensure_signed(origin)?;
             let policy = Self::validate_challenge_submission(&submission)?;
 
             match T::ProofVerifier::verify(&submission, policy)? {
                 VerificationOutcome::Invalid { slash_bps } => {
-                    let amount = Self::slash_miner_bond(submission.miner_id, slash_bps)?;
-                    let (user, payment) = Self::refund_rejected_request(&submission)?;
+                    Self::slash_miner_bond(submission.miner_id, slash_bps)?;
+                    Self::refund_rejected_request(&submission)?;
                     Self::deposit_event(Event::ProofRejected {
                         request_id: submission.request_id,
-                        miner_id: submission.miner_id,
-                        slash_bps,
-                        amount,
                     });
                     Self::deposit_event(Event::ProofChallengeAccepted {
                         request_id: submission.request_id,
-                        challenger,
-                        miner_id: submission.miner_id,
                     });
                     Self::deposit_event(Event::InferenceRefunded {
                         request_id: submission.request_id,
-                        user,
-                        payment,
                     });
                     Ok(())
                 }
@@ -1144,8 +1085,8 @@ pub mod pallet {
                 Error::<T>::PendingAssignedRequests
             );
 
-            let amount = Self::slash_miner_bond(miner_id, slash_bps)?;
-            Self::deposit_event(Event::MinerSlashed { miner_id, amount });
+            Self::slash_miner_bond(miner_id, slash_bps)?;
+            Self::deposit_event(Event::MinerSlashed { miner_id });
             Ok(())
         }
 
@@ -1260,11 +1201,7 @@ pub mod pallet {
             )?;
             Self::record_inference_refund(payment);
 
-            Self::deposit_event(Event::InferenceCancelled {
-                request_id,
-                user,
-                payment,
-            });
+            Self::deposit_event(Event::InferenceCancelled { request_id });
             Ok(())
         }
 
@@ -1450,11 +1387,8 @@ pub mod pallet {
                 Error::<T>::PendingAssignedRequests
             );
 
-            let amount = Self::slash_validator_stake(validator_id, slash_bps)?;
-            Self::deposit_event(Event::ValidatorSlashed {
-                validator_id,
-                amount,
-            });
+            Self::slash_validator_stake(validator_id, slash_bps)?;
+            Self::deposit_event(Event::ValidatorSlashed { validator_id });
             Ok(())
         }
 
@@ -1464,41 +1398,32 @@ pub mod pallet {
         #[frame_support::transactional]
         pub fn expire_inference(origin: OriginFor<T>, request_id: RequestId) -> DispatchResult {
             let _keeper = ensure_signed(origin)?;
-            let (user, payment, miner_id, validator_id) =
-                InferenceRequests::<T>::try_mutate(
-                    request_id,
-                    |maybe_request| -> Result<
-                        (T::AccountId, BalanceOf<T>, MinerId, ValidatorId),
-                        DispatchError,
-                    > {
-                        let request = maybe_request.as_mut().ok_or(Error::<T>::UnknownRequest)?;
-                        ensure!(
-                            request.status == InferenceRequestStatus::Pending,
-                            Error::<T>::RequestAlreadySettled
-                        );
-                        let cancel_available_at = request
-                            .created_at
-                            .checked_add(T::RequestCancelDelayBlocks::get())
-                            .ok_or(Error::<T>::ArithmeticOverflow)?;
-                        ensure!(
-                            Self::current_block() >= cancel_available_at,
-                            Error::<T>::RequestCancelUnavailable
-                        );
-                        T::Currency::release(
-                            &HoldReason::InferencePayment.into(),
-                            &request.user,
-                            request.payment,
-                            Precision::Exact,
-                        )?;
-                        request.status = InferenceRequestStatus::Expired;
-                        Ok((
-                            request.user.clone(),
-                            request.payment,
-                            request.miner_id,
-                            request.validator_id,
-                        ))
-                    },
-                )?;
+            let (payment, miner_id, validator_id) = InferenceRequests::<T>::try_mutate(
+                request_id,
+                |maybe_request| -> Result<(BalanceOf<T>, MinerId, ValidatorId), DispatchError> {
+                    let request = maybe_request.as_mut().ok_or(Error::<T>::UnknownRequest)?;
+                    ensure!(
+                        request.status == InferenceRequestStatus::Pending,
+                        Error::<T>::RequestAlreadySettled
+                    );
+                    let cancel_available_at = request
+                        .created_at
+                        .checked_add(T::RequestCancelDelayBlocks::get())
+                        .ok_or(Error::<T>::ArithmeticOverflow)?;
+                    ensure!(
+                        Self::current_block() >= cancel_available_at,
+                        Error::<T>::RequestCancelUnavailable
+                    );
+                    T::Currency::release(
+                        &HoldReason::InferencePayment.into(),
+                        &request.user,
+                        request.payment,
+                        Precision::Exact,
+                    )?;
+                    request.status = InferenceRequestStatus::Expired;
+                    Ok((request.payment, request.miner_id, request.validator_id))
+                },
+            )?;
             Self::decrement_pending_assignment(miner_id, validator_id)?;
             Self::transition_request_status(
                 InferenceRequestStatus::Pending,
@@ -1506,11 +1431,7 @@ pub mod pallet {
             )?;
             Self::record_inference_refund(payment);
 
-            Self::deposit_event(Event::InferenceExpired {
-                request_id,
-                user,
-                payment,
-            });
+            Self::deposit_event(Event::InferenceExpired { request_id });
             Ok(())
         }
 

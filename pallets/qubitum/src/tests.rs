@@ -874,6 +874,80 @@ fn public_request_and_proof_views_redact_private_route_payment_and_timing() {
 }
 
 #[test]
+fn public_lifecycle_events_redact_route_payment_and_proof_metadata() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        System::set_block_number(1);
+        System::reset_events();
+        RequestCount::<Test>::put(96);
+
+        assert_ok!(Qubitum::request_inference_auto_route(
+            RuntimeOrigin::signed(4),
+            96,
+            AutoRouteInferenceRequestParams {
+                subnet_id: 0,
+                input_commitment: commitment(31),
+                payment: 123_456_789,
+                validator_fee_bps: 777,
+                treasury_fee_bps: 888,
+            },
+        ));
+
+        System::set_block_number(2);
+        let mut submission = valid_submission(96);
+        submission.input_commitment = commitment(31);
+        submission.output_commitment = commitment(32);
+        submission.proof = proof(33);
+        submission.proof_size_bytes = 65_432;
+        submission.verification_latency_ms = 77;
+        submission.submitted_at = 2;
+        assert_ok!(Qubitum::submit_proof(RuntimeOrigin::signed(3), submission));
+
+        let events: Vec<_> = System::events()
+            .into_iter()
+            .filter_map(|record| match record.event {
+                RuntimeEvent::Qubitum(event) => Some(event),
+                _ => None,
+            })
+            .collect();
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            crate::Event::InferenceRequested {
+                request_id: 96,
+                subnet_id: 0,
+            }
+        )));
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::ProofAccepted { request_id: 96 }))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::InferenceSettled { request_id: 96 }))
+        );
+
+        for encoded in events.iter().map(Encode::encode) {
+            for hidden in [
+                123_456_789_u128.encode(),
+                777_u16.encode(),
+                888_u16.encode(),
+                65_432_u32.encode(),
+                77_u32.encode(),
+                commitment(31).encode(),
+                commitment(32).encode(),
+                commitment(10).encode(),
+                proof(33).encode(),
+            ] {
+                assert!(!contains_subsequence(&encoded, &hidden));
+            }
+        }
+    });
+}
+
+#[test]
 fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
     new_test_ext().execute_with(|| {
         let legacy = LegacyChainProofRecordV4 {
