@@ -209,12 +209,11 @@ mod benchmarks {
     #[benchmark]
     fn submit_proof() {
         let _miner = activate_bench_miner::<T>();
-        let _validator = register_bench_validator::<T>();
-        let submitter: T::AccountId = account("submitter", 0, SEED);
+        let validator = register_bench_validator::<T>();
         let submission = proof_submission();
 
         #[extrinsic_call]
-        _(RawOrigin::Signed(submitter), submission);
+        _(RawOrigin::Signed(validator), submission);
 
         assert_eq!(
             ProofRecords::<T>::get(42),

@@ -1,15 +1,40 @@
 #![allow(clippy::arithmetic_side_effects, clippy::unwrap_used)]
 
 use crate as pallet_qubitum;
+use crate::{ProofVerificationPolicy, VerifyProof};
 use frame_support::{derive_impl, parameter_types};
+use qubitum_protocol::VerificationOutcome;
 use sp_runtime::{
-    BuildStorage,
+    BuildStorage, DispatchError,
     traits::{BlakeTwo256, IdentityLookup},
 };
+use std::cell::RefCell;
 
 pub type AccountId = u64;
 pub type Balance = u128;
 pub type Block = frame_system::mocking::MockBlock<Test>;
+
+thread_local! {
+    static VERIFICATION_OUTCOME: RefCell<VerificationOutcome> =
+        const { RefCell::new(VerificationOutcome::Valid) };
+}
+
+pub struct TestProofVerifier;
+
+impl VerifyProof for TestProofVerifier {
+    fn verify(
+        _submission: &qubitum_protocol::InferenceProofSubmission,
+        _policy: ProofVerificationPolicy,
+    ) -> Result<VerificationOutcome, DispatchError> {
+        VERIFICATION_OUTCOME.with(|outcome| Ok(*outcome.borrow()))
+    }
+}
+
+pub fn set_verification_outcome(outcome: VerificationOutcome) {
+    VERIFICATION_OUTCOME.with(|stored| {
+        *stored.borrow_mut() = outcome;
+    });
+}
 
 frame_support::construct_runtime!(
     pub enum Test {
@@ -74,9 +99,12 @@ impl pallet_qubitum::Config for Test {
     type MaxVerificationLatencyMs = MaxVerificationLatencyMs;
     type RuntimeHoldReason = RuntimeHoldReason;
     type WeightInfo = ();
+    type ProofVerifier = TestProofVerifier;
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {
+    set_verification_outcome(VerificationOutcome::Valid);
+
     let mut storage = frame_system::GenesisConfig::<Test>::default()
         .build_storage()
         .unwrap();

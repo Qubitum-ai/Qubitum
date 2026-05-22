@@ -3,12 +3,12 @@
 use crate::{
     Error, HoldReason, MinerCount, Miners, ProofRecords, SubnetCount, Subnets, TotalBurned,
     ValidatorCount, Validators,
-    mock::{Balances, Qubitum, RuntimeOrigin, Test, new_test_ext},
+    mock::{Balances, Qubitum, RuntimeOrigin, Test, new_test_ext, set_verification_outcome},
 };
 use frame_support::{assert_noop, assert_ok, traits::fungible::InspectHold};
 use qubitum_protocol::{
     InferenceProofSubmission, MAX_MINER_BOND, MIN_MINER_BOND, MINER_REGISTRATION_BURN, ProofSystem,
-    RegistryStatus, SubnetDomain, TARGET_PROOF_SIZE_MIN_BYTES,
+    RegistryStatus, SubnetDomain, TARGET_PROOF_SIZE_MIN_BYTES, VerificationOutcome,
 };
 
 fn commitment(seed: u8) -> [u8; 32] {
@@ -37,6 +37,23 @@ fn register_active_miner_and_validator() {
         0,
         MIN_MINER_BOND
     ));
+}
+
+fn valid_submission(request_id: u64) -> InferenceProofSubmission {
+    InferenceProofSubmission {
+        request_id,
+        subnet_id: 0,
+        miner_id: 0,
+        validator_id: 0,
+        input_commitment: commitment(1),
+        output_commitment: commitment(2),
+        model_commitment: commitment(10),
+        proof_commitment: commitment(11),
+        proof_system: ProofSystem::RiscZeroStark,
+        proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
+        verification_latency_ms: 10,
+        submitted_at: 77,
+    }
 }
 
 #[test]
@@ -153,21 +170,8 @@ fn submit_proof_records_commitments_for_active_participants() {
         register_active_miner_and_validator();
 
         assert_ok!(Qubitum::submit_proof(
-            RuntimeOrigin::signed(4),
-            InferenceProofSubmission {
-                request_id: 42,
-                subnet_id: 0,
-                miner_id: 0,
-                validator_id: 0,
-                input_commitment: commitment(1),
-                output_commitment: commitment(2),
-                model_commitment: commitment(10),
-                proof_commitment: commitment(11),
-                proof_system: ProofSystem::RiscZeroStark,
-                proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
-                verification_latency_ms: 10,
-                submitted_at: 77,
-            }
+            RuntimeOrigin::signed(3),
+            valid_submission(42)
         ));
 
         let record = ProofRecords::<Test>::get(42).unwrap();
@@ -184,7 +188,7 @@ fn submit_proof_rejects_latency_or_missing_commitment() {
 
         assert_noop!(
             Qubitum::submit_proof(
-                RuntimeOrigin::signed(4),
+                RuntimeOrigin::signed(3),
                 InferenceProofSubmission {
                     request_id: 43,
                     subnet_id: 0,
@@ -205,7 +209,7 @@ fn submit_proof_rejects_latency_or_missing_commitment() {
 
         assert_noop!(
             Qubitum::submit_proof(
-                RuntimeOrigin::signed(4),
+                RuntimeOrigin::signed(3),
                 InferenceProofSubmission {
                     request_id: 44,
                     subnet_id: 0,
@@ -222,6 +226,56 @@ fn submit_proof_rejects_latency_or_missing_commitment() {
                 }
             ),
             Error::<Test>::LatencyExceeded
+        );
+    });
+}
+
+#[test]
+fn submit_proof_rejects_duplicate_wrong_validator_or_model() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+
+        assert_ok!(Qubitum::submit_proof(
+            RuntimeOrigin::signed(3),
+            valid_submission(45)
+        ));
+        assert_noop!(
+            Qubitum::submit_proof(RuntimeOrigin::signed(3), valid_submission(45)),
+            Error::<Test>::DuplicateProof
+        );
+
+        assert_noop!(
+            Qubitum::submit_proof(RuntimeOrigin::signed(4), valid_submission(46)),
+            Error::<Test>::NotValidatorOperator
+        );
+
+        let mut wrong_model = valid_submission(47);
+        wrong_model.model_commitment = commitment(99);
+        assert_noop!(
+            Qubitum::submit_proof(RuntimeOrigin::signed(3), wrong_model),
+            Error::<Test>::ModelCommitmentMismatch
+        );
+    });
+}
+
+#[test]
+fn verifier_rejection_slashes_miner_without_recording_proof() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
+
+        assert_ok!(Qubitum::submit_proof(
+            RuntimeOrigin::signed(3),
+            valid_submission(48)
+        ));
+
+        assert!(ProofRecords::<Test>::get(48).is_none());
+        let miner = Miners::<Test>::get(0).unwrap();
+        assert_eq!(miner.bond, 90_000_000_000);
+        assert_eq!(miner.status, RegistryStatus::Slashed);
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            90_000_000_000
         );
     });
 }

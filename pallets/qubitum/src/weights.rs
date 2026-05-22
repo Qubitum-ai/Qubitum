@@ -49,8 +49,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
     fn submit_proof() -> Weight {
         Weight::from_parts(45_000_000, 8_000)
-            .saturating_add(T::DbWeight::get().reads(3_u64))
-            .saturating_add(T::DbWeight::get().writes(1_u64))
+            .saturating_add(T::DbWeight::get().reads(6_u64))
+            .saturating_add(T::DbWeight::get().writes(4_u64))
     }
 
     fn slash_miner() -> Weight {
@@ -87,8 +87,8 @@ impl WeightInfo for () {
 
     fn submit_proof() -> Weight {
         Weight::from_parts(45_000_000, 8_000)
-            .saturating_add(RocksDbWeight::get().reads(3_u64))
-            .saturating_add(RocksDbWeight::get().writes(1_u64))
+            .saturating_add(RocksDbWeight::get().reads(6_u64))
+            .saturating_add(RocksDbWeight::get().writes(4_u64))
     }
 
     fn slash_miner() -> Weight {

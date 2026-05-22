@@ -553,6 +553,7 @@ impl pallet_qubitum::Config for Runtime {
     type MaxVerificationLatencyMs = QubitumMaxVerificationLatencyMs;
     type RuntimeHoldReason = RuntimeHoldReason;
     type WeightInfo = pallet_qubitum::weights::SubstrateWeight<Runtime>;
+    type ProofVerifier = pallet_qubitum::ShapeProofVerifier;
 }
 
 // Implement AuthorshipInfo trait for Runtime to satisfy pallet transaction

@@ -23,13 +23,99 @@ use frame_support::{
 };
 use qubitum_protocol::{
     Commitment, InferenceProofSubmission, MinerId, ProofSystem, RegistryStatus, RequestId,
-    SubnetDomain, SubnetId, ValidatorId,
+    SubnetDomain, SubnetId, ValidatorId, VerificationOutcome,
 };
 use scale_info::TypeInfo;
 use sp_runtime::{DispatchError, Saturating, traits::SaturatedConversion};
 
 type BalanceOf<T> =
     <<T as Config>::Currency as fungible::Inspect<<T as frame_system::Config>::AccountId>>::Balance;
+
+/// Minimal policy passed to the runtime proof verifier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ProofVerificationPolicy {
+    pub proof_system: ProofSystem,
+    pub model_commitment: Commitment,
+    pub min_proof_size_bytes: u32,
+    pub max_proof_size_bytes: u32,
+    pub max_verification_latency_ms: u32,
+}
+
+/// Runtime adapter for proof verification.
+pub trait VerifyProof {
+    fn verify(
+        submission: &InferenceProofSubmission,
+        policy: ProofVerificationPolicy,
+    ) -> Result<VerificationOutcome, DispatchError>;
+}
+
+/// Shape-only verifier used until a concrete zkVM verifier is wired in.
+pub struct ShapeProofVerifier;
+
+impl VerifyProof for ShapeProofVerifier {
+    fn verify(
+        submission: &InferenceProofSubmission,
+        policy: ProofVerificationPolicy,
+    ) -> Result<VerificationOutcome, DispatchError> {
+        ensure!(
+            submission.input_commitment != [0; 32],
+            ShapeVerifierError::MissingCommitment
+        );
+        ensure!(
+            submission.output_commitment != [0; 32],
+            ShapeVerifierError::MissingCommitment
+        );
+        ensure!(
+            submission.model_commitment != [0; 32],
+            ShapeVerifierError::MissingCommitment
+        );
+        ensure!(
+            submission.proof_commitment != [0; 32],
+            ShapeVerifierError::MissingCommitment
+        );
+        ensure!(
+            submission.proof_system == policy.proof_system,
+            ShapeVerifierError::ProofSystemMismatch
+        );
+        ensure!(
+            submission.model_commitment == policy.model_commitment,
+            ShapeVerifierError::ModelCommitmentMismatch
+        );
+        ensure!(
+            submission.proof_size_bytes >= policy.min_proof_size_bytes
+                && submission.proof_size_bytes <= policy.max_proof_size_bytes,
+            ShapeVerifierError::InvalidProofSize
+        );
+        ensure!(
+            submission.verification_latency_ms <= policy.max_verification_latency_ms,
+            ShapeVerifierError::LatencyExceeded
+        );
+        Ok(VerificationOutcome::Valid)
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum ShapeVerifierError {
+    MissingCommitment,
+    ProofSystemMismatch,
+    ModelCommitmentMismatch,
+    InvalidProofSize,
+    LatencyExceeded,
+}
+
+impl From<ShapeVerifierError> for DispatchError {
+    fn from(error: ShapeVerifierError) -> Self {
+        match error {
+            ShapeVerifierError::MissingCommitment => DispatchError::Other("MissingCommitment"),
+            ShapeVerifierError::ProofSystemMismatch => DispatchError::Other("ProofSystemMismatch"),
+            ShapeVerifierError::ModelCommitmentMismatch => {
+                DispatchError::Other("ModelCommitmentMismatch")
+            }
+            ShapeVerifierError::InvalidProofSize => DispatchError::Other("InvalidProofSize"),
+            ShapeVerifierError::LatencyExceeded => DispatchError::Other("LatencyExceeded"),
+        }
+    }
+}
 
 #[frame_support::pallet]
 #[allow(clippy::expect_used)]
@@ -94,6 +180,9 @@ pub mod pallet {
 
         /// Weight information for dispatchables.
         type WeightInfo: WeightInfo;
+
+        /// Runtime proof verifier adapter.
+        type ProofVerifier: VerifyProof;
     }
 
     #[pallet::composite_enum]
@@ -221,6 +310,13 @@ pub mod pallet {
             miner_id: MinerId,
             validator_id: ValidatorId,
         },
+        /// A proof was rejected by the verifier and the miner was slashed.
+        ProofRejected {
+            request_id: RequestId,
+            miner_id: MinerId,
+            slash_bps: u16,
+            amount: BalanceOf<T>,
+        },
         /// A miner was slashed.
         MinerSlashed {
             miner_id: MinerId,
@@ -248,14 +344,22 @@ pub mod pallet {
         NotActive,
         /// Caller is not the registered operator.
         NotOperator,
+        /// Caller is not the validator assigned to the proof.
+        NotValidatorOperator,
         /// Commitment cannot be all zeros.
         MissingCommitment,
+        /// Submitted model commitment does not match the registered miner model.
+        ModelCommitmentMismatch,
+        /// Proof record already exists for the request.
+        DuplicateProof,
         /// Proof size metadata is outside accepted bounds.
         InvalidProofSize,
         /// Verification latency exceeds policy.
         LatencyExceeded,
         /// Slash percentage is outside accepted bounds.
         InvalidSlashPercent,
+        /// Proof verifier reported an internal error.
+        VerifierError,
     }
 
     #[pallet::call]
@@ -396,8 +500,23 @@ pub mod pallet {
             origin: OriginFor<T>,
             submission: InferenceProofSubmission,
         ) -> DispatchResult {
-            let _who = ensure_signed(origin)?;
-            Self::validate_submission(&submission)?;
+            let validator_operator = ensure_signed(origin)?;
+            let policy = Self::validate_submission(&submission, &validator_operator)?;
+
+            match T::ProofVerifier::verify(&submission, policy)? {
+                VerificationOutcome::Valid => {}
+                VerificationOutcome::Invalid { slash_bps } => {
+                    let amount = Self::slash_miner_bond(submission.miner_id, slash_bps)?;
+                    Self::deposit_event(Event::ProofRejected {
+                        request_id: submission.request_id,
+                        miner_id: submission.miner_id,
+                        slash_bps,
+                        amount,
+                    });
+                    return Ok(());
+                }
+                VerificationOutcome::Error => return Err(Error::<T>::VerifierError.into()),
+            }
 
             ProofRecords::<T>::insert(
                 submission.request_id,
@@ -436,29 +555,7 @@ pub mod pallet {
                 Error::<T>::InvalidSlashPercent
             );
 
-            let amount = Miners::<T>::try_mutate(miner_id, |maybe_miner| {
-                let miner = maybe_miner.as_mut().ok_or(Error::<T>::UnknownMiner)?;
-                let slash_amount = pro_rata::<T>(miner.bond, slash_bps)?;
-                let burned = T::Currency::burn_held(
-                    &HoldReason::MinerBond.into(),
-                    &miner.operator,
-                    slash_amount,
-                    Precision::Exact,
-                    Fortitude::Force,
-                )?;
-                miner.bond = miner
-                    .bond
-                    .checked_sub(&burned)
-                    .ok_or(Error::<T>::ArithmeticOverflow)?;
-                if miner.bond < T::MinMinerBond::get() {
-                    miner.status = RegistryStatus::Slashed;
-                }
-                Ok::<BalanceOf<T>, DispatchError>(burned)
-            })?;
-
-            TotalBurned::<T>::mutate(|total| {
-                *total = total.saturating_add(amount);
-            });
+            let amount = Self::slash_miner_bond(miner_id, slash_bps)?;
             Self::deposit_event(Event::MinerSlashed { miner_id, amount });
             Ok(())
         }
@@ -500,11 +597,18 @@ pub mod pallet {
             Ok(())
         }
 
-        fn validate_submission(submission: &InferenceProofSubmission) -> DispatchResult {
+        fn validate_submission(
+            submission: &InferenceProofSubmission,
+            validator_operator: &T::AccountId,
+        ) -> Result<ProofVerificationPolicy, DispatchError> {
             ensure_commitment::<T>(submission.input_commitment)?;
             ensure_commitment::<T>(submission.output_commitment)?;
             ensure_commitment::<T>(submission.model_commitment)?;
             ensure_commitment::<T>(submission.proof_commitment)?;
+            ensure!(
+                !ProofRecords::<T>::contains_key(submission.request_id),
+                Error::<T>::DuplicateProof
+            );
 
             let subnet =
                 Subnets::<T>::get(submission.subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
@@ -527,6 +631,10 @@ pub mod pallet {
                 miner.subnet_id == submission.subnet_id && miner.status == RegistryStatus::Active,
                 Error::<T>::NotActive
             );
+            ensure!(
+                miner.model_commitment == submission.model_commitment,
+                Error::<T>::ModelCommitmentMismatch
+            );
             let validator = Validators::<T>::get(submission.validator_id)
                 .ok_or(Error::<T>::UnknownValidator)?;
             ensure!(
@@ -534,7 +642,54 @@ pub mod pallet {
                     && validator.status == RegistryStatus::Active,
                 Error::<T>::NotActive
             );
-            Ok(())
+            ensure!(
+                validator.operator == *validator_operator,
+                Error::<T>::NotValidatorOperator
+            );
+
+            Ok(ProofVerificationPolicy {
+                proof_system: subnet.proof_system,
+                model_commitment: miner.model_commitment,
+                min_proof_size_bytes: T::MinProofSizeBytes::get(),
+                max_proof_size_bytes: T::MaxProofSizeBytes::get(),
+                max_verification_latency_ms: T::MaxVerificationLatencyMs::get(),
+            })
+        }
+
+        fn slash_miner_bond(
+            miner_id: MinerId,
+            slash_bps: u16,
+        ) -> Result<BalanceOf<T>, DispatchError> {
+            ensure!(
+                slash_bps >= T::MinInvalidProofSlashBps::get()
+                    && slash_bps <= T::MaxInvalidProofSlashBps::get(),
+                Error::<T>::InvalidSlashPercent
+            );
+
+            let amount = Miners::<T>::try_mutate(miner_id, |maybe_miner| {
+                let miner = maybe_miner.as_mut().ok_or(Error::<T>::UnknownMiner)?;
+                let slash_amount = pro_rata::<T>(miner.bond, slash_bps)?;
+                let burned = T::Currency::burn_held(
+                    &HoldReason::MinerBond.into(),
+                    &miner.operator,
+                    slash_amount,
+                    Precision::Exact,
+                    Fortitude::Force,
+                )?;
+                miner.bond = miner
+                    .bond
+                    .checked_sub(&burned)
+                    .ok_or(Error::<T>::ArithmeticOverflow)?;
+                if miner.bond < T::MinMinerBond::get() {
+                    miner.status = RegistryStatus::Slashed;
+                }
+                Ok::<BalanceOf<T>, DispatchError>(burned)
+            })?;
+
+            TotalBurned::<T>::mutate(|total| {
+                *total = total.saturating_add(amount);
+            });
+            Ok(amount)
         }
     }
 }
