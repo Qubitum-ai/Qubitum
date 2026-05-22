@@ -174,6 +174,27 @@ fn ensure_nonzero_commitments(signature: SignatureCommitment) -> Result<(), Prot
 mod tests {
     use super::*;
 
+    const CLASSICAL_ALGORITHMS: [SignatureAlgorithm; 3] = [
+        SignatureAlgorithm::Ecdsa,
+        SignatureAlgorithm::Sr25519,
+        SignatureAlgorithm::Ed25519,
+    ];
+    const POST_QUANTUM_ALGORITHMS: [SignatureAlgorithm; 4] = [
+        SignatureAlgorithm::Dilithium3,
+        SignatureAlgorithm::Dilithium5,
+        SignatureAlgorithm::Falcon512,
+        SignatureAlgorithm::SphincsPlus,
+    ];
+    const ALL_ALGORITHMS: [SignatureAlgorithm; 7] = [
+        SignatureAlgorithm::Ecdsa,
+        SignatureAlgorithm::Sr25519,
+        SignatureAlgorithm::Ed25519,
+        SignatureAlgorithm::Dilithium3,
+        SignatureAlgorithm::Dilithium5,
+        SignatureAlgorithm::Falcon512,
+        SignatureAlgorithm::SphincsPlus,
+    ];
+
     fn commitment(seed: u8) -> Commitment {
         [seed; 32]
     }
@@ -298,5 +319,77 @@ mod tests {
             SignaturePolicy::new(SignatureMode::FullPostQuantum).validate(malformed_extra_slot),
             Err(ProtocolError::MissingCommitment)
         );
+    }
+
+    #[test]
+    fn signature_policy_accepts_every_algorithm_in_its_own_slot() {
+        for (index, algorithm) in CLASSICAL_ALGORITHMS.iter().copied().enumerate() {
+            let bundle = SignatureBundle {
+                classical: Some(sig(algorithm, index as u8 + 10)),
+                post_quantum: None,
+            };
+            assert_eq!(
+                SignaturePolicy::new(SignatureMode::ClassicalEcdsa).validate(bundle),
+                Ok(bundle)
+            );
+        }
+
+        for (index, algorithm) in POST_QUANTUM_ALGORITHMS.iter().copied().enumerate() {
+            let bundle = SignatureBundle {
+                classical: None,
+                post_quantum: Some(sig(algorithm, index as u8 + 20)),
+            };
+            assert_eq!(
+                SignaturePolicy::new(SignatureMode::FullPostQuantum).validate(bundle),
+                Ok(bundle)
+            );
+        }
+    }
+
+    #[test]
+    fn signature_policy_rejects_every_algorithm_in_the_wrong_slot() {
+        for (index, algorithm) in POST_QUANTUM_ALGORITHMS.iter().copied().enumerate() {
+            let bundle = SignatureBundle {
+                classical: Some(sig(algorithm, index as u8 + 30)),
+                post_quantum: None,
+            };
+            assert_eq!(
+                SignaturePolicy::new(SignatureMode::ClassicalEcdsa).validate(bundle),
+                Err(ProtocolError::UnsupportedSignatureAlgorithm)
+            );
+        }
+
+        for (index, algorithm) in CLASSICAL_ALGORITHMS.iter().copied().enumerate() {
+            let bundle = SignatureBundle {
+                classical: None,
+                post_quantum: Some(sig(algorithm, index as u8 + 40)),
+            };
+            assert_eq!(
+                SignaturePolicy::new(SignatureMode::FullPostQuantum).validate(bundle),
+                Err(ProtocolError::UnsupportedSignatureAlgorithm)
+            );
+        }
+    }
+
+    #[test]
+    fn hybrid_policy_matrix_requires_one_valid_signature_per_family() {
+        for classical in ALL_ALGORITHMS {
+            for post_quantum in ALL_ALGORITHMS {
+                let bundle = SignatureBundle {
+                    classical: Some(sig(classical, 50)),
+                    post_quantum: Some(sig(post_quantum, 60)),
+                };
+                let expected = if classical.is_classical() && post_quantum.is_post_quantum() {
+                    Ok(bundle)
+                } else {
+                    Err(ProtocolError::UnsupportedSignatureAlgorithm)
+                };
+
+                assert_eq!(
+                    SignaturePolicy::new(SignatureMode::HybridDilithium).validate(bundle),
+                    expected
+                );
+            }
+        }
     }
 }
