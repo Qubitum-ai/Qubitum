@@ -2,13 +2,14 @@
 
 use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, CancelledInferenceRequestCount,
-    ChainInferenceRequest, ChainRequestStatusCounts, Error, HoldReason, InferenceRequestParams,
-    InferenceRequestStatus, InferenceRequests, MinerCount, MinerIdentityCommitments,
-    MinerIdentitySignatureBundles, Miners, PendingInferenceRequestCount, PendingMinerRequests,
-    PendingValidatorRequests, ProofRecords, RejectedInferenceRequestCount, RequestCount,
-    SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned, TotalInferenceEscrowed,
-    TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees, TotalValidatorFees,
-    ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles, Validators,
+    ChainInferenceRequest, ChainPublicInferenceRequest, ChainPublicProofRecord,
+    ChainRequestStatusCounts, Error, HoldReason, InferenceRequestParams, InferenceRequestStatus,
+    InferenceRequests, MinerCount, MinerIdentityCommitments, MinerIdentitySignatureBundles, Miners,
+    PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests, ProofRecords,
+    RejectedInferenceRequestCount, RequestCount, SettledInferenceRequestCount, SubnetCount,
+    Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
+    TotalTreasuryFees, TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
+    ValidatorIdentitySignatureBundles, Validators,
     mock::{
         Balances, Qubitum, RuntimeOrigin, System, Test, new_test_ext, set_verification_outcome,
     },
@@ -712,6 +713,78 @@ fn stored_runtime_records_do_not_expose_raw_inference_or_model_payloads() {
             assert!(!contains_subsequence(&encoded, raw_input));
             assert!(!contains_subsequence(&encoded, raw_output));
             assert!(!contains_subsequence(&encoded, raw_model));
+        }
+    });
+}
+
+#[test]
+fn public_request_and_proof_views_redact_private_route_payment_and_timing() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        System::set_block_number(99);
+        RequestCount::<Test>::put(91);
+        assert_ok!(Qubitum::request_inference(
+            RuntimeOrigin::signed(4),
+            91,
+            InferenceRequestParams {
+                subnet_id: 0,
+                miner_id: 0,
+                validator_id: 0,
+                input_commitment: commitment(1),
+                payment: 123_456_789,
+                validator_fee_bps: 777,
+                treasury_fee_bps: 888,
+            },
+        ));
+
+        let public_request = Qubitum::public_inference_request(91).unwrap();
+        assert_eq!(
+            public_request,
+            ChainPublicInferenceRequest {
+                request_id: 91,
+                subnet_id: 0,
+                status: InferenceRequestStatus::Pending,
+            }
+        );
+        let encoded_request = public_request.encode();
+        for hidden in [
+            4_u64.encode(),
+            123_456_789_u128.encode(),
+            777_u16.encode(),
+            888_u16.encode(),
+            99_u64.encode(),
+            commitment(1).encode(),
+        ] {
+            assert!(!contains_subsequence(&encoded_request, &hidden));
+        }
+
+        System::set_block_number(100);
+        let mut submission = valid_submission(91);
+        submission.proof_size_bytes = 65_432;
+        submission.verification_latency_ms = 77;
+        submission.submitted_at = 100;
+        assert_ok!(Qubitum::submit_proof(RuntimeOrigin::signed(3), submission));
+
+        let public_proof = Qubitum::public_proof_record(91).unwrap();
+        assert_eq!(
+            public_proof,
+            ChainPublicProofRecord {
+                request_id: 91,
+                subnet_id: 0,
+                proof_system: ProofSystem::RiscZeroStark,
+            }
+        );
+        let encoded_proof = public_proof.encode();
+        for hidden in [
+            65_432_u32.encode(),
+            77_u32.encode(),
+            100_u64.encode(),
+            commitment(1).encode(),
+            commitment(2).encode(),
+            commitment(10).encode(),
+            proof(11).encode(),
+        ] {
+            assert!(!contains_subsequence(&encoded_proof, &hidden));
         }
     });
 }

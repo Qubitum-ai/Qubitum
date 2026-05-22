@@ -339,6 +339,24 @@ pub mod pallet {
         pub accepted_at: BlockNumber,
     }
 
+    #[derive(
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        TypeInfo,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Debug,
+        MaxEncodedLen,
+    )]
+    pub struct ChainPublicProofRecord {
+        pub request_id: RequestId,
+        pub subnet_id: SubnetId,
+        pub proof_system: ProofSystem,
+    }
+
     #[derive(Decode)]
     struct ChainProofRecordV4 {
         pub request_id: RequestId,
@@ -369,6 +387,24 @@ pub mod pallet {
         pub validator_fee_bps: u16,
         pub treasury_fee_bps: u16,
         pub created_at: BlockNumber,
+        pub status: InferenceRequestStatus,
+    }
+
+    #[derive(
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        TypeInfo,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Debug,
+        MaxEncodedLen,
+    )]
+    pub struct ChainPublicInferenceRequest {
+        pub request_id: RequestId,
+        pub subnet_id: SubnetId,
         pub status: InferenceRequestStatus,
     }
 
@@ -1592,6 +1628,24 @@ pub mod pallet {
 
         pub fn next_route_assignment(subnet_id: SubnetId) -> Option<ChainAssignment> {
             Self::route_assignment(subnet_id, RequestCount::<T>::get())
+        }
+
+        pub fn public_inference_request(
+            request_id: RequestId,
+        ) -> Option<ChainPublicInferenceRequest> {
+            InferenceRequests::<T>::get(request_id).map(|request| ChainPublicInferenceRequest {
+                request_id: request.request_id,
+                subnet_id: request.subnet_id,
+                status: request.status,
+            })
+        }
+
+        pub fn public_proof_record(request_id: RequestId) -> Option<ChainPublicProofRecord> {
+            ProofRecords::<T>::get(request_id).map(|record| ChainPublicProofRecord {
+                request_id: record.request_id,
+                subnet_id: record.subnet_id,
+                proof_system: record.proof_system,
+            })
         }
 
         fn next_subnet_id() -> Result<SubnetId, DispatchError> {
