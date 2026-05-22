@@ -111,7 +111,11 @@ fn qubitum_request_inference_is_blocked_in_safe_mode() {
 
 #[test]
 fn qubitum_cancel_inference_is_blocked_in_safe_mode() {
-    let call = RuntimeCall::Qubitum(pallet_qubitum::Call::cancel_inference { request_id: 1 });
+    let call = RuntimeCall::Qubitum(pallet_qubitum::Call::cancel_inference {
+        request_id: 1,
+        miner_id: 0,
+        validator_id: 0,
+    });
 
     assert!(!SafeModeWhitelistedCalls::contains(&call));
 }
@@ -121,6 +125,8 @@ fn qubitum_expire_inference_is_blocked_in_safe_mode() {
     let call = RuntimeCall::Qubitum(pallet_qubitum::Call::expire_inference {
         request_id: 1,
         request_user: account(4),
+        miner_id: 0,
+        validator_id: 0,
     });
 
     assert!(!SafeModeWhitelistedCalls::contains(&call));

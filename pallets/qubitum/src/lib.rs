@@ -141,7 +141,7 @@ pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
 
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(10);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(11);
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -509,6 +509,20 @@ pub mod pallet {
         pub request_id: RequestId,
         pub user_commitment: Commitment,
         pub subnet_id: SubnetId,
+        pub assignment_commitment: Commitment,
+        pub input_commitment: Commitment,
+        pub payment: Balance,
+        pub validator_fee_bps: u16,
+        pub treasury_fee_bps: u16,
+        pub created_at: BlockNumber,
+        pub status: InferenceRequestStatus,
+    }
+
+    #[derive(Decode)]
+    struct ChainInferenceRequestV10<Balance> {
+        pub request_id: RequestId,
+        pub user_commitment: Commitment,
+        pub subnet_id: SubnetId,
         pub miner_id: MinerId,
         pub validator_id: ValidatorId,
         pub input_commitment: Commitment,
@@ -783,9 +797,9 @@ pub mod pallet {
 
             let weight = Self::migrate_operator_commitments(on_chain)
                 .saturating_add(Self::migrate_participant_capital_commitments(on_chain))
+                .saturating_add(Self::migrate_request_assignment_commitments(on_chain))
                 .saturating_add(Self::migrate_request_owner_commitments(on_chain))
                 .saturating_add(Self::rebuild_active_routing_indexes())
-                .saturating_add(Self::rebuild_pending_assignment_counters())
                 .saturating_add(Self::rebuild_inference_accounting())
                 .saturating_add(Self::rebuild_request_status_counts())
                 .saturating_add(Self::migrate_proof_record_timestamps(on_chain));
@@ -1298,13 +1312,19 @@ pub mod pallet {
         #[pallet::call_index(7)]
         #[pallet::weight(T::WeightInfo::cancel_inference())]
         #[frame_support::transactional]
-        pub fn cancel_inference(origin: OriginFor<T>, request_id: RequestId) -> DispatchResult {
+        pub fn cancel_inference(
+            origin: OriginFor<T>,
+            request_id: RequestId,
+            miner_id: MinerId,
+            validator_id: ValidatorId,
+        ) -> DispatchResult {
             let user = ensure_signed(origin)?;
-            let (payment, miner_id, validator_id) = InferenceRequests::<T>::try_mutate(
+            let payment = InferenceRequests::<T>::try_mutate(
                 request_id,
-                |maybe_request| -> Result<(BalanceOf<T>, MinerId, ValidatorId), DispatchError> {
+                |maybe_request| -> Result<BalanceOf<T>, DispatchError> {
                     let request = maybe_request.as_mut().ok_or(Error::<T>::UnknownRequest)?;
                     Self::ensure_request_user(request, &user)?;
+                    Self::ensure_request_assignment_witness(request, miner_id, validator_id)?;
                     ensure!(
                         request.status == InferenceRequestStatus::Pending,
                         Error::<T>::RequestAlreadySettled
@@ -1324,7 +1344,7 @@ pub mod pallet {
                         Precision::Exact,
                     )?;
                     request.status = InferenceRequestStatus::Cancelled;
-                    Ok((request.payment, request.miner_id, request.validator_id))
+                    Ok(request.payment)
                 },
             )?;
             Self::decrement_pending_assignment(miner_id, validator_id)?;
@@ -1515,13 +1535,16 @@ pub mod pallet {
             origin: OriginFor<T>,
             request_id: RequestId,
             request_user: T::AccountId,
+            miner_id: MinerId,
+            validator_id: ValidatorId,
         ) -> DispatchResult {
             let _keeper = ensure_signed(origin)?;
-            let (payment, miner_id, validator_id) = InferenceRequests::<T>::try_mutate(
+            let payment = InferenceRequests::<T>::try_mutate(
                 request_id,
-                |maybe_request| -> Result<(BalanceOf<T>, MinerId, ValidatorId), DispatchError> {
+                |maybe_request| -> Result<BalanceOf<T>, DispatchError> {
                     let request = maybe_request.as_mut().ok_or(Error::<T>::UnknownRequest)?;
                     Self::ensure_request_user(request, &request_user)?;
+                    Self::ensure_request_assignment_witness(request, miner_id, validator_id)?;
                     ensure!(
                         request.status == InferenceRequestStatus::Pending,
                         Error::<T>::RequestAlreadySettled
@@ -1541,7 +1564,7 @@ pub mod pallet {
                         Precision::Exact,
                     )?;
                     request.status = InferenceRequestStatus::Expired;
-                    Ok((request.payment, request.miner_id, request.validator_id))
+                    Ok(request.payment)
                 },
             )?;
             Self::decrement_pending_assignment(miner_id, validator_id)?;
@@ -1807,8 +1830,12 @@ pub mod pallet {
                     request_id,
                     user_commitment: Self::account_commitment(&user),
                     subnet_id,
-                    miner_id,
-                    validator_id,
+                    assignment_commitment: Self::request_assignment_commitment(
+                        request_id,
+                        subnet_id,
+                        miner_id,
+                        validator_id,
+                    ),
                     input_commitment,
                     payment,
                     validator_fee_bps,
@@ -2006,6 +2033,15 @@ pub mod pallet {
             amount.using_encoded(blake2_256)
         }
 
+        pub(crate) fn request_assignment_commitment(
+            request_id: RequestId,
+            subnet_id: SubnetId,
+            miner_id: MinerId,
+            validator_id: ValidatorId,
+        ) -> Commitment {
+            (request_id, subnet_id, miner_id, validator_id).using_encoded(blake2_256)
+        }
+
         fn held_miner_bond(operator: &T::AccountId) -> BalanceOf<T> {
             T::Currency::balance_on_hold(&HoldReason::MinerBond.into(), operator)
         }
@@ -2051,6 +2087,24 @@ pub mod pallet {
             ensure!(
                 request.user_commitment == Self::account_commitment(user),
                 Error::<T>::NotRequestOwner
+            );
+            Ok(())
+        }
+
+        fn ensure_request_assignment_witness(
+            request: &ChainInferenceRequest<BalanceOf<T>>,
+            miner_id: MinerId,
+            validator_id: ValidatorId,
+        ) -> DispatchResult {
+            ensure!(
+                request.assignment_commitment
+                    == Self::request_assignment_commitment(
+                        request.request_id,
+                        request.subnet_id,
+                        miner_id,
+                        validator_id,
+                    ),
+                Error::<T>::AssignmentMismatch
             );
             Ok(())
         }
@@ -2238,12 +2292,11 @@ pub mod pallet {
             )
         }
 
-        fn rebuild_pending_assignment_counters() -> Weight {
+        fn clear_pending_assignment_counters() -> Weight {
             let mut miner_reads = 0_u64;
             let mut miner_writes = 0_u64;
             let mut validator_reads = 0_u64;
             let mut validator_writes = 0_u64;
-            let mut request_reads = 0_u64;
 
             for (miner_id, _) in PendingMinerRequests::<T>::iter() {
                 PendingMinerRequests::<T>::remove(miner_id);
@@ -2256,23 +2309,8 @@ pub mod pallet {
                 validator_writes = validator_writes.saturating_add(1);
             }
 
-            for (_, request) in InferenceRequests::<T>::iter() {
-                request_reads = request_reads.saturating_add(1);
-                if request.status == InferenceRequestStatus::Pending
-                    && Self::increment_pending_assignment(request.miner_id, request.validator_id)
-                        .is_ok()
-                {
-                    miner_reads = miner_reads.saturating_add(1);
-                    miner_writes = miner_writes.saturating_add(1);
-                    validator_reads = validator_reads.saturating_add(1);
-                    validator_writes = validator_writes.saturating_add(1);
-                }
-            }
-
             T::DbWeight::get().reads_writes(
-                miner_reads
-                    .saturating_add(validator_reads)
-                    .saturating_add(request_reads),
+                miner_reads.saturating_add(validator_reads),
                 miner_writes.saturating_add(validator_writes),
             )
         }
@@ -2466,18 +2504,26 @@ pub mod pallet {
                 return Weight::zero();
             }
 
+            let clear_weight = Self::clear_pending_assignment_counters();
             let mut migrated = 0_u64;
             InferenceRequests::<T>::translate::<
                 ChainInferenceRequestV8<T::AccountId, BalanceOf<T>>,
                 _,
             >(|_, old| {
                 migrated = migrated.saturating_add(1);
+                if old.status == InferenceRequestStatus::Pending {
+                    let _ = Self::increment_pending_assignment(old.miner_id, old.validator_id);
+                }
                 Some(ChainInferenceRequest {
                     request_id: old.request_id,
                     user_commitment: Self::account_commitment(&old.user),
                     subnet_id: old.subnet_id,
-                    miner_id: old.miner_id,
-                    validator_id: old.validator_id,
+                    assignment_commitment: Self::request_assignment_commitment(
+                        old.request_id,
+                        old.subnet_id,
+                        old.miner_id,
+                        old.validator_id,
+                    ),
                     input_commitment: old.input_commitment,
                     payment: old.payment,
                     validator_fee_bps: old.validator_fee_bps,
@@ -2487,7 +2533,43 @@ pub mod pallet {
                 })
             });
 
-            T::DbWeight::get().reads_writes(migrated, migrated)
+            clear_weight.saturating_add(T::DbWeight::get().reads_writes(migrated, migrated))
+        }
+
+        fn migrate_request_assignment_commitments(on_chain: StorageVersion) -> Weight {
+            if on_chain < StorageVersion::new(9) || on_chain >= StorageVersion::new(11) {
+                return Weight::zero();
+            }
+
+            let clear_weight = Self::clear_pending_assignment_counters();
+            let mut migrated = 0_u64;
+            InferenceRequests::<T>::translate::<ChainInferenceRequestV10<BalanceOf<T>>, _>(
+                |_, old| {
+                    migrated = migrated.saturating_add(1);
+                    if old.status == InferenceRequestStatus::Pending {
+                        let _ = Self::increment_pending_assignment(old.miner_id, old.validator_id);
+                    }
+                    Some(ChainInferenceRequest {
+                        request_id: old.request_id,
+                        user_commitment: old.user_commitment,
+                        subnet_id: old.subnet_id,
+                        assignment_commitment: Self::request_assignment_commitment(
+                            old.request_id,
+                            old.subnet_id,
+                            old.miner_id,
+                            old.validator_id,
+                        ),
+                        input_commitment: old.input_commitment,
+                        payment: old.payment,
+                        validator_fee_bps: old.validator_fee_bps,
+                        treasury_fee_bps: old.treasury_fee_bps,
+                        created_at: old.created_at,
+                        status: old.status,
+                    })
+                },
+            );
+
+            clear_weight.saturating_add(T::DbWeight::get().reads_writes(migrated, migrated))
         }
 
         #[cfg(feature = "try-runtime")]
@@ -2535,46 +2617,33 @@ pub mod pallet {
             }
 
             for (miner_id, count) in PendingMinerRequests::<T>::iter() {
-                let mut expected = 0;
-                for (_, request) in InferenceRequests::<T>::iter() {
-                    if request.status == InferenceRequestStatus::Pending
-                        && request.miner_id == miner_id
-                    {
-                        expected += 1;
-                    }
-                }
+                ensure!(count > 0, "Qubitum pending miner counter is zero");
+                let miner = Miners::<T>::get(miner_id)
+                    .ok_or("Qubitum pending miner counter references missing miner")?;
                 ensure!(
-                    count == expected,
-                    "Qubitum pending miner request counter mismatch"
+                    matches!(
+                        miner.status,
+                        RegistryStatus::Active
+                            | RegistryStatus::Slashed
+                            | RegistryStatus::Exiting { .. }
+                    ),
+                    "Qubitum pending miner counter references invalid miner status"
                 );
             }
 
             for (validator_id, count) in PendingValidatorRequests::<T>::iter() {
-                let mut expected = 0;
-                for (_, request) in InferenceRequests::<T>::iter() {
-                    if request.status == InferenceRequestStatus::Pending
-                        && request.validator_id == validator_id
-                    {
-                        expected += 1;
-                    }
-                }
+                ensure!(count > 0, "Qubitum pending validator counter is zero");
+                let validator = Validators::<T>::get(validator_id)
+                    .ok_or("Qubitum pending validator counter references missing validator")?;
                 ensure!(
-                    count == expected,
-                    "Qubitum pending validator request counter mismatch"
+                    matches!(
+                        validator.status,
+                        RegistryStatus::Active
+                            | RegistryStatus::Slashed
+                            | RegistryStatus::Exiting { .. }
+                    ),
+                    "Qubitum pending validator counter references invalid validator status"
                 );
-            }
-
-            for (_, request) in InferenceRequests::<T>::iter() {
-                if request.status == InferenceRequestStatus::Pending {
-                    ensure!(
-                        PendingMinerRequests::<T>::get(request.miner_id) > 0,
-                        "Qubitum pending request missing miner counter"
-                    );
-                    ensure!(
-                        PendingValidatorRequests::<T>::get(request.validator_id) > 0,
-                        "Qubitum pending request missing validator counter"
-                    );
-                }
             }
 
             let mut expected_accounting = ChainAccounting {
@@ -2745,11 +2814,14 @@ pub mod pallet {
             );
             ensure!(
                 request.subnet_id == submission.subnet_id
-                    && request.miner_id == submission.miner_id
-                    && request.validator_id == submission.validator_id
                     && request.input_commitment == submission.input_commitment,
                 Error::<T>::RequestMismatch
             );
+            Self::ensure_request_assignment_witness(
+                &request,
+                submission.miner_id,
+                submission.validator_id,
+            )?;
 
             let subnet =
                 Subnets::<T>::get(submission.subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
@@ -2828,11 +2900,14 @@ pub mod pallet {
                     );
                     ensure!(
                         request.subnet_id == submission.subnet_id
-                            && request.miner_id == submission.miner_id
-                            && request.validator_id == submission.validator_id
                             && request.input_commitment == submission.input_commitment,
                         Error::<T>::RequestMismatch
                     );
+                    Self::ensure_request_assignment_witness(
+                        request,
+                        submission.miner_id,
+                        submission.validator_id,
+                    )?;
                     Self::ensure_request_user(request, request_user)?;
 
                     let miner =
@@ -2855,7 +2930,7 @@ pub mod pallet {
                         treasury_fee,
                     )?;
                     request.status = InferenceRequestStatus::Settled;
-                    Self::decrement_pending_assignment(request.miner_id, request.validator_id)?;
+                    Self::decrement_pending_assignment(submission.miner_id, submission.validator_id)?;
                     Self::transition_request_status(
                         InferenceRequestStatus::Pending,
                         InferenceRequestStatus::Settled,
@@ -2885,11 +2960,14 @@ pub mod pallet {
                     );
                     ensure!(
                         request.subnet_id == submission.subnet_id
-                            && request.miner_id == submission.miner_id
-                            && request.validator_id == submission.validator_id
                             && request.input_commitment == submission.input_commitment,
                         Error::<T>::RequestMismatch
                     );
+                    Self::ensure_request_assignment_witness(
+                        request,
+                        submission.miner_id,
+                        submission.validator_id,
+                    )?;
                     Self::ensure_request_user(request, request_user)?;
 
                     T::Currency::release(
@@ -2899,7 +2977,10 @@ pub mod pallet {
                         Precision::Exact,
                     )?;
                     request.status = InferenceRequestStatus::Rejected;
-                    Self::decrement_pending_assignment(request.miner_id, request.validator_id)?;
+                    Self::decrement_pending_assignment(
+                        submission.miner_id,
+                        submission.validator_id,
+                    )?;
                     Self::transition_request_status(
                         InferenceRequestStatus::Pending,
                         InferenceRequestStatus::Rejected,
