@@ -7,10 +7,10 @@ use crate::{
     ChainRouteAvailability, Error, HoldReason, InferenceRequestParams, InferenceRequestStatus,
     InferenceRequests, MinerCount, MinerIdentityCommitments, MinerIdentitySignatureBundles, Miners,
     PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests, ProofRecords,
-    RejectedInferenceRequestCount, RequestCount, SettledInferenceRequestCount, SubnetCount,
-    Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
-    TotalTreasuryFees, TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
-    ValidatorIdentitySignatureBundles, Validators,
+    PublicRegistryStatus, RejectedInferenceRequestCount, RequestCount,
+    SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned, TotalInferenceEscrowed,
+    TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees, TotalValidatorFees,
+    ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles, Validators,
     mock::{
         Balances, Qubitum, RuntimeEvent, RuntimeOrigin, System, Test, new_test_ext,
         set_verification_outcome,
@@ -885,7 +885,7 @@ fn public_registry_views_redact_operator_capital_and_model_commitments() {
                 id: 0,
                 subnet_id: 0,
                 proof_system: ProofSystem::RiscZeroStark,
-                status: RegistryStatus::Active,
+                status: PublicRegistryStatus::Active,
             }
         );
         let encoded_miner = public_miner.encode();
@@ -903,12 +903,130 @@ fn public_registry_views_redact_operator_capital_and_model_commitments() {
             ChainPublicValidator {
                 id: 0,
                 subnet_id: 0,
-                status: RegistryStatus::Active,
+                status: PublicRegistryStatus::Active,
             }
         );
         let encoded_validator = public_validator.encode();
         for hidden in [3_u64.encode(), MIN_MINER_BOND.encode()] {
             assert!(!contains_subsequence(&encoded_validator, &hidden));
+        }
+
+        assert_ok!(Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0));
+        let exiting_miner = Qubitum::public_miner(0).unwrap();
+        assert_eq!(exiting_miner.status, PublicRegistryStatus::Exiting);
+        assert!(!contains_subsequence(
+            &exiting_miner.encode(),
+            &20_u64.encode()
+        ));
+
+        assert_ok!(Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0));
+        let exiting_validator = Qubitum::public_validator(0).unwrap();
+        assert_eq!(exiting_validator.status, PublicRegistryStatus::Exiting);
+        assert!(!contains_subsequence(
+            &exiting_validator.encode(),
+            &20_u64.encode()
+        ));
+    });
+}
+
+#[test]
+fn public_registry_events_redact_operator_capital_model_and_exit_schedule() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(7);
+        let miner_bond = MIN_MINER_BOND + 12_345;
+        let validator_stake = MIN_MINER_BOND + 54_321;
+
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::Code,
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(44),
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            miner_bond
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(3),
+            0,
+            validator_stake
+        ));
+        assert_ok!(Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0));
+        assert_ok!(Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0));
+
+        System::set_block_number(27);
+        assert_ok!(Qubitum::withdraw_miner_bond(RuntimeOrigin::signed(2), 0));
+        assert_ok!(Qubitum::withdraw_validator_stake(
+            RuntimeOrigin::signed(3),
+            0
+        ));
+
+        let events: Vec<_> = System::events()
+            .into_iter()
+            .filter_map(|record| match record.event {
+                RuntimeEvent::Qubitum(event) => Some(event),
+                _ => None,
+            })
+            .collect();
+
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::SubnetCreated { subnet_id: 0 }))
+        );
+        assert!(events.iter().any(|event| matches!(
+            event,
+            crate::Event::MinerRegistered {
+                miner_id: 0,
+                subnet_id: 0,
+            }
+        )));
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::MinerActivated { miner_id: 0 }))
+        );
+        assert!(events.iter().any(|event| matches!(
+            event,
+            crate::Event::ValidatorRegistered {
+                validator_id: 0,
+                subnet_id: 0,
+            }
+        )));
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::MinerExitStarted { miner_id: 0 }))
+        );
+        assert!(events.iter().any(|event| matches!(
+            event,
+            crate::Event::ValidatorExitStarted { validator_id: 0 }
+        )));
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::MinerBondWithdrawn { miner_id: 0 }))
+        );
+        assert!(events.iter().any(|event| matches!(
+            event,
+            crate::Event::ValidatorStakeWithdrawn { validator_id: 0 }
+        )));
+
+        for encoded in events.iter().map(Encode::encode) {
+            for hidden in [
+                miner_bond.encode(),
+                validator_stake.encode(),
+                commitment(44).encode(),
+                27_u64.encode(),
+            ] {
+                assert!(!contains_subsequence(&encoded, &hidden));
+            }
         }
     });
 }

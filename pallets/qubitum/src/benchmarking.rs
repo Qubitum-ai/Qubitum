@@ -147,13 +147,7 @@ mod benchmarks {
 
         assert_eq!(SubnetCount::<T>::get(), 1);
         assert!(Subnets::<T>::contains_key(0));
-        assert_last_event::<T>(
-            Event::<T>::SubnetCreated {
-                subnet_id: 0,
-                owner,
-            }
-            .into(),
-        );
+        assert_last_event::<T>(Event::<T>::SubnetCreated { subnet_id: 0 }.into());
     }
 
     #[benchmark]
@@ -183,7 +177,6 @@ mod benchmarks {
             Event::<T>::MinerRegistered {
                 miner_id: 0,
                 subnet_id: 0,
-                operator: miner,
             }
             .into(),
         );
@@ -215,13 +208,7 @@ mod benchmarks {
             panic!("miner must be exiting");
         };
         assert!(exit_available_at >= T::MinerExitCooldownBlocks::get());
-        assert_last_event::<T>(
-            Event::<T>::MinerExitStarted {
-                miner_id: 0,
-                exit_available_at,
-            }
-            .into(),
-        );
+        assert_last_event::<T>(Event::<T>::MinerExitStarted { miner_id: 0 }.into());
     }
 
     #[benchmark]
@@ -240,13 +227,7 @@ mod benchmarks {
         let registered_miner = Miners::<T>::get(0).unwrap();
         assert_eq!(registered_miner.status, RegistryStatus::Disabled);
         assert_eq!(registered_miner.bond, BalanceOf::<T>::default());
-        assert_last_event::<T>(
-            Event::<T>::MinerBondWithdrawn {
-                miner_id: 0,
-                amount: T::MinMinerBond::get(),
-            }
-            .into(),
-        );
+        assert_last_event::<T>(Event::<T>::MinerBondWithdrawn { miner_id: 0 }.into());
     }
 
     #[benchmark]
@@ -273,7 +254,6 @@ mod benchmarks {
             Event::<T>::ValidatorRegistered {
                 validator_id: 0,
                 subnet_id: 0,
-                operator: validator,
             }
             .into(),
         );
@@ -292,13 +272,7 @@ mod benchmarks {
             panic!("validator must be exiting");
         };
         assert!(exit_available_at >= T::ValidatorExitCooldownBlocks::get());
-        assert_last_event::<T>(
-            Event::<T>::ValidatorExitStarted {
-                validator_id: 0,
-                exit_available_at,
-            }
-            .into(),
-        );
+        assert_last_event::<T>(Event::<T>::ValidatorExitStarted { validator_id: 0 }.into());
     }
 
     #[benchmark]
@@ -318,13 +292,7 @@ mod benchmarks {
         let registered_validator = Validators::<T>::get(0).unwrap();
         assert_eq!(registered_validator.status, RegistryStatus::Disabled);
         assert_eq!(registered_validator.stake, BalanceOf::<T>::default());
-        assert_last_event::<T>(
-            Event::<T>::ValidatorStakeWithdrawn {
-                validator_id: 0,
-                amount: T::MinValidatorStake::get(),
-            }
-            .into(),
-        );
+        assert_last_event::<T>(Event::<T>::ValidatorStakeWithdrawn { validator_id: 0 }.into());
     }
 
     #[benchmark]

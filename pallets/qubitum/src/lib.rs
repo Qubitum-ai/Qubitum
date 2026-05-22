@@ -315,11 +315,43 @@ pub mod pallet {
         Debug,
         MaxEncodedLen,
     )]
+    pub enum PublicRegistryStatus {
+        Pending,
+        Active,
+        Exiting,
+        Slashed,
+        Disabled,
+    }
+
+    impl From<RegistryStatus> for PublicRegistryStatus {
+        fn from(status: RegistryStatus) -> Self {
+            match status {
+                RegistryStatus::Pending => Self::Pending,
+                RegistryStatus::Active => Self::Active,
+                RegistryStatus::Exiting { .. } => Self::Exiting,
+                RegistryStatus::Slashed => Self::Slashed,
+                RegistryStatus::Disabled => Self::Disabled,
+            }
+        }
+    }
+
+    #[derive(
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        TypeInfo,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Debug,
+        MaxEncodedLen,
+    )]
     pub struct ChainPublicMiner {
         pub id: MinerId,
         pub subnet_id: SubnetId,
         pub proof_system: ProofSystem,
-        pub status: RegistryStatus,
+        pub status: PublicRegistryStatus,
     }
 
     #[derive(
@@ -337,7 +369,7 @@ pub mod pallet {
     pub struct ChainPublicValidator {
         pub id: ValidatorId,
         pub subnet_id: SubnetId,
-        pub status: RegistryStatus,
+        pub status: PublicRegistryStatus,
     }
 
     #[derive(
@@ -715,47 +747,27 @@ pub mod pallet {
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
         /// A subnet was created.
-        SubnetCreated {
-            subnet_id: SubnetId,
-            owner: T::AccountId,
-        },
+        SubnetCreated { subnet_id: SubnetId },
         /// A miner was registered.
         MinerRegistered {
             miner_id: MinerId,
             subnet_id: SubnetId,
-            operator: T::AccountId,
         },
         /// A miner bond was locked and activated.
-        MinerActivated {
-            miner_id: MinerId,
-            bond: BalanceOf<T>,
-        },
+        MinerActivated { miner_id: MinerId },
         /// A miner started the bond exit cooldown.
-        MinerExitStarted {
-            miner_id: MinerId,
-            exit_available_at: BlockNumber,
-        },
+        MinerExitStarted { miner_id: MinerId },
         /// A miner bond was released after cooldown.
-        MinerBondWithdrawn {
-            miner_id: MinerId,
-            amount: BalanceOf<T>,
-        },
+        MinerBondWithdrawn { miner_id: MinerId },
         /// A validator was registered and staked.
         ValidatorRegistered {
             validator_id: ValidatorId,
             subnet_id: SubnetId,
-            operator: T::AccountId,
         },
         /// A validator started the stake exit cooldown.
-        ValidatorExitStarted {
-            validator_id: ValidatorId,
-            exit_available_at: BlockNumber,
-        },
+        ValidatorExitStarted { validator_id: ValidatorId },
         /// A validator stake was released after cooldown.
-        ValidatorStakeWithdrawn {
-            validator_id: ValidatorId,
-            amount: BalanceOf<T>,
-        },
+        ValidatorStakeWithdrawn { validator_id: ValidatorId },
         /// A miner published or cleared shielded identity commitments.
         MinerIdentityCommitmentsUpdated { miner_id: MinerId },
         /// A validator published or cleared shielded identity commitments.
@@ -903,7 +915,7 @@ pub mod pallet {
             };
 
             Subnets::<T>::insert(subnet_id, subnet);
-            Self::deposit_event(Event::SubnetCreated { subnet_id, owner });
+            Self::deposit_event(Event::SubnetCreated { subnet_id });
             Ok(())
         }
 
@@ -940,7 +952,6 @@ pub mod pallet {
             Self::deposit_event(Event::MinerRegistered {
                 miner_id,
                 subnet_id,
-                operator,
             });
             Ok(())
         }
@@ -975,7 +986,7 @@ pub mod pallet {
                 Ok(())
             })?;
 
-            Self::deposit_event(Event::MinerActivated { miner_id, bond });
+            Self::deposit_event(Event::MinerActivated { miner_id });
             Ok(())
         }
 
@@ -1010,7 +1021,6 @@ pub mod pallet {
             Self::deposit_event(Event::ValidatorRegistered {
                 validator_id,
                 subnet_id,
-                operator,
             });
             Ok(())
         }
@@ -1270,10 +1280,7 @@ pub mod pallet {
                 Ok(())
             })?;
 
-            Self::deposit_event(Event::MinerExitStarted {
-                miner_id,
-                exit_available_at,
-            });
+            Self::deposit_event(Event::MinerExitStarted { miner_id });
             Ok(())
         }
 
@@ -1283,37 +1290,31 @@ pub mod pallet {
         #[frame_support::transactional]
         pub fn withdraw_miner_bond(origin: OriginFor<T>, miner_id: MinerId) -> DispatchResult {
             let operator = ensure_signed(origin)?;
-            let amount = Miners::<T>::try_mutate(
-                miner_id,
-                |maybe_miner| -> Result<BalanceOf<T>, DispatchError> {
-                    let miner = maybe_miner.as_mut().ok_or(Error::<T>::UnknownMiner)?;
-                    ensure!(miner.operator == operator, Error::<T>::NotOperator);
-                    let RegistryStatus::Exiting { exit_available_at } = miner.status else {
-                        return Err(Error::<T>::InvalidMinerStatus.into());
-                    };
-                    ensure!(
-                        Self::current_block() >= exit_available_at,
-                        Error::<T>::MinerExitUnavailable
-                    );
+            Miners::<T>::try_mutate(miner_id, |maybe_miner| -> DispatchResult {
+                let miner = maybe_miner.as_mut().ok_or(Error::<T>::UnknownMiner)?;
+                ensure!(miner.operator == operator, Error::<T>::NotOperator);
+                let RegistryStatus::Exiting { exit_available_at } = miner.status else {
+                    return Err(Error::<T>::InvalidMinerStatus.into());
+                };
+                ensure!(
+                    Self::current_block() >= exit_available_at,
+                    Error::<T>::MinerExitUnavailable
+                );
 
-                    let amount = miner.bond;
-                    let released = if amount == BalanceOf::<T>::default() {
-                        amount
-                    } else {
-                        T::Currency::release(
-                            &HoldReason::MinerBond.into(),
-                            &miner.operator,
-                            amount,
-                            Precision::Exact,
-                        )?
-                    };
-                    miner.bond = BalanceOf::<T>::default();
-                    miner.status = RegistryStatus::Disabled;
-                    Ok(released)
-                },
-            )?;
+                if miner.bond != BalanceOf::<T>::default() {
+                    T::Currency::release(
+                        &HoldReason::MinerBond.into(),
+                        &miner.operator,
+                        miner.bond,
+                        Precision::Exact,
+                    )?;
+                }
+                miner.bond = BalanceOf::<T>::default();
+                miner.status = RegistryStatus::Disabled;
+                Ok(())
+            })?;
 
-            Self::deposit_event(Event::MinerBondWithdrawn { miner_id, amount });
+            Self::deposit_event(Event::MinerBondWithdrawn { miner_id });
             Ok(())
         }
 
@@ -1350,10 +1351,7 @@ pub mod pallet {
                 Ok(())
             })?;
 
-            Self::deposit_event(Event::ValidatorExitStarted {
-                validator_id,
-                exit_available_at,
-            });
+            Self::deposit_event(Event::ValidatorExitStarted { validator_id });
             Ok(())
         }
 
@@ -1366,42 +1364,33 @@ pub mod pallet {
             validator_id: ValidatorId,
         ) -> DispatchResult {
             let operator = ensure_signed(origin)?;
-            let amount = Validators::<T>::try_mutate(
-                validator_id,
-                |maybe_validator| -> Result<BalanceOf<T>, DispatchError> {
-                    let validator = maybe_validator
-                        .as_mut()
-                        .ok_or(Error::<T>::UnknownValidator)?;
-                    ensure!(validator.operator == operator, Error::<T>::NotOperator);
-                    let RegistryStatus::Exiting { exit_available_at } = validator.status else {
-                        return Err(Error::<T>::InvalidValidatorStatus.into());
-                    };
-                    ensure!(
-                        Self::current_block() >= exit_available_at,
-                        Error::<T>::ValidatorExitUnavailable
-                    );
+            Validators::<T>::try_mutate(validator_id, |maybe_validator| -> DispatchResult {
+                let validator = maybe_validator
+                    .as_mut()
+                    .ok_or(Error::<T>::UnknownValidator)?;
+                ensure!(validator.operator == operator, Error::<T>::NotOperator);
+                let RegistryStatus::Exiting { exit_available_at } = validator.status else {
+                    return Err(Error::<T>::InvalidValidatorStatus.into());
+                };
+                ensure!(
+                    Self::current_block() >= exit_available_at,
+                    Error::<T>::ValidatorExitUnavailable
+                );
 
-                    let amount = validator.stake;
-                    let released = if amount == BalanceOf::<T>::default() {
-                        amount
-                    } else {
-                        T::Currency::release(
-                            &HoldReason::ValidatorStake.into(),
-                            &validator.operator,
-                            amount,
-                            Precision::Exact,
-                        )?
-                    };
-                    validator.stake = BalanceOf::<T>::default();
-                    validator.status = RegistryStatus::Disabled;
-                    Ok(released)
-                },
-            )?;
+                if validator.stake != BalanceOf::<T>::default() {
+                    T::Currency::release(
+                        &HoldReason::ValidatorStake.into(),
+                        &validator.operator,
+                        validator.stake,
+                        Precision::Exact,
+                    )?;
+                }
+                validator.stake = BalanceOf::<T>::default();
+                validator.status = RegistryStatus::Disabled;
+                Ok(())
+            })?;
 
-            Self::deposit_event(Event::ValidatorStakeWithdrawn {
-                validator_id,
-                amount,
-            });
+            Self::deposit_event(Event::ValidatorStakeWithdrawn { validator_id });
             Ok(())
         }
 
@@ -1636,7 +1625,7 @@ pub mod pallet {
                 id: miner.id,
                 subnet_id: miner.subnet_id,
                 proof_system: miner.proof_system,
-                status: miner.status,
+                status: PublicRegistryStatus::from(miner.status),
             })
         }
 
@@ -1644,7 +1633,7 @@ pub mod pallet {
             Validators::<T>::get(validator_id).map(|validator| ChainPublicValidator {
                 id: validator.id,
                 subnet_id: validator.subnet_id,
-                status: validator.status,
+                status: PublicRegistryStatus::from(validator.status),
             })
         }
 
