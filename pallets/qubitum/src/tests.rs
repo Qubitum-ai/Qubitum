@@ -3,7 +3,8 @@
 use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, ChainInferenceRequest, Error, HoldReason,
     InferenceRequestParams, InferenceRequestStatus, InferenceRequests, MinerCount, Miners,
-    ProofRecords, RequestCount, SubnetCount, Subnets, TotalBurned, ValidatorCount, Validators,
+    PendingMinerRequests, PendingValidatorRequests, ProofRecords, RequestCount, SubnetCount,
+    Subnets, TotalBurned, ValidatorCount, Validators,
     mock::{
         Balances, Qubitum, RuntimeOrigin, System, Test, new_test_ext, set_verification_outcome,
     },
@@ -369,16 +370,19 @@ fn validator_exit_requires_cooldown_and_releases_stake() {
 }
 
 #[test]
-fn submit_proof_rejects_exiting_validator() {
+fn validator_cannot_exit_with_pending_proof_assignment() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         request_inference(41);
-        assert_ok!(Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0));
 
         assert_noop!(
-            Qubitum::submit_proof(RuntimeOrigin::signed(3), valid_submission(41)),
-            Error::<Test>::NotActive
+            Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0),
+            Error::<Test>::PendingAssignedRequests
         );
+        assert_ok!(Qubitum::submit_proof(
+            RuntimeOrigin::signed(3),
+            valid_submission(41)
+        ));
     });
 }
 
@@ -442,6 +446,35 @@ fn request_inference_escrows_payment() {
             1_000
         );
         assert_eq!(RequestCount::<Test>::get(), 8);
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+    });
+}
+
+#[test]
+fn pending_assignment_blocks_participant_exit_until_request_closes() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(7);
+
+        assert_noop!(
+            Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0),
+            Error::<Test>::PendingAssignedRequests
+        );
+        assert_noop!(
+            Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0),
+            Error::<Test>::PendingAssignedRequests
+        );
+
+        assert_ok!(Qubitum::submit_proof(
+            RuntimeOrigin::signed(3),
+            valid_submission(7)
+        ));
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
+
+        assert_ok!(Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0));
+        assert_ok!(Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0));
     });
 }
 
@@ -749,19 +782,26 @@ fn submit_proof_rejects_self_validation_assignment() {
 fn runtime_upgrade_rebuilds_active_routing_indexes() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
+        request_inference(42);
         ActiveMinersBySubnet::<Test>::remove(0);
         ActiveValidatorsBySubnet::<Test>::remove(0);
-        StorageVersion::new(0).put::<crate::Pallet<Test>>();
+        PendingMinerRequests::<Test>::remove(0);
+        PendingValidatorRequests::<Test>::remove(0);
+        StorageVersion::new(1).put::<crate::Pallet<Test>>();
 
         assert_eq!(Qubitum::route_assignment(0, 42), None);
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
 
         assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
         assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(1)
+            StorageVersion::new(2)
         );
         assert!(Qubitum::route_assignment(0, 42).is_some());
     });
@@ -831,6 +871,8 @@ fn cancel_inference_releases_pending_escrow() {
             Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
             0
         );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
     });
 }
 

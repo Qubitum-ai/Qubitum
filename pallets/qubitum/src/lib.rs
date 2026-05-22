@@ -139,7 +139,7 @@ pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
 
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(2);
     const MAX_VALIDATOR_ROUTING_ATTEMPTS: usize = 16;
 
     #[pallet::pallet]
@@ -422,6 +422,14 @@ pub mod pallet {
     >;
 
     #[pallet::storage]
+    pub type PendingMinerRequests<T: Config> =
+        StorageMap<_, Twox64Concat, MinerId, RequestId, ValueQuery>;
+
+    #[pallet::storage]
+    pub type PendingValidatorRequests<T: Config> =
+        StorageMap<_, Twox64Concat, ValidatorId, RequestId, ValueQuery>;
+
+    #[pallet::storage]
     pub type TotalBurned<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
 
     #[pallet::hooks]
@@ -432,7 +440,8 @@ pub mod pallet {
                 return T::DbWeight::get().reads(1);
             }
 
-            let weight = Self::rebuild_active_routing_indexes();
+            let weight = Self::rebuild_active_routing_indexes()
+                .saturating_add(Self::rebuild_pending_assignment_counters());
             STORAGE_VERSION.put::<Pallet<T>>();
             weight.saturating_add(T::DbWeight::get().reads_writes(1, 1))
         }
@@ -604,6 +613,10 @@ pub mod pallet {
         NoRouteAvailable,
         /// Submitted assignment does not match the deterministic route.
         AssignmentMismatch,
+        /// Miner or validator still has pending assigned inference requests.
+        PendingAssignedRequests,
+        /// Pending assignment accounting was inconsistent.
+        PendingAssignmentUnderflow,
         /// Subnet has reached the active miner routing index bound.
         TooManyActiveMiners,
         /// Subnet has reached the active validator routing index bound.
@@ -885,6 +898,7 @@ pub mod pallet {
             Self::ensure_next_request_id(request_id)?;
 
             T::Currency::hold(&HoldReason::InferencePayment.into(), &user, params.payment)?;
+            Self::increment_pending_assignment(params.miner_id, params.validator_id)?;
             InferenceRequests::<T>::insert(
                 request_id,
                 ChainInferenceRequest {
@@ -919,9 +933,9 @@ pub mod pallet {
         #[frame_support::transactional]
         pub fn cancel_inference(origin: OriginFor<T>, request_id: RequestId) -> DispatchResult {
             let user = ensure_signed(origin)?;
-            let payment = InferenceRequests::<T>::try_mutate(
+            let (payment, miner_id, validator_id) = InferenceRequests::<T>::try_mutate(
                 request_id,
-                |maybe_request| -> Result<BalanceOf<T>, DispatchError> {
+                |maybe_request| -> Result<(BalanceOf<T>, MinerId, ValidatorId), DispatchError> {
                     let request = maybe_request.as_mut().ok_or(Error::<T>::UnknownRequest)?;
                     ensure!(request.user == user, Error::<T>::NotRequestOwner);
                     ensure!(
@@ -943,9 +957,10 @@ pub mod pallet {
                         Precision::Exact,
                     )?;
                     request.status = InferenceRequestStatus::Cancelled;
-                    Ok(request.payment)
+                    Ok((request.payment, request.miner_id, request.validator_id))
                 },
             )?;
+            Self::decrement_pending_assignment(miner_id, validator_id)?;
 
             Self::deposit_event(Event::InferenceCancelled {
                 request_id,
@@ -973,6 +988,10 @@ pub mod pallet {
                         RegistryStatus::Active | RegistryStatus::Slashed
                     ),
                     Error::<T>::InvalidMinerStatus
+                );
+                ensure!(
+                    PendingMinerRequests::<T>::get(miner_id) == 0,
+                    Error::<T>::PendingAssignedRequests
                 );
                 Self::remove_active_miner(miner.subnet_id, miner_id);
                 miner.status = RegistryStatus::Exiting { exit_available_at };
@@ -1049,6 +1068,10 @@ pub mod pallet {
                         RegistryStatus::Active | RegistryStatus::Slashed
                     ),
                     Error::<T>::InvalidValidatorStatus
+                );
+                ensure!(
+                    PendingValidatorRequests::<T>::get(validator_id) == 0,
+                    Error::<T>::PendingAssignedRequests
                 );
                 Self::remove_active_validator(validator.subnet_id, validator_id);
                 validator.status = RegistryStatus::Exiting { exit_available_at };
@@ -1188,6 +1211,52 @@ pub mod pallet {
                 .checked_add(1)
                 .ok_or(Error::<T>::ArithmeticOverflow)?;
             RequestCount::<T>::put(next);
+            Ok(())
+        }
+
+        fn increment_pending_assignment(
+            miner_id: MinerId,
+            validator_id: ValidatorId,
+        ) -> DispatchResult {
+            PendingMinerRequests::<T>::try_mutate(miner_id, |count| {
+                *count = count.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
+                Ok::<(), Error<T>>(())
+            })?;
+            PendingValidatorRequests::<T>::try_mutate(validator_id, |count| {
+                *count = count.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
+                Ok::<(), Error<T>>(())
+            })?;
+            Ok(())
+        }
+
+        fn decrement_pending_assignment(
+            miner_id: MinerId,
+            validator_id: ValidatorId,
+        ) -> DispatchResult {
+            PendingMinerRequests::<T>::try_mutate_exists(miner_id, |maybe_count| {
+                let count = maybe_count.ok_or(Error::<T>::PendingAssignmentUnderflow)?;
+                let next = count
+                    .checked_sub(1)
+                    .ok_or(Error::<T>::PendingAssignmentUnderflow)?;
+                if next == 0 {
+                    *maybe_count = None;
+                } else {
+                    *maybe_count = Some(next);
+                }
+                Ok::<(), Error<T>>(())
+            })?;
+            PendingValidatorRequests::<T>::try_mutate_exists(validator_id, |maybe_count| {
+                let count = maybe_count.ok_or(Error::<T>::PendingAssignmentUnderflow)?;
+                let next = count
+                    .checked_sub(1)
+                    .ok_or(Error::<T>::PendingAssignmentUnderflow)?;
+                if next == 0 {
+                    *maybe_count = None;
+                } else {
+                    *maybe_count = Some(next);
+                }
+                Ok::<(), Error<T>>(())
+            })?;
             Ok(())
         }
 
@@ -1354,6 +1423,45 @@ pub mod pallet {
             )
         }
 
+        fn rebuild_pending_assignment_counters() -> Weight {
+            let mut miner_reads = 0_u64;
+            let mut miner_writes = 0_u64;
+            let mut validator_reads = 0_u64;
+            let mut validator_writes = 0_u64;
+            let mut request_reads = 0_u64;
+
+            for (miner_id, _) in PendingMinerRequests::<T>::iter() {
+                PendingMinerRequests::<T>::remove(miner_id);
+                miner_reads = miner_reads.saturating_add(1);
+                miner_writes = miner_writes.saturating_add(1);
+            }
+            for (validator_id, _) in PendingValidatorRequests::<T>::iter() {
+                PendingValidatorRequests::<T>::remove(validator_id);
+                validator_reads = validator_reads.saturating_add(1);
+                validator_writes = validator_writes.saturating_add(1);
+            }
+
+            for (_, request) in InferenceRequests::<T>::iter() {
+                request_reads = request_reads.saturating_add(1);
+                if request.status == InferenceRequestStatus::Pending
+                    && Self::increment_pending_assignment(request.miner_id, request.validator_id)
+                        .is_ok()
+                {
+                    miner_reads = miner_reads.saturating_add(1);
+                    miner_writes = miner_writes.saturating_add(1);
+                    validator_reads = validator_reads.saturating_add(1);
+                    validator_writes = validator_writes.saturating_add(1);
+                }
+            }
+
+            T::DbWeight::get().reads_writes(
+                miner_reads
+                    .saturating_add(validator_reads)
+                    .saturating_add(request_reads),
+                miner_writes.saturating_add(validator_writes),
+            )
+        }
+
         #[cfg(feature = "try-runtime")]
         fn ensure_active_routing_indexes_match() -> Result<(), sp_runtime::TryRuntimeError> {
             for (subnet_id, miner_ids) in ActiveMinersBySubnet::<T>::iter() {
@@ -1394,6 +1502,49 @@ pub mod pallet {
                         ActiveValidatorsBySubnet::<T>::get(validator.subnet_id)
                             .contains(&validator_id),
                         "Qubitum active validator missing from route index"
+                    );
+                }
+            }
+
+            for (miner_id, count) in PendingMinerRequests::<T>::iter() {
+                let mut expected = 0;
+                for (_, request) in InferenceRequests::<T>::iter() {
+                    if request.status == InferenceRequestStatus::Pending
+                        && request.miner_id == miner_id
+                    {
+                        expected += 1;
+                    }
+                }
+                ensure!(
+                    count == expected,
+                    "Qubitum pending miner request counter mismatch"
+                );
+            }
+
+            for (validator_id, count) in PendingValidatorRequests::<T>::iter() {
+                let mut expected = 0;
+                for (_, request) in InferenceRequests::<T>::iter() {
+                    if request.status == InferenceRequestStatus::Pending
+                        && request.validator_id == validator_id
+                    {
+                        expected += 1;
+                    }
+                }
+                ensure!(
+                    count == expected,
+                    "Qubitum pending validator request counter mismatch"
+                );
+            }
+
+            for (_, request) in InferenceRequests::<T>::iter() {
+                if request.status == InferenceRequestStatus::Pending {
+                    ensure!(
+                        PendingMinerRequests::<T>::get(request.miner_id) > 0,
+                        "Qubitum pending request missing miner counter"
+                    );
+                    ensure!(
+                        PendingValidatorRequests::<T>::get(request.validator_id) > 0,
+                        "Qubitum pending request missing validator counter"
                     );
                 }
             }
@@ -1557,6 +1708,7 @@ pub mod pallet {
                         treasury_fee,
                     )?;
                     request.status = InferenceRequestStatus::Settled;
+                    Self::decrement_pending_assignment(request.miner_id, request.validator_id)?;
 
                     Ok((miner_payment, validator_fee, treasury_fee))
                 },

@@ -50,7 +50,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
     fn deactivate_miner() -> Weight {
         Weight::from_parts(45_000_000, 5_000)
-            .saturating_add(T::DbWeight::get().reads(1_u64))
+            .saturating_add(T::DbWeight::get().reads(2_u64))
             .saturating_add(T::DbWeight::get().writes(1_u64))
     }
 
@@ -68,7 +68,7 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
     fn deactivate_validator() -> Weight {
         Weight::from_parts(45_000_000, 5_000)
-            .saturating_add(T::DbWeight::get().reads(1_u64))
+            .saturating_add(T::DbWeight::get().reads(2_u64))
             .saturating_add(T::DbWeight::get().writes(1_u64))
     }
 
@@ -80,8 +80,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
     fn submit_proof() -> Weight {
         Weight::from_parts(85_000_000, 10_000)
-            .saturating_add(T::DbWeight::get().reads(10_u64))
-            .saturating_add(T::DbWeight::get().writes(8_u64))
+            .saturating_add(T::DbWeight::get().reads(12_u64))
+            .saturating_add(T::DbWeight::get().writes(10_u64))
     }
 
     fn slash_miner() -> Weight {
@@ -98,14 +98,14 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
     fn request_inference() -> Weight {
         Weight::from_parts(50_000_000, 7_000)
-            .saturating_add(T::DbWeight::get().reads(23_u64))
-            .saturating_add(T::DbWeight::get().writes(4_u64))
+            .saturating_add(T::DbWeight::get().reads(25_u64))
+            .saturating_add(T::DbWeight::get().writes(6_u64))
     }
 
     fn cancel_inference() -> Weight {
         Weight::from_parts(45_000_000, 6_500)
-            .saturating_add(T::DbWeight::get().reads(2_u64))
-            .saturating_add(T::DbWeight::get().writes(2_u64))
+            .saturating_add(T::DbWeight::get().reads(4_u64))
+            .saturating_add(T::DbWeight::get().writes(4_u64))
     }
 }
 
@@ -130,7 +130,7 @@ impl WeightInfo for () {
 
     fn deactivate_miner() -> Weight {
         Weight::from_parts(45_000_000, 5_000)
-            .saturating_add(RocksDbWeight::get().reads(1_u64))
+            .saturating_add(RocksDbWeight::get().reads(2_u64))
             .saturating_add(RocksDbWeight::get().writes(1_u64))
     }
 
@@ -148,7 +148,7 @@ impl WeightInfo for () {
 
     fn deactivate_validator() -> Weight {
         Weight::from_parts(45_000_000, 5_000)
-            .saturating_add(RocksDbWeight::get().reads(1_u64))
+            .saturating_add(RocksDbWeight::get().reads(2_u64))
             .saturating_add(RocksDbWeight::get().writes(1_u64))
     }
 
@@ -160,8 +160,8 @@ impl WeightInfo for () {
 
     fn submit_proof() -> Weight {
         Weight::from_parts(85_000_000, 10_000)
-            .saturating_add(RocksDbWeight::get().reads(10_u64))
-            .saturating_add(RocksDbWeight::get().writes(8_u64))
+            .saturating_add(RocksDbWeight::get().reads(12_u64))
+            .saturating_add(RocksDbWeight::get().writes(10_u64))
     }
 
     fn slash_miner() -> Weight {
@@ -178,13 +178,13 @@ impl WeightInfo for () {
 
     fn request_inference() -> Weight {
         Weight::from_parts(50_000_000, 7_000)
-            .saturating_add(RocksDbWeight::get().reads(23_u64))
-            .saturating_add(RocksDbWeight::get().writes(4_u64))
+            .saturating_add(RocksDbWeight::get().reads(25_u64))
+            .saturating_add(RocksDbWeight::get().writes(6_u64))
     }
 
     fn cancel_inference() -> Weight {
         Weight::from_parts(45_000_000, 6_500)
-            .saturating_add(RocksDbWeight::get().reads(2_u64))
-            .saturating_add(RocksDbWeight::get().writes(2_u64))
+            .saturating_add(RocksDbWeight::get().reads(4_u64))
+            .saturating_add(RocksDbWeight::get().writes(4_u64))
     }
 }
