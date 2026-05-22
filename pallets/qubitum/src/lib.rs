@@ -564,7 +564,7 @@ pub mod pallet {
         Debug,
         MaxEncodedLen,
     )]
-    pub struct ChainAssignment {
+    pub(crate) struct ChainAssignment {
         pub request_id: RequestId,
         pub subnet_id: SubnetId,
         pub miner_id: MinerId,
@@ -1670,7 +1670,7 @@ pub mod pallet {
             }
         }
 
-        pub fn route_assignment(
+        pub(crate) fn route_assignment(
             subnet_id: SubnetId,
             request_id: RequestId,
         ) -> Option<ChainAssignment> {
@@ -1695,7 +1695,8 @@ pub mod pallet {
             })
         }
 
-        pub fn next_route_assignment(subnet_id: SubnetId) -> Option<ChainAssignment> {
+        #[cfg(test)]
+        pub(crate) fn next_route_assignment(subnet_id: SubnetId) -> Option<ChainAssignment> {
             Self::route_assignment(subnet_id, RequestCount::<T>::get())
         }
 
