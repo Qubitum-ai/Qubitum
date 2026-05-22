@@ -31,6 +31,8 @@ The pallet is wired into `node-subtensor-runtime` as `Qubitum`, with runtime-pro
 
 Proof submission is constrained to the registered validator operator for the submitted validator ID. The pallet rejects duplicate request IDs, requires the submitted model commitment to match the registered miner commitment, and routes every submission through `pallet_qubitum::VerifyProof` before storing a proof record. The current runtime uses a shape-only verifier adapter; a concrete Risc Zero verifier can replace that associated type without changing dispatchable semantics.
 
+`pallet-qubitum-runtime-api` exposes typed runtime queries for subnet, miner, validator, proof-record, registry-count, and total-burned state. This gives the node RPC layer and external indexers a stable SCALE-compatible interface instead of reading storage layout directly.
+
 Current focused checks:
 
 ```sh
@@ -39,6 +41,7 @@ cargo test -p pallet-qubitum --features runtime-benchmarks
 cargo clippy -p pallet-qubitum --all-targets -- -D warnings
 cargo check -p node-subtensor-runtime
 cargo check -p node-subtensor-runtime --features runtime-benchmarks
+cargo clippy -p pallet-qubitum-runtime-api -- -D warnings
 ```
 
 ## Core Constants

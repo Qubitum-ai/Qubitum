@@ -2568,6 +2568,48 @@ impl_runtime_apis! {
         }
     }
 
+    impl pallet_qubitum_runtime_api::QubitumRuntimeApi<Block> for Runtime {
+        fn qubitum_subnet(
+            subnet_id: qubitum_protocol::SubnetId,
+        ) -> Option<pallet_qubitum::ChainSubnet<AccountId32, TaoBalance>> {
+            pallet_qubitum::Subnets::<Runtime>::get(subnet_id)
+        }
+
+        fn qubitum_miner(
+            miner_id: qubitum_protocol::MinerId,
+        ) -> Option<pallet_qubitum::ChainMiner<AccountId32, TaoBalance>> {
+            pallet_qubitum::Miners::<Runtime>::get(miner_id)
+        }
+
+        fn qubitum_validator(
+            validator_id: qubitum_protocol::ValidatorId,
+        ) -> Option<pallet_qubitum::ChainValidator<AccountId32, TaoBalance>> {
+            pallet_qubitum::Validators::<Runtime>::get(validator_id)
+        }
+
+        fn qubitum_proof_record(
+            request_id: qubitum_protocol::RequestId,
+        ) -> Option<pallet_qubitum::ChainProofRecord> {
+            pallet_qubitum::ProofRecords::<Runtime>::get(request_id)
+        }
+
+        fn qubitum_counts() -> (
+            qubitum_protocol::SubnetId,
+            qubitum_protocol::MinerId,
+            qubitum_protocol::ValidatorId,
+        ) {
+            (
+                pallet_qubitum::SubnetCount::<Runtime>::get(),
+                pallet_qubitum::MinerCount::<Runtime>::get(),
+                pallet_qubitum::ValidatorCount::<Runtime>::get(),
+            )
+        }
+
+        fn qubitum_total_burned() -> TaoBalance {
+            pallet_qubitum::TotalBurned::<Runtime>::get()
+        }
+    }
+
     impl sp_consensus_babe::BabeApi<Block> for Runtime {
         fn configuration() -> BabeConfiguration {
             let config = BabeEpochConfiguration::default();

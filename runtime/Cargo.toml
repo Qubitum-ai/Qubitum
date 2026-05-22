@@ -150,6 +150,7 @@ ark-serialize = { workspace = true, features = ["derive"] }
 # Crowdloan
 pallet-crowdloan.workspace = true
 pallet-qubitum.workspace = true
+pallet-qubitum-runtime-api.workspace = true
 qubitum-protocol.workspace = true
 
 # Mev Shield
@@ -229,6 +230,7 @@ std = [
 	"subtensor-runtime-common/std",
 	"pallet-crowdloan/std",
 	"pallet-qubitum/std",
+	"pallet-qubitum-runtime-api/std",
 	"qubitum-protocol/std",
 	"pallet-babe/std",
 	"pallet-session/std",

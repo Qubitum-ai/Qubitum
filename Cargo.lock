@@ -8421,6 +8421,7 @@ dependencies = [
  "pallet-offences",
  "pallet-preimage",
  "pallet-qubitum",
+ "pallet-qubitum-runtime-api",
  "pallet-registry",
  "pallet-safe-mode",
  "pallet-scheduler",
@@ -10332,6 +10333,19 @@ dependencies = [
  "sp-io",
  "sp-runtime",
  "sp-std",
+]
+
+[[package]]
+name = "pallet-qubitum-runtime-api"
+version = "0.1.0"
+dependencies = [
+ "pallet-qubitum",
+ "parity-scale-codec",
+ "qubitum-protocol",
+ "sp-api",
+ "sp-runtime",
+ "sp-std",
+ "subtensor-runtime-common",
 ]
 
 [[package]]
