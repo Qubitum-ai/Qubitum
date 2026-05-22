@@ -383,6 +383,7 @@ fn submit_proof_records_commitments_for_active_participants() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         request_inference(42);
+        System::set_block_number(123);
 
         assert_ok!(Qubitum::submit_proof(
             RuntimeOrigin::signed(3),
@@ -398,7 +399,7 @@ fn submit_proof_records_commitments_for_active_participants() {
         assert_eq!(record.proof_system, ProofSystem::RiscZeroStark);
         assert_eq!(record.proof_size_bytes, TARGET_PROOF_SIZE_MIN_BYTES);
         assert_eq!(record.verification_latency_ms, 10);
-        assert_eq!(record.submitted_at, 77);
+        assert_eq!(record.submitted_at, 123);
         assert_eq!(
             InferenceRequests::<Test>::get(42).unwrap().status,
             InferenceRequestStatus::Settled

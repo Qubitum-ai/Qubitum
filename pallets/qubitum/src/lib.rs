@@ -704,7 +704,7 @@ pub mod pallet {
                     proof_system: submission.proof_system,
                     proof_size_bytes: submission.proof_size_bytes,
                     verification_latency_ms: submission.verification_latency_ms,
-                    submitted_at: submission.submitted_at,
+                    submitted_at: Self::current_block(),
                 },
             );
             let (miner_payment, validator_fee, treasury_fee) =

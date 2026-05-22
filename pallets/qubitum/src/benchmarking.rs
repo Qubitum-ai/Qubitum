@@ -4,9 +4,9 @@
 #![allow(clippy::arithmetic_side_effects, clippy::unwrap_used)]
 
 use crate::{
-    BalanceOf, ChainProofRecord, Event, InferenceRequestParams, InferenceRequestStatus,
-    InferenceRequests, MinerCount, Miners, ProofRecords, SubnetCount, Subnets, TotalBurned,
-    ValidatorCount, Validators, pallet::*,
+    BalanceOf, Event, InferenceRequestParams, InferenceRequestStatus, InferenceRequests,
+    MinerCount, Miners, ProofRecords, SubnetCount, Subnets, TotalBurned, ValidatorCount,
+    Validators, pallet::*,
 };
 use frame_benchmarking::{account, v2::*};
 use frame_support::traits::{Get, fungible::Mutate};
@@ -332,27 +332,24 @@ mod benchmarks {
         let validator = register_bench_validator::<T>();
         let _user = request_bench_inference::<T>(42);
         let submission = proof_submission();
+        let submitted_at = frame_system::Pallet::<T>::block_number().saturated_into();
 
         #[extrinsic_call]
         _(RawOrigin::Signed(validator), submission);
 
-        assert_eq!(
-            ProofRecords::<T>::get(42),
-            Some(ChainProofRecord {
-                request_id: 42,
-                subnet_id: 0,
-                miner_id: 0,
-                validator_id: 0,
-                input_commitment: commitment(1),
-                output_commitment: commitment(2),
-                model_commitment: commitment(10),
-                proof: proof(11),
-                proof_system: ProofSystem::RiscZeroStark,
-                proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
-                verification_latency_ms: 10,
-                submitted_at: 77,
-            })
-        );
+        let record = ProofRecords::<T>::get(42).unwrap();
+        assert_eq!(record.request_id, 42);
+        assert_eq!(record.subnet_id, 0);
+        assert_eq!(record.miner_id, 0);
+        assert_eq!(record.validator_id, 0);
+        assert_eq!(record.input_commitment, commitment(1));
+        assert_eq!(record.output_commitment, commitment(2));
+        assert_eq!(record.model_commitment, commitment(10));
+        assert_eq!(record.proof, proof(11));
+        assert_eq!(record.proof_system, ProofSystem::RiscZeroStark);
+        assert_eq!(record.proof_size_bytes, TARGET_PROOF_SIZE_MIN_BYTES);
+        assert_eq!(record.verification_latency_ms, 10);
+        assert!(record.submitted_at >= submitted_at);
     }
 
     #[benchmark]

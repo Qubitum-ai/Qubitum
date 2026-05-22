@@ -52,7 +52,7 @@ The proof envelope commits to the off-chain proof artifact without storing raw p
 - `image_id`: zkVM image id, verification key, or circuit id
 - `verifier_version`: concrete verifier family and version, such as `RiscZeroV1`
 
-This keeps block execution bounded while preserving enough metadata for validators, indexers, and future Risc Zero adapters to audit what was verified. Accepted proof records also retain proof system, proof size, verification latency, and submission block metadata for RPC consumers.
+This keeps block execution bounded while preserving enough metadata for validators, indexers, and future Risc Zero adapters to audit what was verified. Accepted proof records also retain proof system, proof size, verification latency, and chain-stamped submission block metadata for RPC consumers.
 
 `pallet-qubitum-runtime-api` exposes typed runtime queries for subnet, miner, validator, inference-request, proof-record, registry-count, and total-burned state. `pallet-qubitum-rpc` wires those queries into node JSON-RPC methods under the `qubitum_*` namespace, returning SCALE-encoded bytes for complex structs and a direct balance for total burned state.
 
