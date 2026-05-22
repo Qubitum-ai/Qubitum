@@ -1,0 +1,13 @@
+[package]
+name = "qubitum-protocol"
+version = "0.1.0"
+edition.workspace = true
+description = "Core Qubitum protocol primitives for private verifiable AI inference."
+publish = false
+
+[lints]
+workspace = true
+
+[features]
+default = ["std"]
+std = []
