@@ -61,3 +61,10 @@ fn qubitum_request_inference_is_blocked_in_safe_mode() {
 
     assert!(!SafeModeWhitelistedCalls::contains(&call));
 }
+
+#[test]
+fn qubitum_cancel_inference_is_blocked_in_safe_mode() {
+    let call = RuntimeCall::Qubitum(pallet_qubitum::Call::cancel_inference { request_id: 1 });
+
+    assert!(!SafeModeWhitelistedCalls::contains(&call));
+}

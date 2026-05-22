@@ -245,6 +245,45 @@ fn request_inference_escrows_payment() {
 }
 
 #[test]
+fn cancel_inference_releases_pending_escrow() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(8);
+
+        assert_ok!(Qubitum::cancel_inference(RuntimeOrigin::signed(4), 8));
+
+        let request = InferenceRequests::<Test>::get(8).unwrap();
+        assert_eq!(request.status, InferenceRequestStatus::Cancelled);
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            0
+        );
+    });
+}
+
+#[test]
+fn cancel_inference_rejects_non_owner_or_settled_request() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(9);
+
+        assert_noop!(
+            Qubitum::cancel_inference(RuntimeOrigin::signed(3), 9),
+            Error::<Test>::NotRequestOwner
+        );
+
+        assert_ok!(Qubitum::submit_proof(
+            RuntimeOrigin::signed(3),
+            valid_submission(9)
+        ));
+        assert_noop!(
+            Qubitum::cancel_inference(RuntimeOrigin::signed(4), 9),
+            Error::<Test>::RequestAlreadySettled
+        );
+    });
+}
+
+#[test]
 fn submit_proof_rejects_latency_or_missing_commitment() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();

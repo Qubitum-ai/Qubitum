@@ -18,6 +18,7 @@ pub trait WeightInfo {
     fn submit_proof() -> Weight;
     fn slash_miner() -> Weight;
     fn request_inference() -> Weight;
+    fn cancel_inference() -> Weight;
 }
 
 /// Weights for `pallet_qubitum` using the runtime database weight.
@@ -65,6 +66,12 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
             .saturating_add(T::DbWeight::get().reads(3_u64))
             .saturating_add(T::DbWeight::get().writes(3_u64))
     }
+
+    fn cancel_inference() -> Weight {
+        Weight::from_parts(45_000_000, 6_500)
+            .saturating_add(T::DbWeight::get().reads(2_u64))
+            .saturating_add(T::DbWeight::get().writes(2_u64))
+    }
 }
 
 impl WeightInfo for () {
@@ -108,5 +115,11 @@ impl WeightInfo for () {
         Weight::from_parts(50_000_000, 7_000)
             .saturating_add(RocksDbWeight::get().reads(3_u64))
             .saturating_add(RocksDbWeight::get().writes(3_u64))
+    }
+
+    fn cancel_inference() -> Weight {
+        Weight::from_parts(45_000_000, 6_500)
+            .saturating_add(RocksDbWeight::get().reads(2_u64))
+            .saturating_add(RocksDbWeight::get().writes(2_u64))
     }
 }

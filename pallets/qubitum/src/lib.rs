@@ -228,6 +228,7 @@ pub mod pallet {
     pub enum InferenceRequestStatus {
         Pending,
         Settled,
+        Cancelled,
     }
 
     #[derive(
@@ -388,6 +389,12 @@ pub mod pallet {
             validator_fee: BalanceOf<T>,
             treasury_fee: BalanceOf<T>,
         },
+        /// Pending inference request escrow was released back to the user.
+        InferenceCancelled {
+            request_id: RequestId,
+            user: T::AccountId,
+            payment: BalanceOf<T>,
+        },
         /// A proof was rejected by the verifier and the miner was slashed.
         ProofRejected {
             request_id: RequestId,
@@ -436,6 +443,8 @@ pub mod pallet {
         UnknownRequest,
         /// Inference request has already been settled.
         RequestAlreadySettled,
+        /// Caller does not own the inference request.
+        NotRequestOwner,
         /// Proof submission does not match the escrowed request.
         RequestMismatch,
         /// Inference payment must be greater than zero.
@@ -710,6 +719,40 @@ pub mod pallet {
                 request_id,
                 user,
                 subnet_id,
+                payment,
+            });
+            Ok(())
+        }
+
+        /// Cancel a pending inference request and release escrowed QBT.
+        #[pallet::call_index(7)]
+        #[pallet::weight(T::WeightInfo::cancel_inference())]
+        #[frame_support::transactional]
+        pub fn cancel_inference(origin: OriginFor<T>, request_id: RequestId) -> DispatchResult {
+            let user = ensure_signed(origin)?;
+            let payment = InferenceRequests::<T>::try_mutate(
+                request_id,
+                |maybe_request| -> Result<BalanceOf<T>, DispatchError> {
+                    let request = maybe_request.as_mut().ok_or(Error::<T>::UnknownRequest)?;
+                    ensure!(request.user == user, Error::<T>::NotRequestOwner);
+                    ensure!(
+                        request.status == InferenceRequestStatus::Pending,
+                        Error::<T>::RequestAlreadySettled
+                    );
+                    T::Currency::release(
+                        &HoldReason::InferencePayment.into(),
+                        &request.user,
+                        request.payment,
+                        Precision::Exact,
+                    )?;
+                    request.status = InferenceRequestStatus::Cancelled;
+                    Ok(request.payment)
+                },
+            )?;
+
+            Self::deposit_event(Event::InferenceCancelled {
+                request_id,
+                user,
                 payment,
             });
             Ok(())
