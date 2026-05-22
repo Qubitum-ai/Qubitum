@@ -144,6 +144,8 @@ fn protocol_params_expose_runtime_policy() {
         assert_eq!(params.miner_registration_burn, MINER_REGISTRATION_BURN);
         assert_eq!(params.min_miner_bond, MIN_MINER_BOND);
         assert_eq!(params.max_miner_bond, MAX_MINER_BOND);
+        assert_eq!(params.max_active_miners_per_subnet, 16);
+        assert_eq!(params.max_active_validators_per_subnet, 16);
         assert_eq!(params.min_validator_stake, MIN_MINER_BOND);
         assert_eq!(
             params.min_invalid_proof_slash_bps,
