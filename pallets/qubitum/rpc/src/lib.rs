@@ -28,6 +28,20 @@ pub trait QubitumRpcApi<BlockHash> {
     fn get_validator(&self, validator_id: ValidatorId, at: Option<BlockHash>)
     -> RpcResult<Vec<u8>>;
 
+    #[method(name = "qubitum_getMinerIdentityCommitments")]
+    fn get_miner_identity_commitments(
+        &self,
+        miner_id: MinerId,
+        at: Option<BlockHash>,
+    ) -> RpcResult<Vec<u8>>;
+
+    #[method(name = "qubitum_getValidatorIdentityCommitments")]
+    fn get_validator_identity_commitments(
+        &self,
+        validator_id: ValidatorId,
+        at: Option<BlockHash>,
+    ) -> RpcResult<Vec<u8>>;
+
     #[method(name = "qubitum_getInferenceRequest")]
     fn get_inference_request(
         &self,
@@ -170,6 +184,42 @@ where
             .map(|result| result.encode())
             .map_err(|e| {
                 Error::RuntimeError(format!("Unable to get Qubitum validator: {e:?}")).into()
+            })
+    }
+
+    fn get_miner_identity_commitments(
+        &self,
+        miner_id: MinerId,
+        at: Option<<Block as BlockT>::Hash>,
+    ) -> RpcResult<Vec<u8>> {
+        let api = self.client.runtime_api();
+        let at = self.at_or_best(at);
+
+        api.qubitum_miner_identity_commitments(at, miner_id)
+            .map(|result| result.encode())
+            .map_err(|e| {
+                Error::RuntimeError(format!(
+                    "Unable to get Qubitum miner identity commitments: {e:?}"
+                ))
+                .into()
+            })
+    }
+
+    fn get_validator_identity_commitments(
+        &self,
+        validator_id: ValidatorId,
+        at: Option<<Block as BlockT>::Hash>,
+    ) -> RpcResult<Vec<u8>> {
+        let api = self.client.runtime_api();
+        let at = self.at_or_best(at);
+
+        api.qubitum_validator_identity_commitments(at, validator_id)
+            .map(|result| result.encode())
+            .map_err(|e| {
+                Error::RuntimeError(format!(
+                    "Unable to get Qubitum validator identity commitments: {e:?}"
+                ))
+                .into()
             })
     }
 

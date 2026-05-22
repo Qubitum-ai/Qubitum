@@ -272,7 +272,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     //   `spec_version`, and `authoring_version` are the same between Wasm and native.
     // This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
     //   the compatible custom types.
-    spec_version: 422,
+    spec_version: 423,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -2603,6 +2603,18 @@ impl_runtime_apis! {
             validator_id: qubitum_protocol::ValidatorId,
         ) -> Option<pallet_qubitum::ChainValidator<AccountId32, TaoBalance>> {
             pallet_qubitum::Validators::<Runtime>::get(validator_id)
+        }
+
+        fn qubitum_miner_identity_commitments(
+            miner_id: qubitum_protocol::MinerId,
+        ) -> Option<pallet_qubitum::ChainIdentityCommitments> {
+            pallet_qubitum::MinerIdentityCommitments::<Runtime>::get(miner_id)
+        }
+
+        fn qubitum_validator_identity_commitments(
+            validator_id: qubitum_protocol::ValidatorId,
+        ) -> Option<pallet_qubitum::ChainIdentityCommitments> {
+            pallet_qubitum::ValidatorIdentityCommitments::<Runtime>::get(validator_id)
         }
 
         fn qubitum_inference_request(

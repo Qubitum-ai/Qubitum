@@ -81,6 +81,24 @@ fn qubitum_expire_inference_is_blocked_in_safe_mode() {
 }
 
 #[test]
+fn qubitum_identity_commitments_are_blocked_in_safe_mode() {
+    let miner = RuntimeCall::Qubitum(pallet_qubitum::Call::set_miner_identity_commitments {
+        miner_id: 1,
+        shielded_identity_commitment: Some(commitment(1)),
+        endpoint_commitment: Some(commitment(2)),
+    });
+    let validator =
+        RuntimeCall::Qubitum(pallet_qubitum::Call::set_validator_identity_commitments {
+            validator_id: 1,
+            shielded_identity_commitment: Some(commitment(3)),
+            endpoint_commitment: Some(commitment(4)),
+        });
+
+    assert!(!SafeModeWhitelistedCalls::contains(&miner));
+    assert!(!SafeModeWhitelistedCalls::contains(&validator));
+}
+
+#[test]
 fn qubitum_miner_exit_is_blocked_in_safe_mode() {
     let deactivate = RuntimeCall::Qubitum(pallet_qubitum::Call::deactivate_miner { miner_id: 1 });
     let withdraw = RuntimeCall::Qubitum(pallet_qubitum::Call::withdraw_miner_bond { miner_id: 1 });

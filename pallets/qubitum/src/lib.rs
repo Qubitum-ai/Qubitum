@@ -306,6 +306,23 @@ pub mod pallet {
     }
 
     #[derive(
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        TypeInfo,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Debug,
+        MaxEncodedLen,
+    )]
+    pub struct ChainIdentityCommitments {
+        pub shielded_identity_commitment: Option<Commitment>,
+        pub endpoint_commitment: Option<Commitment>,
+    }
+
+    #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
     pub struct ChainProofRecord {
@@ -470,6 +487,14 @@ pub mod pallet {
     >;
 
     #[pallet::storage]
+    pub type MinerIdentityCommitments<T: Config> =
+        StorageMap<_, Twox64Concat, MinerId, ChainIdentityCommitments, OptionQuery>;
+
+    #[pallet::storage]
+    pub type ValidatorIdentityCommitments<T: Config> =
+        StorageMap<_, Twox64Concat, ValidatorId, ChainIdentityCommitments, OptionQuery>;
+
+    #[pallet::storage]
     pub type ProofRecords<T: Config> =
         StorageMap<_, Twox64Concat, RequestId, ChainProofRecord, OptionQuery>;
 
@@ -623,6 +648,10 @@ pub mod pallet {
             validator_id: ValidatorId,
             amount: BalanceOf<T>,
         },
+        /// A miner published or cleared shielded identity commitments.
+        MinerIdentityCommitmentsUpdated { miner_id: MinerId },
+        /// A validator published or cleared shielded identity commitments.
+        ValidatorIdentityCommitmentsUpdated { validator_id: ValidatorId },
         /// A user opened an inference request and escrowed QBT.
         InferenceRequested {
             request_id: RequestId,
@@ -1366,6 +1395,69 @@ pub mod pallet {
             });
             Ok(())
         }
+
+        /// Publish or clear commitment-only miner identity metadata.
+        #[pallet::call_index(14)]
+        #[pallet::weight(T::WeightInfo::set_miner_identity_commitments())]
+        pub fn set_miner_identity_commitments(
+            origin: OriginFor<T>,
+            miner_id: MinerId,
+            shielded_identity_commitment: Option<Commitment>,
+            endpoint_commitment: Option<Commitment>,
+        ) -> DispatchResult {
+            let operator = ensure_signed(origin)?;
+            let miner = Miners::<T>::get(miner_id).ok_or(Error::<T>::UnknownMiner)?;
+            ensure!(miner.operator == operator, Error::<T>::NotOperator);
+            Self::ensure_optional_commitment(shielded_identity_commitment)?;
+            Self::ensure_optional_commitment(endpoint_commitment)?;
+
+            if shielded_identity_commitment.is_some() || endpoint_commitment.is_some() {
+                MinerIdentityCommitments::<T>::insert(
+                    miner_id,
+                    ChainIdentityCommitments {
+                        shielded_identity_commitment,
+                        endpoint_commitment,
+                    },
+                );
+            } else {
+                MinerIdentityCommitments::<T>::remove(miner_id);
+            }
+
+            Self::deposit_event(Event::MinerIdentityCommitmentsUpdated { miner_id });
+            Ok(())
+        }
+
+        /// Publish or clear commitment-only validator identity metadata.
+        #[pallet::call_index(15)]
+        #[pallet::weight(T::WeightInfo::set_validator_identity_commitments())]
+        pub fn set_validator_identity_commitments(
+            origin: OriginFor<T>,
+            validator_id: ValidatorId,
+            shielded_identity_commitment: Option<Commitment>,
+            endpoint_commitment: Option<Commitment>,
+        ) -> DispatchResult {
+            let operator = ensure_signed(origin)?;
+            let validator =
+                Validators::<T>::get(validator_id).ok_or(Error::<T>::UnknownValidator)?;
+            ensure!(validator.operator == operator, Error::<T>::NotOperator);
+            Self::ensure_optional_commitment(shielded_identity_commitment)?;
+            Self::ensure_optional_commitment(endpoint_commitment)?;
+
+            if shielded_identity_commitment.is_some() || endpoint_commitment.is_some() {
+                ValidatorIdentityCommitments::<T>::insert(
+                    validator_id,
+                    ChainIdentityCommitments {
+                        shielded_identity_commitment,
+                        endpoint_commitment,
+                    },
+                );
+            } else {
+                ValidatorIdentityCommitments::<T>::remove(validator_id);
+            }
+
+            Self::deposit_event(Event::ValidatorIdentityCommitmentsUpdated { validator_id });
+            Ok(())
+        }
     }
 
     impl<T: Config> Pallet<T> {
@@ -1611,6 +1703,13 @@ pub mod pallet {
 
         fn current_block() -> BlockNumber {
             frame_system::Pallet::<T>::block_number().saturated_into()
+        }
+
+        fn ensure_optional_commitment(commitment: Option<Commitment>) -> DispatchResult {
+            if let Some(commitment) = commitment {
+                ensure_commitment::<T>(commitment)?;
+            }
+            Ok(())
         }
 
         fn route_active_miner(subnet_id: SubnetId, seed: u64) -> Option<MinerId> {

@@ -3,11 +3,12 @@
 use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, CancelledInferenceRequestCount,
     ChainInferenceRequest, ChainRequestStatusCounts, Error, HoldReason, InferenceRequestParams,
-    InferenceRequestStatus, InferenceRequests, MinerCount, Miners, PendingInferenceRequestCount,
-    PendingMinerRequests, PendingValidatorRequests, ProofRecords, RejectedInferenceRequestCount,
-    RequestCount, SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned,
-    TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees,
-    TotalValidatorFees, ValidatorCount, Validators,
+    InferenceRequestStatus, InferenceRequests, MinerCount, MinerIdentityCommitments, Miners,
+    PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests, ProofRecords,
+    RejectedInferenceRequestCount, RequestCount, SettledInferenceRequestCount, SubnetCount,
+    Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
+    TotalTreasuryFees, TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
+    Validators,
     mock::{
         Balances, Qubitum, RuntimeOrigin, System, Test, new_test_ext, set_verification_outcome,
     },
@@ -381,6 +382,86 @@ fn register_validator_locks_stake() {
             Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
             MIN_MINER_BOND
         );
+    });
+}
+
+#[test]
+fn identity_commitments_are_operator_gated_and_commitment_only() {
+    new_test_ext().execute_with(|| {
+        let raw_miner_identity = b"RAW_MINER_IDENTITY_ENDPOINT_AND_OPERATOR_METADATA";
+        let raw_validator_identity = b"RAW_VALIDATOR_IDENTITY_ENDPOINT_AND_STAKE_METADATA";
+
+        register_active_miner_and_validator();
+
+        assert_noop!(
+            Qubitum::set_miner_identity_commitments(
+                RuntimeOrigin::signed(3),
+                0,
+                Some(commitment(20)),
+                Some(commitment(21)),
+            ),
+            Error::<Test>::NotOperator
+        );
+        assert_noop!(
+            Qubitum::set_validator_identity_commitments(
+                RuntimeOrigin::signed(2),
+                0,
+                Some(commitment(22)),
+                Some(commitment(23)),
+            ),
+            Error::<Test>::NotOperator
+        );
+        assert_noop!(
+            Qubitum::set_miner_identity_commitments(
+                RuntimeOrigin::signed(2),
+                0,
+                Some([0; 32]),
+                None,
+            ),
+            Error::<Test>::MissingCommitment
+        );
+
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(2),
+            0,
+            Some(commitment(20)),
+            Some(commitment(21)),
+        ));
+        assert_ok!(Qubitum::set_validator_identity_commitments(
+            RuntimeOrigin::signed(3),
+            0,
+            Some(commitment(22)),
+            Some(commitment(23)),
+        ));
+
+        let miner_commitments = MinerIdentityCommitments::<Test>::get(0).unwrap();
+        assert_eq!(
+            miner_commitments.shielded_identity_commitment,
+            Some(commitment(20))
+        );
+        assert_eq!(miner_commitments.endpoint_commitment, Some(commitment(21)));
+        let validator_commitments = ValidatorIdentityCommitments::<Test>::get(0).unwrap();
+        assert_eq!(
+            validator_commitments.shielded_identity_commitment,
+            Some(commitment(22))
+        );
+        assert_eq!(
+            validator_commitments.endpoint_commitment,
+            Some(commitment(23))
+        );
+
+        for encoded in [miner_commitments.encode(), validator_commitments.encode()] {
+            assert!(!contains_subsequence(&encoded, raw_miner_identity));
+            assert!(!contains_subsequence(&encoded, raw_validator_identity));
+        }
+
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(2),
+            0,
+            None,
+            None,
+        ));
+        assert!(MinerIdentityCommitments::<Test>::get(0).is_none());
     });
 }
 

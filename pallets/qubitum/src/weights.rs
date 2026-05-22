@@ -25,6 +25,8 @@ pub trait WeightInfo {
     fn request_inference() -> Weight;
     fn cancel_inference() -> Weight;
     fn expire_inference() -> Weight;
+    fn set_miner_identity_commitments() -> Weight;
+    fn set_validator_identity_commitments() -> Weight;
 }
 
 /// Weights for `pallet_qubitum` using the runtime database weight.
@@ -114,6 +116,18 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
             .saturating_add(T::DbWeight::get().reads(7_u64))
             .saturating_add(T::DbWeight::get().writes(7_u64))
     }
+
+    fn set_miner_identity_commitments() -> Weight {
+        Weight::from_parts(25_000_000, 3_500)
+            .saturating_add(T::DbWeight::get().reads(1_u64))
+            .saturating_add(T::DbWeight::get().writes(1_u64))
+    }
+
+    fn set_validator_identity_commitments() -> Weight {
+        Weight::from_parts(25_000_000, 3_500)
+            .saturating_add(T::DbWeight::get().reads(1_u64))
+            .saturating_add(T::DbWeight::get().writes(1_u64))
+    }
 }
 
 impl WeightInfo for () {
@@ -199,5 +213,17 @@ impl WeightInfo for () {
         Weight::from_parts(45_000_000, 6_500)
             .saturating_add(RocksDbWeight::get().reads(7_u64))
             .saturating_add(RocksDbWeight::get().writes(7_u64))
+    }
+
+    fn set_miner_identity_commitments() -> Weight {
+        Weight::from_parts(25_000_000, 3_500)
+            .saturating_add(RocksDbWeight::get().reads(1_u64))
+            .saturating_add(RocksDbWeight::get().writes(1_u64))
+    }
+
+    fn set_validator_identity_commitments() -> Weight {
+        Weight::from_parts(25_000_000, 3_500)
+            .saturating_add(RocksDbWeight::get().reads(1_u64))
+            .saturating_add(RocksDbWeight::get().writes(1_u64))
     }
 }
