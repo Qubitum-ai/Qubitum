@@ -50,6 +50,7 @@ fn valid_submission() -> InferenceProofSubmission {
 fn qubitum_submit_proof_is_allowed_in_safe_mode() {
     let call = RuntimeCall::Qubitum(pallet_qubitum::Call::submit_proof {
         submission: valid_submission(),
+        request_user: account(4),
         miner_operator: account(2),
     });
 
@@ -60,6 +61,7 @@ fn qubitum_submit_proof_is_allowed_in_safe_mode() {
 fn qubitum_challenge_proof_is_allowed_in_safe_mode() {
     let call = RuntimeCall::Qubitum(pallet_qubitum::Call::challenge_proof {
         submission: valid_submission(),
+        request_user: account(4),
         miner_operator: account(2),
     });
 
@@ -116,7 +118,10 @@ fn qubitum_cancel_inference_is_blocked_in_safe_mode() {
 
 #[test]
 fn qubitum_expire_inference_is_blocked_in_safe_mode() {
-    let call = RuntimeCall::Qubitum(pallet_qubitum::Call::expire_inference { request_id: 1 });
+    let call = RuntimeCall::Qubitum(pallet_qubitum::Call::expire_inference {
+        request_id: 1,
+        request_user: account(4),
+    });
 
     assert!(!SafeModeWhitelistedCalls::contains(&call));
 }

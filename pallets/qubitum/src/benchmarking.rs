@@ -305,12 +305,12 @@ mod benchmarks {
     fn submit_proof() {
         let miner = activate_bench_miner::<T>();
         let validator = register_bench_validator::<T>();
-        let _user = request_bench_inference::<T>(42);
+        let user = request_bench_inference::<T>(42);
         let submission = proof_submission::<T>();
         let submitted_at = frame_system::Pallet::<T>::block_number().saturated_into();
 
         #[extrinsic_call]
-        _(RawOrigin::Signed(validator), submission, miner);
+        _(RawOrigin::Signed(validator), submission, user, miner);
 
         let record = ProofRecords::<T>::get(42).unwrap();
         assert_eq!(record.request_id, 42);
@@ -381,7 +381,10 @@ mod benchmarks {
         );
 
         let request = InferenceRequests::<T>::get(42).unwrap();
-        assert_eq!(request.user, user.clone());
+        assert_eq!(
+            request.user_commitment,
+            Pallet::<T>::account_commitment(&user)
+        );
         assert_eq!(request.status, InferenceRequestStatus::Pending);
         assert_last_event::<T>(
             Event::<T>::InferenceRequested {
@@ -405,7 +408,10 @@ mod benchmarks {
         _(RawOrigin::Signed(user.clone()), 42);
 
         let request = InferenceRequests::<T>::get(42).unwrap();
-        assert_eq!(request.user, user.clone());
+        assert_eq!(
+            request.user_commitment,
+            Pallet::<T>::account_commitment(&user)
+        );
         assert_eq!(request.status, InferenceRequestStatus::Cancelled);
         assert_last_event::<T>(Event::<T>::InferenceCancelled { request_id: 42 }.into());
     }
@@ -421,10 +427,13 @@ mod benchmarks {
         );
 
         #[extrinsic_call]
-        _(RawOrigin::Signed(keeper), 42);
+        _(RawOrigin::Signed(keeper), 42, user.clone());
 
         let request = InferenceRequests::<T>::get(42).unwrap();
-        assert_eq!(request.user, user.clone());
+        assert_eq!(
+            request.user_commitment,
+            Pallet::<T>::account_commitment(&user)
+        );
         assert_eq!(request.status, InferenceRequestStatus::Expired);
         assert_last_event::<T>(Event::<T>::InferenceExpired { request_id: 42 }.into());
     }

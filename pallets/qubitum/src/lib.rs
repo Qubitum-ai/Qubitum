@@ -141,7 +141,7 @@ pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
 
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(8);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(9);
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -485,7 +485,22 @@ pub mod pallet {
     #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
-    pub struct ChainInferenceRequest<AccountId, Balance> {
+    pub struct ChainInferenceRequest<Balance> {
+        pub request_id: RequestId,
+        pub user_commitment: Commitment,
+        pub subnet_id: SubnetId,
+        pub miner_id: MinerId,
+        pub validator_id: ValidatorId,
+        pub input_commitment: Commitment,
+        pub payment: Balance,
+        pub validator_fee_bps: u16,
+        pub treasury_fee_bps: u16,
+        pub created_at: BlockNumber,
+        pub status: InferenceRequestStatus,
+    }
+
+    #[derive(Decode)]
+    struct ChainInferenceRequestV8<AccountId, Balance> {
         pub request_id: RequestId,
         pub user: AccountId,
         pub subnet_id: SubnetId,
@@ -674,13 +689,8 @@ pub mod pallet {
         StorageMap<_, Twox64Concat, RequestId, ChainProofRecord, OptionQuery>;
 
     #[pallet::storage]
-    pub type InferenceRequests<T: Config> = StorageMap<
-        _,
-        Twox64Concat,
-        RequestId,
-        ChainInferenceRequest<T::AccountId, BalanceOf<T>>,
-        OptionQuery,
-    >;
+    pub type InferenceRequests<T: Config> =
+        StorageMap<_, Twox64Concat, RequestId, ChainInferenceRequest<BalanceOf<T>>, OptionQuery>;
 
     #[pallet::storage]
     pub type RequestCount<T: Config> = StorageValue<_, RequestId, ValueQuery>;
@@ -753,6 +763,7 @@ pub mod pallet {
             }
 
             let weight = Self::migrate_operator_commitments(on_chain)
+                .saturating_add(Self::migrate_request_owner_commitments(on_chain))
                 .saturating_add(Self::rebuild_active_routing_indexes())
                 .saturating_add(Self::rebuild_pending_assignment_counters())
                 .saturating_add(Self::rebuild_inference_accounting())
@@ -1072,6 +1083,7 @@ pub mod pallet {
         pub fn submit_proof(
             origin: OriginFor<T>,
             submission: InferenceProofSubmission,
+            request_user: T::AccountId,
             miner_operator: T::AccountId,
         ) -> DispatchResult {
             let validator_operator = ensure_signed(origin)?;
@@ -1087,7 +1099,7 @@ pub mod pallet {
                         &validator_operator,
                         slash_bps,
                     )?;
-                    Self::refund_rejected_request(&submission)?;
+                    Self::refund_rejected_request(&submission, &request_user)?;
                     Self::deposit_event(Event::ProofRejected {
                         request_id: submission.request_id,
                     });
@@ -1117,7 +1129,12 @@ pub mod pallet {
                     accepted_at: Self::current_block(),
                 },
             );
-            Self::settle_request_payment(&submission, &miner_operator, &validator_operator)?;
+            Self::settle_request_payment(
+                &submission,
+                &request_user,
+                &miner_operator,
+                &validator_operator,
+            )?;
 
             Self::deposit_event(Event::ProofAccepted {
                 request_id: submission.request_id,
@@ -1135,6 +1152,7 @@ pub mod pallet {
         pub fn challenge_proof(
             origin: OriginFor<T>,
             submission: InferenceProofSubmission,
+            request_user: T::AccountId,
             miner_operator: T::AccountId,
         ) -> DispatchResult {
             ensure_signed(origin)?;
@@ -1143,7 +1161,7 @@ pub mod pallet {
             match T::ProofVerifier::verify(&submission, policy)? {
                 VerificationOutcome::Invalid { slash_bps } => {
                     Self::slash_miner_bond(submission.miner_id, &miner_operator, slash_bps)?;
-                    Self::refund_rejected_request(&submission)?;
+                    Self::refund_rejected_request(&submission, &request_user)?;
                     Self::deposit_event(Event::ProofRejected {
                         request_id: submission.request_id,
                     });
@@ -1266,7 +1284,7 @@ pub mod pallet {
                 request_id,
                 |maybe_request| -> Result<(BalanceOf<T>, MinerId, ValidatorId), DispatchError> {
                     let request = maybe_request.as_mut().ok_or(Error::<T>::UnknownRequest)?;
-                    ensure!(request.user == user, Error::<T>::NotRequestOwner);
+                    Self::ensure_request_user(request, &user)?;
                     ensure!(
                         request.status == InferenceRequestStatus::Pending,
                         Error::<T>::RequestAlreadySettled
@@ -1281,7 +1299,7 @@ pub mod pallet {
                     );
                     T::Currency::release(
                         &HoldReason::InferencePayment.into(),
-                        &request.user,
+                        &user,
                         request.payment,
                         Precision::Exact,
                     )?;
@@ -1471,12 +1489,17 @@ pub mod pallet {
         #[pallet::call_index(13)]
         #[pallet::weight(T::WeightInfo::expire_inference())]
         #[frame_support::transactional]
-        pub fn expire_inference(origin: OriginFor<T>, request_id: RequestId) -> DispatchResult {
+        pub fn expire_inference(
+            origin: OriginFor<T>,
+            request_id: RequestId,
+            request_user: T::AccountId,
+        ) -> DispatchResult {
             let _keeper = ensure_signed(origin)?;
             let (payment, miner_id, validator_id) = InferenceRequests::<T>::try_mutate(
                 request_id,
                 |maybe_request| -> Result<(BalanceOf<T>, MinerId, ValidatorId), DispatchError> {
                     let request = maybe_request.as_mut().ok_or(Error::<T>::UnknownRequest)?;
+                    Self::ensure_request_user(request, &request_user)?;
                     ensure!(
                         request.status == InferenceRequestStatus::Pending,
                         Error::<T>::RequestAlreadySettled
@@ -1491,7 +1514,7 @@ pub mod pallet {
                     );
                     T::Currency::release(
                         &HoldReason::InferencePayment.into(),
-                        &request.user,
+                        &request_user,
                         request.payment,
                         Precision::Exact,
                     )?;
@@ -1759,7 +1782,7 @@ pub mod pallet {
                 request_id,
                 ChainInferenceRequest {
                     request_id,
-                    user,
+                    user_commitment: Self::account_commitment(&user),
                     subnet_id,
                     miner_id,
                     validator_id,
@@ -1985,6 +2008,17 @@ pub mod pallet {
             ensure!(
                 validator.operator_commitment == Self::account_commitment(operator),
                 Error::<T>::NotValidatorOperator
+            );
+            Ok(())
+        }
+
+        fn ensure_request_user(
+            request: &ChainInferenceRequest<BalanceOf<T>>,
+            user: &T::AccountId,
+        ) -> DispatchResult {
+            ensure!(
+                request.user_commitment == Self::account_commitment(user),
+                Error::<T>::NotRequestOwner
             );
             Ok(())
         }
@@ -2360,6 +2394,35 @@ pub mod pallet {
             T::DbWeight::get().reads_writes(migrated, migrated)
         }
 
+        fn migrate_request_owner_commitments(on_chain: StorageVersion) -> Weight {
+            if on_chain < StorageVersion::new(7) || on_chain >= StorageVersion::new(9) {
+                return Weight::zero();
+            }
+
+            let mut migrated = 0_u64;
+            InferenceRequests::<T>::translate::<
+                ChainInferenceRequestV8<T::AccountId, BalanceOf<T>>,
+                _,
+            >(|_, old| {
+                migrated = migrated.saturating_add(1);
+                Some(ChainInferenceRequest {
+                    request_id: old.request_id,
+                    user_commitment: Self::account_commitment(&old.user),
+                    subnet_id: old.subnet_id,
+                    miner_id: old.miner_id,
+                    validator_id: old.validator_id,
+                    input_commitment: old.input_commitment,
+                    payment: old.payment,
+                    validator_fee_bps: old.validator_fee_bps,
+                    treasury_fee_bps: old.treasury_fee_bps,
+                    created_at: old.created_at,
+                    status: old.status,
+                })
+            });
+
+            T::DbWeight::get().reads_writes(migrated, migrated)
+        }
+
         #[cfg(feature = "try-runtime")]
         fn ensure_active_routing_indexes_match() -> Result<(), sp_runtime::TryRuntimeError> {
             for (subnet_id, miner_ids) in ActiveMinersBySubnet::<T>::iter() {
@@ -2691,6 +2754,7 @@ pub mod pallet {
 
         fn settle_request_payment(
             submission: &InferenceProofSubmission,
+            request_user: &T::AccountId,
             miner_operator: &T::AccountId,
             validator_operator: &T::AccountId,
         ) -> Result<(BalanceOf<T>, BalanceOf<T>, BalanceOf<T>), DispatchError> {
@@ -2709,6 +2773,7 @@ pub mod pallet {
                             && request.input_commitment == submission.input_commitment,
                         Error::<T>::RequestMismatch
                     );
+                    Self::ensure_request_user(request, request_user)?;
 
                     let miner =
                         Miners::<T>::get(submission.miner_id).ok_or(Error::<T>::UnknownMiner)?;
@@ -2722,10 +2787,10 @@ pub mod pallet {
                         request.treasury_fee_bps,
                     )?;
 
-                    Self::transfer_held_payment(&request.user, miner_operator, miner_payment)?;
-                    Self::transfer_held_payment(&request.user, validator_operator, validator_fee)?;
+                    Self::transfer_held_payment(request_user, miner_operator, miner_payment)?;
+                    Self::transfer_held_payment(request_user, validator_operator, validator_fee)?;
                     Self::transfer_held_payment(
-                        &request.user,
+                        request_user,
                         &T::ProtocolTreasury::get(),
                         treasury_fee,
                     )?;
@@ -2748,10 +2813,11 @@ pub mod pallet {
 
         fn refund_rejected_request(
             submission: &InferenceProofSubmission,
-        ) -> Result<(T::AccountId, BalanceOf<T>), DispatchError> {
+            request_user: &T::AccountId,
+        ) -> Result<BalanceOf<T>, DispatchError> {
             InferenceRequests::<T>::try_mutate(
                 submission.request_id,
-                |maybe_request| -> Result<(T::AccountId, BalanceOf<T>), DispatchError> {
+                |maybe_request| -> Result<BalanceOf<T>, DispatchError> {
                     let request = maybe_request.as_mut().ok_or(Error::<T>::UnknownRequest)?;
                     ensure!(
                         request.status == InferenceRequestStatus::Pending,
@@ -2764,10 +2830,11 @@ pub mod pallet {
                             && request.input_commitment == submission.input_commitment,
                         Error::<T>::RequestMismatch
                     );
+                    Self::ensure_request_user(request, request_user)?;
 
                     T::Currency::release(
                         &HoldReason::InferencePayment.into(),
-                        &request.user,
+                        request_user,
                         request.payment,
                         Precision::Exact,
                     )?;
@@ -2779,7 +2846,7 @@ pub mod pallet {
                     )?;
                     Self::record_inference_refund(request.payment);
 
-                    Ok((request.user.clone(), request.payment))
+                    Ok(request.payment)
                 },
             )
         }

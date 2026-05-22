@@ -113,6 +113,21 @@ struct LegacyChainValidatorV7 {
     status: RegistryStatus,
 }
 
+#[derive(Encode)]
+struct LegacyChainInferenceRequestV8 {
+    request_id: u64,
+    user: u64,
+    subnet_id: u16,
+    miner_id: u64,
+    validator_id: u64,
+    input_commitment: [u8; 32],
+    payment: u128,
+    validator_fee_bps: u16,
+    treasury_fee_bps: u16,
+    created_at: u64,
+    status: InferenceRequestStatus,
+}
+
 fn register_active_miner_and_validator() {
     assert_ok!(Qubitum::create_subnet(
         RuntimeOrigin::signed(1),
@@ -175,14 +190,14 @@ fn submit_proof(
     origin: RuntimeOrigin,
     submission: InferenceProofSubmission,
 ) -> Result<(), sp_runtime::DispatchError> {
-    Qubitum::submit_proof(origin, submission, 2)
+    Qubitum::submit_proof(origin, submission, 4, 2)
 }
 
 fn challenge_proof(
     origin: RuntimeOrigin,
     submission: InferenceProofSubmission,
 ) -> Result<(), sp_runtime::DispatchError> {
-    Qubitum::challenge_proof(origin, submission, 2)
+    Qubitum::challenge_proof(origin, submission, 4, 2)
 }
 
 #[test]
@@ -898,6 +913,10 @@ fn stored_runtime_records_do_not_expose_raw_inference_or_model_payloads() {
             &Validators::<Test>::get(0).unwrap().encode(),
             &3_u64.encode()
         ));
+        assert!(!contains_subsequence(
+            &InferenceRequests::<Test>::get(43).unwrap().encode(),
+            &4_u64.encode()
+        ));
     });
 }
 
@@ -1232,7 +1251,7 @@ fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
         assert_eq!(record.accepted_at, 55);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(8)
+            StorageVersion::new(9)
         );
     });
 }
@@ -1281,7 +1300,44 @@ fn runtime_upgrade_migrates_registry_operators_to_commitments() {
         assert!(!contains_subsequence(&validator.encode(), &33_u64.encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(8)
+            StorageVersion::new(9)
+        );
+    });
+}
+
+#[test]
+fn runtime_upgrade_migrates_request_users_to_commitments() {
+    new_test_ext().execute_with(|| {
+        let legacy_request = LegacyChainInferenceRequestV8 {
+            request_id: 91,
+            user: 44,
+            subnet_id: 3,
+            miner_id: 7,
+            validator_id: 9,
+            input_commitment: commitment(55),
+            payment: 123_456,
+            validator_fee_bps: 250,
+            treasury_fee_bps: 50,
+            created_at: 12,
+            status: InferenceRequestStatus::Pending,
+        };
+        sp_io::storage::set(
+            &InferenceRequests::<Test>::hashed_key_for(91),
+            &legacy_request.encode(),
+        );
+        StorageVersion::new(8).put::<crate::Pallet<Test>>();
+
+        <Qubitum as Hooks<u64>>::on_runtime_upgrade();
+
+        let request = InferenceRequests::<Test>::get(91).unwrap();
+        assert_eq!(request.request_id, 91);
+        assert_eq!(request.user_commitment, Qubitum::account_commitment(&44));
+        assert_eq!(request.payment, 123_456);
+        assert_eq!(request.status, InferenceRequestStatus::Pending);
+        assert!(!contains_subsequence(&request.encode(), &44_u64.encode()));
+        assert_eq!(
+            StorageVersion::get::<crate::Pallet<Test>>(),
+            StorageVersion::new(9)
         );
     });
 }
@@ -1293,7 +1349,7 @@ fn request_inference_escrows_payment() {
         request_inference(7);
 
         let request = InferenceRequests::<Test>::get(7).unwrap();
-        assert_eq!(request.user, 4);
+        assert_eq!(request.user_commitment, Qubitum::account_commitment(&4));
         assert_eq!(request.miner_id, 0);
         assert_eq!(request.validator_id, 0);
         assert_eq!(request.payment, 1_000);
@@ -1766,7 +1822,7 @@ fn submit_proof_rejects_self_validation_assignment() {
             88,
             ChainInferenceRequest {
                 request_id: 88,
-                user: 4,
+                user_commitment: Qubitum::account_commitment(&4),
                 subnet_id: 0,
                 miner_id: 0,
                 validator_id: 0,
@@ -1813,7 +1869,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(8)
+            StorageVersion::new(9)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
@@ -1896,7 +1952,7 @@ fn auto_route_request_computes_assignment_without_caller_supplied_participants()
         ));
 
         let request = InferenceRequests::<Test>::get(54).unwrap();
-        assert_eq!(request.user, 4);
+        assert_eq!(request.user_commitment, Qubitum::account_commitment(&4));
         assert_eq!(request.miner_id, 0);
         assert_eq!(request.validator_id, 0);
         assert_eq!(request.status, InferenceRequestStatus::Pending);
@@ -1960,12 +2016,12 @@ fn expire_inference_releases_stale_request_for_any_signed_caller() {
         request_inference(10);
 
         assert_noop!(
-            Qubitum::expire_inference(RuntimeOrigin::signed(5), 10),
+            Qubitum::expire_inference(RuntimeOrigin::signed(5), 10, 4),
             Error::<Test>::RequestCancelUnavailable
         );
 
         System::set_block_number(10);
-        assert_ok!(Qubitum::expire_inference(RuntimeOrigin::signed(5), 10));
+        assert_ok!(Qubitum::expire_inference(RuntimeOrigin::signed(5), 10, 4));
 
         let request = InferenceRequests::<Test>::get(10).unwrap();
         assert_eq!(request.status, InferenceRequestStatus::Expired);
