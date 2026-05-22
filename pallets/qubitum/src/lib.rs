@@ -440,6 +440,11 @@ pub mod pallet {
             miner_id: MinerId,
             amount: BalanceOf<T>,
         },
+        /// A validator was slashed.
+        ValidatorSlashed {
+            validator_id: ValidatorId,
+            amount: BalanceOf<T>,
+        },
     }
 
     #[pallet::error]
@@ -902,7 +907,10 @@ pub mod pallet {
                     .ok_or(Error::<T>::UnknownValidator)?;
                 ensure!(validator.operator == operator, Error::<T>::NotOperator);
                 ensure!(
-                    validator.status == RegistryStatus::Active,
+                    matches!(
+                        validator.status,
+                        RegistryStatus::Active | RegistryStatus::Slashed
+                    ),
                     Error::<T>::InvalidValidatorStatus
                 );
                 validator.status = RegistryStatus::Exiting { exit_available_at };
@@ -958,6 +966,29 @@ pub mod pallet {
             )?;
 
             Self::deposit_event(Event::ValidatorStakeWithdrawn {
+                validator_id,
+                amount,
+            });
+            Ok(())
+        }
+
+        /// Slash a validator stake for invalid verification behavior.
+        #[pallet::call_index(12)]
+        #[pallet::weight(T::WeightInfo::slash_validator())]
+        pub fn slash_validator(
+            origin: OriginFor<T>,
+            validator_id: ValidatorId,
+            slash_bps: u16,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            ensure!(
+                slash_bps >= T::MinInvalidProofSlashBps::get()
+                    && slash_bps <= T::MaxInvalidProofSlashBps::get(),
+                Error::<T>::InvalidSlashPercent
+            );
+
+            let amount = Self::slash_validator_stake(validator_id, slash_bps)?;
+            Self::deposit_event(Event::ValidatorSlashed {
                 validator_id,
                 amount,
             });
@@ -1193,6 +1224,46 @@ pub mod pallet {
                     && !matches!(miner.status, RegistryStatus::Exiting { .. })
                 {
                     miner.status = RegistryStatus::Slashed;
+                }
+                Ok::<BalanceOf<T>, DispatchError>(burned)
+            })?;
+
+            TotalBurned::<T>::mutate(|total| {
+                *total = total.saturating_add(amount);
+            });
+            Ok(amount)
+        }
+
+        fn slash_validator_stake(
+            validator_id: ValidatorId,
+            slash_bps: u16,
+        ) -> Result<BalanceOf<T>, DispatchError> {
+            ensure!(
+                slash_bps >= T::MinInvalidProofSlashBps::get()
+                    && slash_bps <= T::MaxInvalidProofSlashBps::get(),
+                Error::<T>::InvalidSlashPercent
+            );
+
+            let amount = Validators::<T>::try_mutate(validator_id, |maybe_validator| {
+                let validator = maybe_validator
+                    .as_mut()
+                    .ok_or(Error::<T>::UnknownValidator)?;
+                let slash_amount = pro_rata::<T>(validator.stake, slash_bps)?;
+                let burned = T::Currency::burn_held(
+                    &HoldReason::ValidatorStake.into(),
+                    &validator.operator,
+                    slash_amount,
+                    Precision::Exact,
+                    Fortitude::Force,
+                )?;
+                validator.stake = validator
+                    .stake
+                    .checked_sub(&burned)
+                    .ok_or(Error::<T>::ArithmeticOverflow)?;
+                if validator.stake < T::MinValidatorStake::get()
+                    && !matches!(validator.status, RegistryStatus::Exiting { .. })
+                {
+                    validator.status = RegistryStatus::Slashed;
                 }
                 Ok::<BalanceOf<T>, DispatchError>(burned)
             })?;

@@ -251,6 +251,46 @@ fn slashed_miner_can_exit_with_remaining_bond() {
 }
 
 #[test]
+fn root_slash_burns_held_validator_stake() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+
+        assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 1_000));
+
+        let validator = Validators::<Test>::get(0).unwrap();
+        assert_eq!(validator.stake, 90_000_000_000);
+        assert_eq!(validator.status, RegistryStatus::Slashed);
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            90_000_000_000
+        );
+    });
+}
+
+#[test]
+fn slashed_validator_can_exit_with_remaining_stake() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 1_000));
+
+        assert_ok!(Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0));
+        System::set_block_number(20);
+        assert_ok!(Qubitum::withdraw_validator_stake(
+            RuntimeOrigin::signed(3),
+            0
+        ));
+
+        let validator = Validators::<Test>::get(0).unwrap();
+        assert_eq!(validator.status, RegistryStatus::Disabled);
+        assert_eq!(validator.stake, 0);
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            0
+        );
+    });
+}
+
+#[test]
 fn register_validator_locks_stake() {
     new_test_ext().execute_with(|| {
         assert_ok!(Qubitum::create_subnet(

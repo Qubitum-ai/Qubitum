@@ -84,7 +84,12 @@ fn qubitum_validator_exit_is_blocked_in_safe_mode() {
         RuntimeCall::Qubitum(pallet_qubitum::Call::deactivate_validator { validator_id: 1 });
     let withdraw =
         RuntimeCall::Qubitum(pallet_qubitum::Call::withdraw_validator_stake { validator_id: 1 });
+    let slash = RuntimeCall::Qubitum(pallet_qubitum::Call::slash_validator {
+        validator_id: 1,
+        slash_bps: 1_000,
+    });
 
     assert!(!SafeModeWhitelistedCalls::contains(&deactivate));
     assert!(!SafeModeWhitelistedCalls::contains(&withdraw));
+    assert!(!SafeModeWhitelistedCalls::contains(&slash));
 }

@@ -362,6 +362,18 @@ mod benchmarks {
     }
 
     #[benchmark]
+    fn slash_validator() {
+        let _owner = create_bench_subnet::<T>();
+        let _validator = register_bench_validator::<T>();
+        let before = TotalBurned::<T>::get();
+
+        #[extrinsic_call]
+        _(RawOrigin::Root, 0, T::MinInvalidProofSlashBps::get());
+
+        assert!(TotalBurned::<T>::get() > before);
+    }
+
+    #[benchmark]
     fn request_inference() {
         let _owner = create_bench_subnet::<T>();
         let user: T::AccountId = account("user", 0, SEED);

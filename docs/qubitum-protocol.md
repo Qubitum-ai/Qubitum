@@ -31,7 +31,7 @@ The core protocol structs and enums derive SCALE `Encode`/`Decode` plus `scale-i
 
 ## FRAME Pallet Surface
 
-`pallet-qubitum` provides the first on-chain surface for the protocol. It stores subnets, miners, validators, inference requests, proof records, and total burned QBT using FRAME-native maps, and exposes dispatchables for subnet creation, miner registration and bonding, miner deactivation and bond withdrawal, validator staking and stake withdrawal, user inference escrow, proof record submission, and root-controlled miner slashing.
+`pallet-qubitum` provides the first on-chain surface for the protocol. It stores subnets, miners, validators, inference requests, proof records, and total burned QBT using FRAME-native maps, and exposes dispatchables for subnet creation, miner registration and bonding, miner deactivation and bond withdrawal, validator staking and stake withdrawal, user inference escrow, proof record submission, and root-controlled participant slashing.
 
 The pallet is wired into `node-subtensor-runtime` as `Qubitum`, with runtime-provided weights and a FRAME benchmarking suite for all dispatchables. Placeholder weights are isolated behind `pallet_qubitum::weights::WeightInfo` so generated benchmark output can replace them without changing call logic.
 
@@ -40,6 +40,8 @@ Users open inference requests by escrowing QBT against a request ID, subnet, inp
 Miners can exit by moving from active or slashed status into an on-chain cooldown. While exiting, they cannot submit new work, but their remaining held bond is still slashable. After the cooldown expires, the operator can withdraw the residual bond and the miner becomes disabled.
 
 Validators use the same two-step exit pattern: active validators enter a stake cooldown, stop qualifying for proof submissions, and withdraw remaining stake only after the cooldown expires.
+
+Root governance can slash miner bonds and validator stake within the configured invalid-proof slash bounds. Slashed participants are removed from active eligibility, but can still enter the exit cooldown and withdraw any residual held capital after the delay.
 
 Proof submission is constrained to the registered validator operator for the submitted validator ID. The pallet rejects duplicate request IDs, requires an existing pending inference request, requires the submitted model commitment to match the registered miner commitment, validates the proof envelope, and routes every submission through `pallet_qubitum::VerifyProof` before storing a proof record. The current runtime uses a shape-only verifier adapter; a concrete Risc Zero verifier can replace that associated type without changing dispatchable semantics.
 
