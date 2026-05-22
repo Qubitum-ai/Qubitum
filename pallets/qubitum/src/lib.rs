@@ -428,6 +428,24 @@ pub mod pallet {
     }
 
     #[derive(
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        TypeInfo,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Debug,
+        MaxEncodedLen,
+    )]
+    pub struct ChainRouteAvailability {
+        pub request_id: RequestId,
+        pub subnet_id: SubnetId,
+        pub available: bool,
+    }
+
+    #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
     pub struct ChainAccounting<Balance> {
@@ -1638,6 +1656,21 @@ pub mod pallet {
 
         pub fn next_route_assignment(subnet_id: SubnetId) -> Option<ChainAssignment> {
             Self::route_assignment(subnet_id, RequestCount::<T>::get())
+        }
+
+        pub fn route_availability(
+            subnet_id: SubnetId,
+            request_id: RequestId,
+        ) -> ChainRouteAvailability {
+            ChainRouteAvailability {
+                request_id,
+                subnet_id,
+                available: Self::route_assignment(subnet_id, request_id).is_some(),
+            }
+        }
+
+        pub fn next_route_availability(subnet_id: SubnetId) -> ChainRouteAvailability {
+            Self::route_availability(subnet_id, RequestCount::<T>::get())
         }
 
         pub fn public_inference_request(

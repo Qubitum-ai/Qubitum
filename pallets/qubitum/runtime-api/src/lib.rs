@@ -1,9 +1,9 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use pallet_qubitum::{
-    ChainAccounting, ChainAssignment, ChainIdentityCommitments, ChainMiner, ChainProtocolParams,
-    ChainPublicInferenceRequest, ChainPublicProofRecord, ChainRequestStatusCounts, ChainSubnet,
-    ChainValidator,
+    ChainAccounting, ChainIdentityCommitments, ChainMiner, ChainProtocolParams,
+    ChainPublicInferenceRequest, ChainPublicProofRecord, ChainRequestStatusCounts,
+    ChainRouteAvailability, ChainSubnet, ChainValidator,
 };
 use qubitum_protocol::{MinerId, RequestId, SignatureBundle, SubnetId, ValidatorId};
 use sp_runtime::AccountId32;
@@ -20,8 +20,8 @@ sp_api::decl_runtime_apis! {
         fn qubitum_validator_identity_signature_bundle(validator_id: ValidatorId) -> Option<SignatureBundle>;
         fn qubitum_inference_request(request_id: RequestId) -> Option<ChainPublicInferenceRequest>;
         fn qubitum_proof_record(request_id: RequestId) -> Option<ChainPublicProofRecord>;
-        fn qubitum_route_assignment(subnet_id: SubnetId, request_id: RequestId) -> Option<ChainAssignment>;
-        fn qubitum_next_route_assignment(subnet_id: SubnetId) -> Option<ChainAssignment>;
+        fn qubitum_route_assignment(subnet_id: SubnetId, request_id: RequestId) -> ChainRouteAvailability;
+        fn qubitum_next_route_assignment(subnet_id: SubnetId) -> ChainRouteAvailability;
         fn qubitum_next_request_id() -> RequestId;
         fn qubitum_pending_miner_requests(miner_id: MinerId) -> RequestId;
         fn qubitum_pending_validator_requests(validator_id: ValidatorId) -> RequestId;

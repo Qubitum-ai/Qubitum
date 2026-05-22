@@ -3,13 +3,14 @@
 use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, AutoRouteInferenceRequestParams,
     CancelledInferenceRequestCount, ChainInferenceRequest, ChainPublicInferenceRequest,
-    ChainPublicProofRecord, ChainRequestStatusCounts, Error, HoldReason, InferenceRequestParams,
-    InferenceRequestStatus, InferenceRequests, MinerCount, MinerIdentityCommitments,
-    MinerIdentitySignatureBundles, Miners, PendingInferenceRequestCount, PendingMinerRequests,
-    PendingValidatorRequests, ProofRecords, RejectedInferenceRequestCount, RequestCount,
-    SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned, TotalInferenceEscrowed,
-    TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees, TotalValidatorFees,
-    ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles, Validators,
+    ChainPublicProofRecord, ChainRequestStatusCounts, ChainRouteAvailability, Error, HoldReason,
+    InferenceRequestParams, InferenceRequestStatus, InferenceRequests, MinerCount,
+    MinerIdentityCommitments, MinerIdentitySignatureBundles, Miners, PendingInferenceRequestCount,
+    PendingMinerRequests, PendingValidatorRequests, ProofRecords, RejectedInferenceRequestCount,
+    RequestCount, SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned,
+    TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees,
+    TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
+    ValidatorIdentitySignatureBundles, Validators,
     mock::{
         Balances, Qubitum, RuntimeEvent, RuntimeOrigin, System, Test, new_test_ext,
         set_verification_outcome,
@@ -1125,6 +1126,41 @@ fn next_route_assignment_uses_chain_next_request_id() {
 
         assert_eq!(RequestCount::<Test>::get(), 43);
         assert_eq!(Qubitum::next_route_assignment(0).unwrap().request_id, 43);
+    });
+}
+
+#[test]
+fn public_route_availability_does_not_expose_participant_assignment() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        RequestCount::<Test>::put(42);
+
+        assert_eq!(
+            Qubitum::route_availability(0, 42),
+            ChainRouteAvailability {
+                request_id: 42,
+                subnet_id: 0,
+                available: true,
+            }
+        );
+        assert_eq!(
+            Qubitum::next_route_availability(0),
+            ChainRouteAvailability {
+                request_id: 42,
+                subnet_id: 0,
+                available: true,
+            }
+        );
+
+        assert_ok!(Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0));
+        assert_eq!(
+            Qubitum::route_availability(0, 42),
+            ChainRouteAvailability {
+                request_id: 42,
+                subnet_id: 0,
+                available: false,
+            }
+        );
     });
 }
 
