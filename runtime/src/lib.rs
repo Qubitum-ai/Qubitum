@@ -2619,6 +2619,10 @@ impl_runtime_apis! {
             pallet_qubitum::Pallet::<Runtime>::route_assignment(subnet_id, request_id)
         }
 
+        fn qubitum_next_request_id() -> qubitum_protocol::RequestId {
+            pallet_qubitum::RequestCount::<Runtime>::get()
+        }
+
         fn qubitum_counts() -> (
             qubitum_protocol::SubnetId,
             qubitum_protocol::MinerId,

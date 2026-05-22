@@ -46,6 +46,9 @@ pub trait QubitumRpcApi<BlockHash> {
         at: Option<BlockHash>,
     ) -> RpcResult<Vec<u8>>;
 
+    #[method(name = "qubitum_nextRequestId")]
+    fn next_request_id(&self, at: Option<BlockHash>) -> RpcResult<RequestId>;
+
     #[method(name = "qubitum_getCounts")]
     fn get_counts(&self, at: Option<BlockHash>) -> RpcResult<Vec<u8>>;
 
@@ -185,6 +188,15 @@ where
             .map_err(|e| {
                 Error::RuntimeError(format!("Unable to route Qubitum assignment: {e:?}")).into()
             })
+    }
+
+    fn next_request_id(&self, at: Option<<Block as BlockT>::Hash>) -> RpcResult<RequestId> {
+        let api = self.client.runtime_api();
+        let at = self.at_or_best(at);
+
+        api.qubitum_next_request_id(at).map_err(|e| {
+            Error::RuntimeError(format!("Unable to get Qubitum next request ID: {e:?}")).into()
+        })
     }
 
     fn get_counts(&self, at: Option<<Block as BlockT>::Hash>) -> RpcResult<Vec<u8>> {
