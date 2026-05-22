@@ -167,7 +167,10 @@ mod benchmarks {
         assert_eq!(MinerCount::<T>::get(), 1);
         let registered_miner = Miners::<T>::get(0).unwrap();
         assert_eq!(registered_miner.id, 0);
-        assert_eq!(registered_miner.operator, miner.clone());
+        assert_eq!(
+            registered_miner.operator_commitment,
+            Pallet::<T>::account_commitment(&miner)
+        );
         assert_eq!(registered_miner.subnet_id, 0);
         assert_eq!(registered_miner.model_commitment, commitment(10));
         assert_eq!(registered_miner.proof_system, ProofSystem::RiscZeroStark);
@@ -246,7 +249,10 @@ mod benchmarks {
         assert_eq!(ValidatorCount::<T>::get(), 1);
         let registered_validator = Validators::<T>::get(0).unwrap();
         assert_eq!(registered_validator.id, 0);
-        assert_eq!(registered_validator.operator, validator.clone());
+        assert_eq!(
+            registered_validator.operator_commitment,
+            Pallet::<T>::account_commitment(&validator)
+        );
         assert_eq!(registered_validator.subnet_id, 0);
         assert_eq!(registered_validator.stake, stake);
         assert_eq!(registered_validator.status, RegistryStatus::Active);
@@ -297,14 +303,14 @@ mod benchmarks {
 
     #[benchmark]
     fn submit_proof() {
-        let _miner = activate_bench_miner::<T>();
+        let miner = activate_bench_miner::<T>();
         let validator = register_bench_validator::<T>();
         let _user = request_bench_inference::<T>(42);
         let submission = proof_submission::<T>();
         let submitted_at = frame_system::Pallet::<T>::block_number().saturated_into();
 
         #[extrinsic_call]
-        _(RawOrigin::Signed(validator), submission);
+        _(RawOrigin::Signed(validator), submission, miner);
 
         let record = ProofRecords::<T>::get(42).unwrap();
         assert_eq!(record.request_id, 42);
@@ -324,11 +330,11 @@ mod benchmarks {
 
     #[benchmark]
     fn slash_miner() {
-        let _miner = activate_bench_miner::<T>();
+        let miner = activate_bench_miner::<T>();
         let before = TotalBurned::<T>::get();
 
         #[extrinsic_call]
-        _(RawOrigin::Root, 0, T::MinInvalidProofSlashBps::get());
+        _(RawOrigin::Root, 0, miner, T::MinInvalidProofSlashBps::get());
 
         assert!(TotalBurned::<T>::get() > before);
     }
@@ -336,11 +342,16 @@ mod benchmarks {
     #[benchmark]
     fn slash_validator() {
         let _owner = create_bench_subnet::<T>();
-        let _validator = register_bench_validator::<T>();
+        let validator = register_bench_validator::<T>();
         let before = TotalBurned::<T>::get();
 
         #[extrinsic_call]
-        _(RawOrigin::Root, 0, T::MinInvalidProofSlashBps::get());
+        _(
+            RawOrigin::Root,
+            0,
+            validator,
+            T::MinInvalidProofSlashBps::get(),
+        );
 
         assert!(TotalBurned::<T>::get() > before);
     }

@@ -27,6 +27,7 @@ use qubitum_protocol::{
     SubnetId, ValidatorId, VerificationOutcome,
 };
 use scale_info::TypeInfo;
+use sp_io::hashing::blake2_256;
 use sp_runtime::{DispatchError, Saturating, traits::SaturatedConversion};
 
 type BalanceOf<T> =
@@ -140,7 +141,7 @@ pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
 
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(7);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(8);
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -301,9 +302,9 @@ pub mod pallet {
     #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
-    pub struct ChainMiner<AccountId, Balance> {
+    pub struct ChainMiner<Balance> {
         pub id: MinerId,
-        pub operator: AccountId,
+        pub operator_commitment: Commitment,
         pub subnet_id: SubnetId,
         pub model_commitment: Commitment,
         pub proof_system: ProofSystem,
@@ -314,7 +315,27 @@ pub mod pallet {
     #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
-    pub struct ChainValidator<AccountId, Balance> {
+    pub struct ChainValidator<Balance> {
+        pub id: ValidatorId,
+        pub operator_commitment: Commitment,
+        pub subnet_id: SubnetId,
+        pub stake: Balance,
+        pub status: RegistryStatus,
+    }
+
+    #[derive(Decode)]
+    struct ChainMinerV7<AccountId, Balance> {
+        pub id: MinerId,
+        pub operator: AccountId,
+        pub subnet_id: SubnetId,
+        pub model_commitment: Commitment,
+        pub proof_system: ProofSystem,
+        pub bond: Balance,
+        pub status: RegistryStatus,
+    }
+
+    #[derive(Decode)]
+    struct ChainValidatorV7<AccountId, Balance> {
         pub id: ValidatorId,
         pub operator: AccountId,
         pub subnet_id: SubnetId,
@@ -626,16 +647,11 @@ pub mod pallet {
 
     #[pallet::storage]
     pub type Miners<T: Config> =
-        StorageMap<_, Twox64Concat, MinerId, ChainMiner<T::AccountId, BalanceOf<T>>, OptionQuery>;
+        StorageMap<_, Twox64Concat, MinerId, ChainMiner<BalanceOf<T>>, OptionQuery>;
 
     #[pallet::storage]
-    pub type Validators<T: Config> = StorageMap<
-        _,
-        Twox64Concat,
-        ValidatorId,
-        ChainValidator<T::AccountId, BalanceOf<T>>,
-        OptionQuery,
-    >;
+    pub type Validators<T: Config> =
+        StorageMap<_, Twox64Concat, ValidatorId, ChainValidator<BalanceOf<T>>, OptionQuery>;
 
     #[pallet::storage]
     pub type MinerIdentityCommitments<T: Config> =
@@ -740,7 +756,8 @@ pub mod pallet {
                 .saturating_add(Self::rebuild_pending_assignment_counters())
                 .saturating_add(Self::rebuild_inference_accounting())
                 .saturating_add(Self::rebuild_request_status_counts())
-                .saturating_add(Self::migrate_proof_record_timestamps(on_chain));
+                .saturating_add(Self::migrate_proof_record_timestamps(on_chain))
+                .saturating_add(Self::migrate_operator_commitments(on_chain));
             STORAGE_VERSION.put::<Pallet<T>>();
             weight.saturating_add(T::DbWeight::get().reads_writes(1, 1))
         }
@@ -959,7 +976,7 @@ pub mod pallet {
             let miner_id = Self::next_miner_id()?;
             let miner = ChainMiner {
                 id: miner_id,
-                operator: operator.clone(),
+                operator_commitment: Self::account_commitment(&operator),
                 subnet_id,
                 model_commitment,
                 proof_system,
@@ -987,7 +1004,7 @@ pub mod pallet {
             let operator = ensure_signed(origin)?;
             Miners::<T>::try_mutate(miner_id, |maybe_miner| -> DispatchResult {
                 let miner = maybe_miner.as_mut().ok_or(Error::<T>::UnknownMiner)?;
-                ensure!(miner.operator == operator, Error::<T>::NotOperator);
+                Self::ensure_miner_operator(miner, &operator)?;
                 ensure!(
                     miner.status == RegistryStatus::Pending,
                     Error::<T>::InvalidMinerStatus
@@ -1029,7 +1046,7 @@ pub mod pallet {
             let validator_id = Self::next_validator_id()?;
             let validator = ChainValidator {
                 id: validator_id,
-                operator: operator.clone(),
+                operator_commitment: Self::account_commitment(&operator),
                 subnet_id,
                 stake,
                 status: RegistryStatus::Active,
@@ -1051,15 +1068,21 @@ pub mod pallet {
         pub fn submit_proof(
             origin: OriginFor<T>,
             submission: InferenceProofSubmission,
+            miner_operator: T::AccountId,
         ) -> DispatchResult {
             let validator_operator = ensure_signed(origin)?;
-            let policy = Self::validate_submission(&submission, &validator_operator)?;
+            let policy =
+                Self::validate_submission(&submission, &validator_operator, &miner_operator)?;
 
             match T::ProofVerifier::verify(&submission, policy)? {
                 VerificationOutcome::Valid => {}
                 VerificationOutcome::Invalid { slash_bps } => {
-                    Self::slash_miner_bond(submission.miner_id, slash_bps)?;
-                    Self::slash_validator_stake(submission.validator_id, slash_bps)?;
+                    Self::slash_miner_bond(submission.miner_id, &miner_operator, slash_bps)?;
+                    Self::slash_validator_stake(
+                        submission.validator_id,
+                        &validator_operator,
+                        slash_bps,
+                    )?;
                     Self::refund_rejected_request(&submission)?;
                     Self::deposit_event(Event::ProofRejected {
                         request_id: submission.request_id,
@@ -1090,7 +1113,7 @@ pub mod pallet {
                     accepted_at: Self::current_block(),
                 },
             );
-            Self::settle_request_payment(&submission)?;
+            Self::settle_request_payment(&submission, &miner_operator, &validator_operator)?;
 
             Self::deposit_event(Event::ProofAccepted {
                 request_id: submission.request_id,
@@ -1108,13 +1131,14 @@ pub mod pallet {
         pub fn challenge_proof(
             origin: OriginFor<T>,
             submission: InferenceProofSubmission,
+            miner_operator: T::AccountId,
         ) -> DispatchResult {
             ensure_signed(origin)?;
-            let policy = Self::validate_challenge_submission(&submission)?;
+            let policy = Self::validate_challenge_submission(&submission, &miner_operator)?;
 
             match T::ProofVerifier::verify(&submission, policy)? {
                 VerificationOutcome::Invalid { slash_bps } => {
-                    Self::slash_miner_bond(submission.miner_id, slash_bps)?;
+                    Self::slash_miner_bond(submission.miner_id, &miner_operator, slash_bps)?;
                     Self::refund_rejected_request(&submission)?;
                     Self::deposit_event(Event::ProofRejected {
                         request_id: submission.request_id,
@@ -1138,6 +1162,7 @@ pub mod pallet {
         pub fn slash_miner(
             origin: OriginFor<T>,
             miner_id: MinerId,
+            operator: T::AccountId,
             slash_bps: u16,
         ) -> DispatchResult {
             ensure_root(origin)?;
@@ -1151,7 +1176,7 @@ pub mod pallet {
                 Error::<T>::PendingAssignedRequests
             );
 
-            Self::slash_miner_bond(miner_id, slash_bps)?;
+            Self::slash_miner_bond(miner_id, &operator, slash_bps)?;
             Self::deposit_event(Event::MinerSlashed { miner_id });
             Ok(())
         }
@@ -1282,7 +1307,7 @@ pub mod pallet {
 
             Miners::<T>::try_mutate(miner_id, |maybe_miner| -> DispatchResult {
                 let miner = maybe_miner.as_mut().ok_or(Error::<T>::UnknownMiner)?;
-                ensure!(miner.operator == operator, Error::<T>::NotOperator);
+                Self::ensure_miner_operator(miner, &operator)?;
                 ensure!(
                     matches!(
                         miner.status,
@@ -1311,7 +1336,7 @@ pub mod pallet {
             let operator = ensure_signed(origin)?;
             Miners::<T>::try_mutate(miner_id, |maybe_miner| -> DispatchResult {
                 let miner = maybe_miner.as_mut().ok_or(Error::<T>::UnknownMiner)?;
-                ensure!(miner.operator == operator, Error::<T>::NotOperator);
+                Self::ensure_miner_operator(miner, &operator)?;
                 let RegistryStatus::Exiting { exit_available_at } = miner.status else {
                     return Err(Error::<T>::InvalidMinerStatus.into());
                 };
@@ -1323,7 +1348,7 @@ pub mod pallet {
                 if miner.bond != BalanceOf::<T>::default() {
                     T::Currency::release(
                         &HoldReason::MinerBond.into(),
-                        &miner.operator,
+                        &operator,
                         miner.bond,
                         Precision::Exact,
                     )?;
@@ -1353,7 +1378,7 @@ pub mod pallet {
                 let validator = maybe_validator
                     .as_mut()
                     .ok_or(Error::<T>::UnknownValidator)?;
-                ensure!(validator.operator == operator, Error::<T>::NotOperator);
+                Self::ensure_validator_operator(validator, &operator)?;
                 ensure!(
                     matches!(
                         validator.status,
@@ -1387,7 +1412,7 @@ pub mod pallet {
                 let validator = maybe_validator
                     .as_mut()
                     .ok_or(Error::<T>::UnknownValidator)?;
-                ensure!(validator.operator == operator, Error::<T>::NotOperator);
+                Self::ensure_validator_operator(validator, &operator)?;
                 let RegistryStatus::Exiting { exit_available_at } = validator.status else {
                     return Err(Error::<T>::InvalidValidatorStatus.into());
                 };
@@ -1399,7 +1424,7 @@ pub mod pallet {
                 if validator.stake != BalanceOf::<T>::default() {
                     T::Currency::release(
                         &HoldReason::ValidatorStake.into(),
-                        &validator.operator,
+                        &operator,
                         validator.stake,
                         Precision::Exact,
                     )?;
@@ -1419,6 +1444,7 @@ pub mod pallet {
         pub fn slash_validator(
             origin: OriginFor<T>,
             validator_id: ValidatorId,
+            operator: T::AccountId,
             slash_bps: u16,
         ) -> DispatchResult {
             ensure_root(origin)?;
@@ -1432,7 +1458,7 @@ pub mod pallet {
                 Error::<T>::PendingAssignedRequests
             );
 
-            Self::slash_validator_stake(validator_id, slash_bps)?;
+            Self::slash_validator_stake(validator_id, &operator, slash_bps)?;
             Self::deposit_event(Event::ValidatorSlashed { validator_id });
             Ok(())
         }
@@ -1492,7 +1518,7 @@ pub mod pallet {
         ) -> DispatchResult {
             let operator = ensure_signed(origin)?;
             let miner = Miners::<T>::get(miner_id).ok_or(Error::<T>::UnknownMiner)?;
-            ensure!(miner.operator == operator, Error::<T>::NotOperator);
+            Self::ensure_miner_operator(&miner, &operator)?;
             Self::ensure_optional_commitment(shielded_identity_commitment)?;
             Self::ensure_optional_commitment(endpoint_commitment)?;
 
@@ -1528,7 +1554,7 @@ pub mod pallet {
             let operator = ensure_signed(origin)?;
             let validator =
                 Validators::<T>::get(validator_id).ok_or(Error::<T>::UnknownValidator)?;
-            ensure!(validator.operator == operator, Error::<T>::NotOperator);
+            Self::ensure_validator_operator(&validator, &operator)?;
             Self::ensure_optional_commitment(shielded_identity_commitment)?;
             Self::ensure_optional_commitment(endpoint_commitment)?;
 
@@ -1608,7 +1634,7 @@ pub mod pallet {
             let miner = Miners::<T>::get(miner_id)?;
             let validator_seed = request_id.rotate_left(32) ^ u64::from(subnet_id);
             let validator_id =
-                Self::route_active_validator(subnet_id, validator_seed, &miner.operator)?;
+                Self::route_active_validator(subnet_id, validator_seed, miner.operator_commitment)?;
             let validator = Validators::<T>::get(validator_id)?;
             Self::ensure_distinct_operators(&miner, &validator).ok()?;
 
@@ -1922,6 +1948,43 @@ pub mod pallet {
             frame_system::Pallet::<T>::block_number().saturated_into()
         }
 
+        pub(crate) fn account_commitment(who: &T::AccountId) -> Commitment {
+            who.using_encoded(blake2_256)
+        }
+
+        fn ensure_miner_operator(
+            miner: &ChainMiner<BalanceOf<T>>,
+            operator: &T::AccountId,
+        ) -> DispatchResult {
+            ensure!(
+                miner.operator_commitment == Self::account_commitment(operator),
+                Error::<T>::NotOperator
+            );
+            Ok(())
+        }
+
+        fn ensure_validator_operator(
+            validator: &ChainValidator<BalanceOf<T>>,
+            operator: &T::AccountId,
+        ) -> DispatchResult {
+            ensure!(
+                validator.operator_commitment == Self::account_commitment(operator),
+                Error::<T>::NotOperator
+            );
+            Ok(())
+        }
+
+        fn ensure_validator_submission_operator(
+            validator: &ChainValidator<BalanceOf<T>>,
+            operator: &T::AccountId,
+        ) -> DispatchResult {
+            ensure!(
+                validator.operator_commitment == Self::account_commitment(operator),
+                Error::<T>::NotValidatorOperator
+            );
+            Ok(())
+        }
+
         fn ensure_optional_commitment(commitment: Option<Commitment>) -> DispatchResult {
             if let Some(commitment) = commitment {
                 ensure_commitment::<T>(commitment)?;
@@ -1949,7 +2012,7 @@ pub mod pallet {
         fn route_active_validator(
             subnet_id: SubnetId,
             seed: u64,
-            miner_operator: &T::AccountId,
+            miner_operator_commitment: Commitment,
         ) -> Option<ValidatorId> {
             let ids = ActiveValidatorsBySubnet::<T>::get(subnet_id);
             if ids.is_empty() {
@@ -1967,7 +2030,7 @@ pub mod pallet {
                 };
                 if validator.subnet_id == subnet_id
                     && validator.status == RegistryStatus::Active
-                    && validator.operator != *miner_operator
+                    && validator.operator_commitment != miner_operator_commitment
                 {
                     return Some(validator_id);
                 }
@@ -2245,6 +2308,43 @@ pub mod pallet {
             T::DbWeight::get().reads_writes(migrated, migrated)
         }
 
+        fn migrate_operator_commitments(on_chain: StorageVersion) -> Weight {
+            if on_chain != StorageVersion::new(7) {
+                return Weight::zero();
+            }
+
+            let mut migrated_miners = 0_u64;
+            Miners::<T>::translate::<ChainMinerV7<T::AccountId, BalanceOf<T>>, _>(|_, old| {
+                migrated_miners = migrated_miners.saturating_add(1);
+                Some(ChainMiner {
+                    id: old.id,
+                    operator_commitment: Self::account_commitment(&old.operator),
+                    subnet_id: old.subnet_id,
+                    model_commitment: old.model_commitment,
+                    proof_system: old.proof_system,
+                    bond: old.bond,
+                    status: old.status,
+                })
+            });
+
+            let mut migrated_validators = 0_u64;
+            Validators::<T>::translate::<ChainValidatorV7<T::AccountId, BalanceOf<T>>, _>(
+                |_, old| {
+                    migrated_validators = migrated_validators.saturating_add(1);
+                    Some(ChainValidator {
+                        id: old.id,
+                        operator_commitment: Self::account_commitment(&old.operator),
+                        subnet_id: old.subnet_id,
+                        stake: old.stake,
+                        status: old.status,
+                    })
+                },
+            );
+
+            let migrated = migrated_miners.saturating_add(migrated_validators);
+            T::DbWeight::get().reads_writes(migrated, migrated)
+        }
+
         #[cfg(feature = "try-runtime")]
         fn ensure_active_routing_indexes_match() -> Result<(), sp_runtime::TryRuntimeError> {
             for (subnet_id, miner_ids) in ActiveMinersBySubnet::<T>::iter() {
@@ -2451,11 +2551,11 @@ pub mod pallet {
         }
 
         fn ensure_distinct_operators(
-            miner: &ChainMiner<T::AccountId, BalanceOf<T>>,
-            validator: &ChainValidator<T::AccountId, BalanceOf<T>>,
+            miner: &ChainMiner<BalanceOf<T>>,
+            validator: &ChainValidator<BalanceOf<T>>,
         ) -> DispatchResult {
             ensure!(
-                miner.operator != validator.operator,
+                miner.operator_commitment != validator.operator_commitment,
                 Error::<T>::SelfValidation
             );
             Ok(())
@@ -2464,19 +2564,21 @@ pub mod pallet {
         fn validate_submission(
             submission: &InferenceProofSubmission,
             validator_operator: &T::AccountId,
+            miner_operator: &T::AccountId,
         ) -> Result<ProofVerificationPolicy, DispatchError> {
-            let (policy, validator) = Self::validate_submission_for_request(submission)?;
-            ensure!(
-                validator.operator == *validator_operator,
-                Error::<T>::NotValidatorOperator
-            );
+            let (policy, miner, validator) = Self::validate_submission_for_request(submission)?;
+            Self::ensure_miner_operator(&miner, miner_operator)?;
+            Self::ensure_validator_submission_operator(&validator, validator_operator)?;
             Ok(policy)
         }
 
         fn validate_challenge_submission(
             submission: &InferenceProofSubmission,
+            miner_operator: &T::AccountId,
         ) -> Result<ProofVerificationPolicy, DispatchError> {
-            Self::validate_submission_for_request(submission).map(|(policy, _)| policy)
+            let (policy, miner, _) = Self::validate_submission_for_request(submission)?;
+            Self::ensure_miner_operator(&miner, miner_operator)?;
+            Ok(policy)
         }
 
         fn validate_submission_for_request(
@@ -2484,7 +2586,8 @@ pub mod pallet {
         ) -> Result<
             (
                 ProofVerificationPolicy,
-                ChainValidator<T::AccountId, BalanceOf<T>>,
+                ChainMiner<BalanceOf<T>>,
+                ChainValidator<BalanceOf<T>>,
             ),
             DispatchError,
         > {
@@ -2553,6 +2656,7 @@ pub mod pallet {
                     max_proof_size_bytes: T::MaxProofSizeBytes::get(),
                     max_verification_latency_ms: T::MaxVerificationLatencyMs::get(),
                 },
+                miner,
                 validator,
             ))
         }
@@ -2572,6 +2676,8 @@ pub mod pallet {
 
         fn settle_request_payment(
             submission: &InferenceProofSubmission,
+            miner_operator: &T::AccountId,
+            validator_operator: &T::AccountId,
         ) -> Result<(BalanceOf<T>, BalanceOf<T>, BalanceOf<T>), DispatchError> {
             InferenceRequests::<T>::try_mutate(
                 submission.request_id,
@@ -2593,14 +2699,16 @@ pub mod pallet {
                         Miners::<T>::get(submission.miner_id).ok_or(Error::<T>::UnknownMiner)?;
                     let validator = Validators::<T>::get(submission.validator_id)
                         .ok_or(Error::<T>::UnknownValidator)?;
+                    Self::ensure_miner_operator(&miner, miner_operator)?;
+                    Self::ensure_validator_operator(&validator, validator_operator)?;
                     let (miner_payment, validator_fee, treasury_fee) = Self::payment_split(
                         request.payment,
                         request.validator_fee_bps,
                         request.treasury_fee_bps,
                     )?;
 
-                    Self::transfer_held_payment(&request.user, &miner.operator, miner_payment)?;
-                    Self::transfer_held_payment(&request.user, &validator.operator, validator_fee)?;
+                    Self::transfer_held_payment(&request.user, miner_operator, miner_payment)?;
+                    Self::transfer_held_payment(&request.user, validator_operator, validator_fee)?;
                     Self::transfer_held_payment(
                         &request.user,
                         &T::ProtocolTreasury::get(),
@@ -2712,6 +2820,7 @@ pub mod pallet {
 
         fn slash_miner_bond(
             miner_id: MinerId,
+            operator: &T::AccountId,
             slash_bps: u16,
         ) -> Result<BalanceOf<T>, DispatchError> {
             ensure!(
@@ -2722,10 +2831,11 @@ pub mod pallet {
 
             let amount = Miners::<T>::try_mutate(miner_id, |maybe_miner| {
                 let miner = maybe_miner.as_mut().ok_or(Error::<T>::UnknownMiner)?;
+                Self::ensure_miner_operator(miner, operator)?;
                 let slash_amount = pro_rata::<T>(miner.bond, slash_bps)?;
                 let burned = T::Currency::burn_held(
                     &HoldReason::MinerBond.into(),
-                    &miner.operator,
+                    operator,
                     slash_amount,
                     Precision::Exact,
                     Fortitude::Force,
@@ -2751,6 +2861,7 @@ pub mod pallet {
 
         fn slash_validator_stake(
             validator_id: ValidatorId,
+            operator: &T::AccountId,
             slash_bps: u16,
         ) -> Result<BalanceOf<T>, DispatchError> {
             ensure!(
@@ -2763,10 +2874,11 @@ pub mod pallet {
                 let validator = maybe_validator
                     .as_mut()
                     .ok_or(Error::<T>::UnknownValidator)?;
+                Self::ensure_validator_operator(validator, operator)?;
                 let slash_amount = pro_rata::<T>(validator.stake, slash_bps)?;
                 let burned = T::Currency::burn_held(
                     &HoldReason::ValidatorStake.into(),
-                    &validator.operator,
+                    operator,
                     slash_amount,
                     Precision::Exact,
                     Fortitude::Force,

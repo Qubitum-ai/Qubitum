@@ -93,6 +93,26 @@ struct LegacyChainProofRecordV4 {
     submitted_at: u64,
 }
 
+#[derive(Encode)]
+struct LegacyChainMinerV7 {
+    id: u64,
+    operator: u64,
+    subnet_id: u16,
+    model_commitment: [u8; 32],
+    proof_system: ProofSystem,
+    bond: u128,
+    status: RegistryStatus,
+}
+
+#[derive(Encode)]
+struct LegacyChainValidatorV7 {
+    id: u64,
+    operator: u64,
+    subnet_id: u16,
+    stake: u128,
+    status: RegistryStatus,
+}
+
 fn register_active_miner_and_validator() {
     assert_ok!(Qubitum::create_subnet(
         RuntimeOrigin::signed(1),
@@ -149,6 +169,20 @@ fn request_inference(request_id: u64) {
             treasury_fee_bps: 50,
         },
     ));
+}
+
+fn submit_proof(
+    origin: RuntimeOrigin,
+    submission: InferenceProofSubmission,
+) -> Result<(), sp_runtime::DispatchError> {
+    Qubitum::submit_proof(origin, submission, 2)
+}
+
+fn challenge_proof(
+    origin: RuntimeOrigin,
+    submission: InferenceProofSubmission,
+) -> Result<(), sp_runtime::DispatchError> {
+    Qubitum::challenge_proof(origin, submission, 2)
 }
 
 #[test]
@@ -373,7 +407,7 @@ fn miner_exit_requires_cooldown_and_releases_bond() {
 fn slashed_miner_can_exit_with_remaining_bond() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
-        assert_ok!(Qubitum::slash_miner(RuntimeOrigin::root(), 0, 1_000));
+        assert_ok!(Qubitum::slash_miner(RuntimeOrigin::root(), 0, 2, 1_000));
 
         assert_ok!(Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0));
         System::set_block_number(20);
@@ -394,7 +428,7 @@ fn root_slash_burns_held_validator_stake() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
 
-        assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 1_000));
+        assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 3, 1_000));
 
         let validator = Validators::<Test>::get(0).unwrap();
         assert_eq!(validator.stake, 90_000_000_000);
@@ -410,7 +444,7 @@ fn root_slash_burns_held_validator_stake() {
 fn slashed_validator_can_exit_with_remaining_stake() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
-        assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 1_000));
+        assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 3, 1_000));
 
         assert_ok!(Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0));
         System::set_block_number(20);
@@ -444,7 +478,10 @@ fn register_validator_locks_stake() {
         ));
 
         let validator = Validators::<Test>::get(0).unwrap();
-        assert_eq!(validator.operator, 3);
+        assert_eq!(
+            validator.operator_commitment,
+            Qubitum::account_commitment(&3)
+        );
         assert_eq!(validator.status, RegistryStatus::Active);
         assert_eq!(ValidatorCount::<Test>::get(), 1);
         assert_eq!(
@@ -743,10 +780,7 @@ fn validator_cannot_exit_with_pending_proof_assignment() {
             Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0),
             Error::<Test>::PendingAssignedRequests
         );
-        assert_ok!(Qubitum::submit_proof(
-            RuntimeOrigin::signed(3),
-            valid_submission(41)
-        ));
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(41)));
     });
 }
 
@@ -759,7 +793,7 @@ fn submit_proof_records_commitments_for_active_participants() {
         let mut submission = valid_submission(42);
         submission.submitted_at = 120;
 
-        assert_ok!(Qubitum::submit_proof(RuntimeOrigin::signed(3), submission));
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), submission));
 
         let record = ProofRecords::<Test>::get(42).unwrap();
         assert_eq!(record.request_id, 42);
@@ -817,13 +851,11 @@ fn stored_runtime_records_do_not_expose_raw_inference_or_model_payloads() {
         register_active_miner_and_validator();
         request_inference(43);
         System::set_block_number(5);
-        assert_ok!(Qubitum::submit_proof(
-            RuntimeOrigin::signed(3),
-            valid_submission(43)
-        ));
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(43)));
 
         for encoded in [
             Miners::<Test>::get(0).unwrap().encode(),
+            Validators::<Test>::get(0).unwrap().encode(),
             InferenceRequests::<Test>::get(43).unwrap().encode(),
             ProofRecords::<Test>::get(43).unwrap().encode(),
         ] {
@@ -831,6 +863,15 @@ fn stored_runtime_records_do_not_expose_raw_inference_or_model_payloads() {
             assert!(!contains_subsequence(&encoded, raw_output));
             assert!(!contains_subsequence(&encoded, raw_model));
         }
+
+        assert!(!contains_subsequence(
+            &Miners::<Test>::get(0).unwrap().encode(),
+            &2_u64.encode()
+        ));
+        assert!(!contains_subsequence(
+            &Validators::<Test>::get(0).unwrap().encode(),
+            &3_u64.encode()
+        ));
     });
 }
 
@@ -880,7 +921,7 @@ fn public_request_and_proof_views_redact_private_route_payment_and_timing() {
         submission.proof_size_bytes = 65_432;
         submission.verification_latency_ms = 77;
         submission.submitted_at = 100;
-        assert_ok!(Qubitum::submit_proof(RuntimeOrigin::signed(3), submission));
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), submission));
 
         let public_proof = Qubitum::public_proof_record(91).unwrap();
         assert_eq!(
@@ -1092,7 +1133,7 @@ fn public_lifecycle_events_redact_route_payment_and_proof_metadata() {
         submission.proof_size_bytes = 65_432;
         submission.verification_latency_ms = 77;
         submission.submitted_at = 2;
-        assert_ok!(Qubitum::submit_proof(RuntimeOrigin::signed(3), submission));
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), submission));
 
         let events: Vec<_> = System::events()
             .into_iter()
@@ -1165,7 +1206,56 @@ fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
         assert_eq!(record.accepted_at, 55);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(7)
+            StorageVersion::new(8)
+        );
+    });
+}
+
+#[test]
+fn runtime_upgrade_migrates_registry_operators_to_commitments() {
+    new_test_ext().execute_with(|| {
+        let legacy_miner = LegacyChainMinerV7 {
+            id: 7,
+            operator: 22,
+            subnet_id: 3,
+            model_commitment: commitment(44),
+            proof_system: ProofSystem::RiscZeroStark,
+            bond: MIN_MINER_BOND,
+            status: RegistryStatus::Active,
+        };
+        let legacy_validator = LegacyChainValidatorV7 {
+            id: 9,
+            operator: 33,
+            subnet_id: 3,
+            stake: MIN_MINER_BOND,
+            status: RegistryStatus::Active,
+        };
+        sp_io::storage::set(&Miners::<Test>::hashed_key_for(7), &legacy_miner.encode());
+        sp_io::storage::set(
+            &Validators::<Test>::hashed_key_for(9),
+            &legacy_validator.encode(),
+        );
+        StorageVersion::new(7).put::<crate::Pallet<Test>>();
+
+        <Qubitum as Hooks<u64>>::on_runtime_upgrade();
+
+        let miner = Miners::<Test>::get(7).unwrap();
+        assert_eq!(miner.id, 7);
+        assert_eq!(miner.operator_commitment, Qubitum::account_commitment(&22));
+        assert_eq!(miner.model_commitment, commitment(44));
+        assert!(!contains_subsequence(&miner.encode(), &22_u64.encode()));
+
+        let validator = Validators::<Test>::get(9).unwrap();
+        assert_eq!(validator.id, 9);
+        assert_eq!(
+            validator.operator_commitment,
+            Qubitum::account_commitment(&33)
+        );
+        assert_eq!(validator.stake, MIN_MINER_BOND);
+        assert!(!contains_subsequence(&validator.encode(), &33_u64.encode()));
+        assert_eq!(
+            StorageVersion::get::<crate::Pallet<Test>>(),
+            StorageVersion::new(8)
         );
     });
 }
@@ -1220,10 +1310,7 @@ fn pending_assignment_blocks_participant_exit_until_request_closes() {
             Error::<Test>::PendingAssignedRequests
         );
 
-        assert_ok!(Qubitum::submit_proof(
-            RuntimeOrigin::signed(3),
-            valid_submission(7)
-        ));
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(7)));
         assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
 
@@ -1239,20 +1326,17 @@ fn root_slash_rejects_pending_assigned_participants() {
         request_inference(7);
 
         assert_noop!(
-            Qubitum::slash_miner(RuntimeOrigin::root(), 0, 1_000),
+            Qubitum::slash_miner(RuntimeOrigin::root(), 0, 2, 1_000),
             Error::<Test>::PendingAssignedRequests
         );
         assert_noop!(
-            Qubitum::slash_validator(RuntimeOrigin::root(), 0, 1_000),
+            Qubitum::slash_validator(RuntimeOrigin::root(), 0, 3, 1_000),
             Error::<Test>::PendingAssignedRequests
         );
 
-        assert_ok!(Qubitum::submit_proof(
-            RuntimeOrigin::signed(3),
-            valid_submission(7)
-        ));
-        assert_ok!(Qubitum::slash_miner(RuntimeOrigin::root(), 0, 1_000));
-        assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 1_000));
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(7)));
+        assert_ok!(Qubitum::slash_miner(RuntimeOrigin::root(), 0, 2, 1_000));
+        assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 3, 1_000));
     });
 }
 
@@ -1434,11 +1518,11 @@ fn route_assignment_removes_slashed_participants() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
 
-        assert_ok!(Qubitum::slash_miner(RuntimeOrigin::root(), 0, 1_000));
+        assert_ok!(Qubitum::slash_miner(RuntimeOrigin::root(), 0, 2, 1_000));
         assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
         assert_eq!(Qubitum::route_assignment(0, 42), None);
 
-        assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 1_000));
+        assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 3, 1_000));
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
     });
 }
@@ -1670,7 +1754,7 @@ fn submit_proof_rejects_self_validation_assignment() {
         );
 
         assert_noop!(
-            Qubitum::submit_proof(RuntimeOrigin::signed(2), valid_submission(88)),
+            submit_proof(RuntimeOrigin::signed(2), valid_submission(88)),
             Error::<Test>::SelfValidation
         );
     });
@@ -1703,7 +1787,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(7)
+            StorageVersion::new(8)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
@@ -1890,10 +1974,7 @@ fn cancel_inference_rejects_non_owner_or_settled_request() {
             Error::<Test>::NotRequestOwner
         );
 
-        assert_ok!(Qubitum::submit_proof(
-            RuntimeOrigin::signed(3),
-            valid_submission(9)
-        ));
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(9)));
         assert_noop!(
             Qubitum::cancel_inference(RuntimeOrigin::signed(4), 9),
             Error::<Test>::RequestAlreadySettled
@@ -1907,7 +1988,7 @@ fn submit_proof_rejects_latency_or_missing_commitment() {
         register_active_miner_and_validator();
 
         assert_noop!(
-            Qubitum::submit_proof(
+            submit_proof(
                 RuntimeOrigin::signed(3),
                 InferenceProofSubmission {
                     request_id: 43,
@@ -1929,7 +2010,7 @@ fn submit_proof_rejects_latency_or_missing_commitment() {
 
         request_inference(44);
         assert_noop!(
-            Qubitum::submit_proof(
+            submit_proof(
                 RuntimeOrigin::signed(3),
                 InferenceProofSubmission {
                     request_id: 44,
@@ -1952,14 +2033,14 @@ fn submit_proof_rejects_latency_or_missing_commitment() {
         let mut missing_journal = valid_submission(49);
         missing_journal.proof.journal_commitment = [0; 32];
         assert_noop!(
-            Qubitum::submit_proof(RuntimeOrigin::signed(3), missing_journal),
+            submit_proof(RuntimeOrigin::signed(3), missing_journal),
             Error::<Test>::MissingCommitment
         );
 
         let mut wrong_verifier = valid_submission(50);
         wrong_verifier.proof.verifier_version = ProofVerifierVersion::Mock;
         assert_noop!(
-            Qubitum::submit_proof(RuntimeOrigin::signed(3), wrong_verifier),
+            submit_proof(RuntimeOrigin::signed(3), wrong_verifier),
             Error::<Test>::ProofSystemMismatch
         );
     });
@@ -1975,7 +2056,7 @@ fn submit_proof_rejects_future_or_expired_timestamp() {
         let mut future = valid_submission(60);
         future.submitted_at = 21;
         assert_noop!(
-            Qubitum::submit_proof(RuntimeOrigin::signed(3), future),
+            submit_proof(RuntimeOrigin::signed(3), future),
             Error::<Test>::ProofSubmittedFromFuture
         );
 
@@ -1983,7 +2064,7 @@ fn submit_proof_rejects_future_or_expired_timestamp() {
         let mut expired = valid_submission(61);
         expired.submitted_at = 9;
         assert_noop!(
-            Qubitum::submit_proof(RuntimeOrigin::signed(3), expired),
+            submit_proof(RuntimeOrigin::signed(3), expired),
             Error::<Test>::ProofSubmissionExpired
         );
     });
@@ -1995,18 +2076,15 @@ fn submit_proof_rejects_duplicate_wrong_validator_or_model() {
         register_active_miner_and_validator();
         request_inference(45);
 
-        assert_ok!(Qubitum::submit_proof(
-            RuntimeOrigin::signed(3),
-            valid_submission(45)
-        ));
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(45)));
         assert_noop!(
-            Qubitum::submit_proof(RuntimeOrigin::signed(3), valid_submission(45)),
+            submit_proof(RuntimeOrigin::signed(3), valid_submission(45)),
             Error::<Test>::DuplicateProof
         );
 
         request_inference(46);
         assert_noop!(
-            Qubitum::submit_proof(RuntimeOrigin::signed(4), valid_submission(46)),
+            submit_proof(RuntimeOrigin::signed(4), valid_submission(46)),
             Error::<Test>::NotValidatorOperator
         );
 
@@ -2014,7 +2092,7 @@ fn submit_proof_rejects_duplicate_wrong_validator_or_model() {
         let mut wrong_model = valid_submission(47);
         wrong_model.model_commitment = commitment(99);
         assert_noop!(
-            Qubitum::submit_proof(RuntimeOrigin::signed(3), wrong_model),
+            submit_proof(RuntimeOrigin::signed(3), wrong_model),
             Error::<Test>::ModelCommitmentMismatch
         );
     });
@@ -2045,14 +2123,14 @@ fn submit_proof_rejects_unassigned_participants() {
         let mut wrong_miner = valid_submission(52);
         wrong_miner.miner_id = 1;
         assert_noop!(
-            Qubitum::submit_proof(RuntimeOrigin::signed(3), wrong_miner),
+            submit_proof(RuntimeOrigin::signed(3), wrong_miner),
             Error::<Test>::RequestMismatch
         );
 
         let mut wrong_validator = valid_submission(52);
         wrong_validator.validator_id = 1;
         assert_noop!(
-            Qubitum::submit_proof(RuntimeOrigin::signed(3), wrong_validator),
+            submit_proof(RuntimeOrigin::signed(3), wrong_validator),
             Error::<Test>::RequestMismatch
         );
     });
@@ -2065,10 +2143,7 @@ fn verifier_rejection_slashes_and_refunds_request() {
         request_inference(48);
         set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
 
-        assert_ok!(Qubitum::submit_proof(
-            RuntimeOrigin::signed(3),
-            valid_submission(48)
-        ));
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(48)));
 
         assert!(ProofRecords::<Test>::get(48).is_none());
         assert_eq!(
@@ -2116,7 +2191,7 @@ fn invalid_proof_challenge_slashes_miner_without_validator_self_slash() {
         request_inference(49);
         set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
 
-        assert_ok!(Qubitum::challenge_proof(
+        assert_ok!(challenge_proof(
             RuntimeOrigin::signed(4),
             valid_submission(49)
         ));
@@ -2150,7 +2225,7 @@ fn valid_proof_challenge_is_rejected_without_state_changes() {
         request_inference(50);
 
         assert_noop!(
-            Qubitum::challenge_proof(RuntimeOrigin::signed(4), valid_submission(50)),
+            challenge_proof(RuntimeOrigin::signed(4), valid_submission(50)),
             Error::<Test>::ChallengeProofValid
         );
 
@@ -2209,7 +2284,7 @@ fn malformed_proof_challenges_are_rejected_without_state_changes() {
         let mut zero_proof_commitment = valid_submission(53);
         zero_proof_commitment.proof.proof_commitment = [0; 32];
         assert_noop!(
-            Qubitum::challenge_proof(RuntimeOrigin::signed(4), zero_proof_commitment),
+            challenge_proof(RuntimeOrigin::signed(4), zero_proof_commitment),
             Error::<Test>::MissingCommitment
         );
         assert_unchanged();
@@ -2217,7 +2292,7 @@ fn malformed_proof_challenges_are_rejected_without_state_changes() {
         let mut too_small = valid_submission(53);
         too_small.proof_size_bytes = TARGET_PROOF_SIZE_MIN_BYTES - 1;
         assert_noop!(
-            Qubitum::challenge_proof(RuntimeOrigin::signed(4), too_small),
+            challenge_proof(RuntimeOrigin::signed(4), too_small),
             Error::<Test>::InvalidProofSize
         );
         assert_unchanged();
@@ -2225,7 +2300,7 @@ fn malformed_proof_challenges_are_rejected_without_state_changes() {
         let mut future = valid_submission(53);
         future.submitted_at = System::block_number() + 1;
         assert_noop!(
-            Qubitum::challenge_proof(RuntimeOrigin::signed(4), future),
+            challenge_proof(RuntimeOrigin::signed(4), future),
             Error::<Test>::ProofSubmittedFromFuture
         );
         assert_unchanged();
@@ -2234,7 +2309,7 @@ fn malformed_proof_challenges_are_rejected_without_state_changes() {
         let mut stale = valid_submission(53);
         stale.submitted_at = 1;
         assert_noop!(
-            Qubitum::challenge_proof(RuntimeOrigin::signed(4), stale),
+            challenge_proof(RuntimeOrigin::signed(4), stale),
             Error::<Test>::ProofSubmissionExpired
         );
         assert_unchanged();
@@ -2242,7 +2317,7 @@ fn malformed_proof_challenges_are_rejected_without_state_changes() {
         let mut wrong_assignment = valid_submission(53);
         wrong_assignment.input_commitment = commitment(9);
         assert_noop!(
-            Qubitum::challenge_proof(RuntimeOrigin::signed(4), wrong_assignment),
+            challenge_proof(RuntimeOrigin::signed(4), wrong_assignment),
             Error::<Test>::RequestMismatch
         );
         assert_unchanged();
@@ -2254,7 +2329,7 @@ fn root_slash_burns_held_miner_bond() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
 
-        assert_ok!(Qubitum::slash_miner(RuntimeOrigin::root(), 0, 1_000));
+        assert_ok!(Qubitum::slash_miner(RuntimeOrigin::root(), 0, 2, 1_000));
 
         let miner = Miners::<Test>::get(0).unwrap();
         assert_eq!(miner.bond, 90_000_000_000);

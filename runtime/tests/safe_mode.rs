@@ -4,6 +4,7 @@ use qubitum_protocol::{
     InferenceProofSubmission, ProofEnvelope, ProofSystem, SignatureAlgorithm, SignatureBundle,
     SignatureCommitment, SubnetDomain, TARGET_PROOF_SIZE_MIN_BYTES,
 };
+use sp_runtime::AccountId32;
 
 fn commitment(seed: u8) -> [u8; 32] {
     [seed; 32]
@@ -11,6 +12,10 @@ fn commitment(seed: u8) -> [u8; 32] {
 
 fn proof(seed: u8) -> ProofEnvelope {
     ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
+}
+
+fn account(seed: u8) -> AccountId32 {
+    AccountId32::new([seed; 32])
 }
 
 fn classical_signature_bundle() -> SignatureBundle {
@@ -45,6 +50,7 @@ fn valid_submission() -> InferenceProofSubmission {
 fn qubitum_submit_proof_is_allowed_in_safe_mode() {
     let call = RuntimeCall::Qubitum(pallet_qubitum::Call::submit_proof {
         submission: valid_submission(),
+        miner_operator: account(2),
     });
 
     assert!(SafeModeWhitelistedCalls::contains(&call));
@@ -54,6 +60,7 @@ fn qubitum_submit_proof_is_allowed_in_safe_mode() {
 fn qubitum_challenge_proof_is_allowed_in_safe_mode() {
     let call = RuntimeCall::Qubitum(pallet_qubitum::Call::challenge_proof {
         submission: valid_submission(),
+        miner_operator: account(2),
     });
 
     assert!(SafeModeWhitelistedCalls::contains(&call));
@@ -151,6 +158,7 @@ fn qubitum_validator_exit_is_blocked_in_safe_mode() {
         RuntimeCall::Qubitum(pallet_qubitum::Call::withdraw_validator_stake { validator_id: 1 });
     let slash = RuntimeCall::Qubitum(pallet_qubitum::Call::slash_validator {
         validator_id: 1,
+        operator: account(3),
         slash_bps: 1_000,
     });
 
