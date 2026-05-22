@@ -37,6 +37,8 @@ The pallet is wired into `node-subtensor-runtime` as `Qubitum`, with runtime-pro
 
 Users open inference requests by escrowing QBT against a request ID, subnet, assigned miner, assigned validator, input commitment, and fee split. The pallet deterministically routes each request through bounded active-participant indexes and rejects non-canonical assignments before holding funds. Valid proof submission must match the request assignment, then settles that held payment atomically: miner payment, validator fee, and protocol treasury fee are transferred from escrow, and the request status moves from pending to settled. Invalid verifier outcomes slash both the miner bond and validator stake without settling the user escrow. Pending requests can be cancelled by the request owner after the configured cancellation delay to release escrow.
 
+Qubitum pallet storage is explicitly versioned. Runtime upgrades rebuild active routing indexes from existing participant state when migrating from pre-versioned storage, and try-runtime checks verify that indexed participants still match active registry state.
+
 Miners can exit by moving from active or slashed status into an on-chain cooldown. While exiting, they cannot submit new work, but their remaining held bond is still slashable. After the cooldown expires, the operator can withdraw the residual bond and the miner becomes disabled.
 
 Validators use the same two-step exit pattern: active validators enter a stake cooldown, stop qualifying for proof submissions, and withdraw remaining stake only after the cooldown expires.

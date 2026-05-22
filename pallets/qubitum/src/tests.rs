@@ -8,7 +8,10 @@ use crate::{
         Balances, Qubitum, RuntimeOrigin, System, Test, new_test_ext, set_verification_outcome,
     },
 };
-use frame_support::{assert_noop, assert_ok, traits::fungible::InspectHold};
+use frame_support::{
+    assert_noop, assert_ok,
+    traits::{Hooks, StorageVersion, fungible::InspectHold},
+};
 use qubitum_protocol::{
     InferenceProofSubmission, MAX_MINER_BOND, MIN_MINER_BOND, MINER_REGISTRATION_BURN,
     ProofEnvelope, ProofSystem, ProofVerifierVersion, RegistryStatus, SubnetDomain,
@@ -532,6 +535,28 @@ fn route_assignment_removes_slashed_participants() {
 
         assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 1_000));
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
+    });
+}
+
+#[test]
+fn runtime_upgrade_rebuilds_active_routing_indexes() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        ActiveMinersBySubnet::<Test>::remove(0);
+        ActiveValidatorsBySubnet::<Test>::remove(0);
+        StorageVersion::new(0).put::<crate::Pallet<Test>>();
+
+        assert_eq!(Qubitum::route_assignment(0, 42), None);
+
+        <Qubitum as Hooks<u64>>::on_runtime_upgrade();
+
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert_eq!(
+            StorageVersion::get::<crate::Pallet<Test>>(),
+            StorageVersion::new(1)
+        );
+        assert!(Qubitum::route_assignment(0, 42).is_some());
     });
 }
 

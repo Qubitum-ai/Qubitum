@@ -139,8 +139,11 @@ pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
 
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
+
     #[pallet::pallet]
     #[pallet::without_storage_info]
+    #[pallet::storage_version(STORAGE_VERSION)]
     pub struct Pallet<T>(_);
 
     #[pallet::config]
@@ -416,6 +419,36 @@ pub mod pallet {
 
     #[pallet::storage]
     pub type TotalBurned<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
+
+    #[pallet::hooks]
+    impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+        fn on_runtime_upgrade() -> Weight {
+            let on_chain = Pallet::<T>::on_chain_storage_version();
+            if on_chain >= STORAGE_VERSION {
+                return T::DbWeight::get().reads(1);
+            }
+
+            let weight = Self::rebuild_active_routing_indexes();
+            STORAGE_VERSION.put::<Pallet<T>>();
+            weight.saturating_add(T::DbWeight::get().reads_writes(1, 1))
+        }
+
+        #[cfg(feature = "try-runtime")]
+        fn try_state(_n: BlockNumberFor<T>) -> Result<(), sp_runtime::TryRuntimeError> {
+            Self::ensure_active_routing_indexes_match()?;
+            Ok(())
+        }
+
+        #[cfg(feature = "try-runtime")]
+        fn post_upgrade(_state: sp_std::vec::Vec<u8>) -> Result<(), sp_runtime::TryRuntimeError> {
+            ensure!(
+                Pallet::<T>::on_chain_storage_version() == STORAGE_VERSION,
+                "Qubitum storage version did not upgrade"
+            );
+            Self::ensure_active_routing_indexes_match()?;
+            Ok(())
+        }
+    }
 
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
@@ -1197,6 +1230,111 @@ pub mod pallet {
             ActiveValidatorsBySubnet::<T>::mutate(subnet_id, |ids| {
                 ids.retain(|indexed| *indexed != validator_id);
             });
+        }
+
+        fn rebuild_active_routing_indexes() -> Weight {
+            let mut miner_reads = 0_u64;
+            let mut miner_writes = 0_u64;
+            let mut validator_reads = 0_u64;
+            let mut validator_writes = 0_u64;
+
+            for (subnet_id, _) in ActiveMinersBySubnet::<T>::iter() {
+                ActiveMinersBySubnet::<T>::remove(subnet_id);
+                miner_reads = miner_reads.saturating_add(1);
+                miner_writes = miner_writes.saturating_add(1);
+            }
+            for (subnet_id, _) in ActiveValidatorsBySubnet::<T>::iter() {
+                ActiveValidatorsBySubnet::<T>::remove(subnet_id);
+                validator_reads = validator_reads.saturating_add(1);
+                validator_writes = validator_writes.saturating_add(1);
+            }
+
+            for (miner_id, miner) in Miners::<T>::iter() {
+                miner_reads = miner_reads.saturating_add(1);
+                if miner.status == RegistryStatus::Active {
+                    let inserted = ActiveMinersBySubnet::<T>::try_mutate(miner.subnet_id, |ids| {
+                        if !ids.contains(&miner_id) {
+                            ids.try_push(miner_id)
+                                .map_err(|_| Error::<T>::TooManyActiveMiners)?;
+                        }
+                        Ok::<(), Error<T>>(())
+                    })
+                    .is_ok();
+                    if inserted {
+                        miner_writes = miner_writes.saturating_add(1);
+                    }
+                }
+            }
+
+            for (validator_id, validator) in Validators::<T>::iter() {
+                validator_reads = validator_reads.saturating_add(1);
+                if validator.status == RegistryStatus::Active {
+                    let inserted =
+                        ActiveValidatorsBySubnet::<T>::try_mutate(validator.subnet_id, |ids| {
+                            if !ids.contains(&validator_id) {
+                                ids.try_push(validator_id)
+                                    .map_err(|_| Error::<T>::TooManyActiveValidators)?;
+                            }
+                            Ok::<(), Error<T>>(())
+                        })
+                        .is_ok();
+                    if inserted {
+                        validator_writes = validator_writes.saturating_add(1);
+                    }
+                }
+            }
+
+            T::DbWeight::get().reads_writes(
+                miner_reads.saturating_add(validator_reads),
+                miner_writes.saturating_add(validator_writes),
+            )
+        }
+
+        #[cfg(feature = "try-runtime")]
+        fn ensure_active_routing_indexes_match() -> Result<(), sp_runtime::TryRuntimeError> {
+            for (subnet_id, miner_ids) in ActiveMinersBySubnet::<T>::iter() {
+                for miner_id in miner_ids {
+                    let miner = Miners::<T>::get(miner_id)
+                        .ok_or("Qubitum active miner index references missing miner")?;
+                    ensure!(
+                        miner.subnet_id == subnet_id && miner.status == RegistryStatus::Active,
+                        "Qubitum active miner index references inactive or wrong-subnet miner"
+                    );
+                }
+            }
+
+            for (miner_id, miner) in Miners::<T>::iter() {
+                if miner.status == RegistryStatus::Active {
+                    ensure!(
+                        ActiveMinersBySubnet::<T>::get(miner.subnet_id).contains(&miner_id),
+                        "Qubitum active miner missing from route index"
+                    );
+                }
+            }
+
+            for (subnet_id, validator_ids) in ActiveValidatorsBySubnet::<T>::iter() {
+                for validator_id in validator_ids {
+                    let validator = Validators::<T>::get(validator_id)
+                        .ok_or("Qubitum active validator index references missing validator")?;
+                    ensure!(
+                        validator.subnet_id == subnet_id
+                            && validator.status == RegistryStatus::Active,
+                        "Qubitum active validator index references inactive or wrong-subnet validator"
+                    );
+                }
+            }
+
+            for (validator_id, validator) in Validators::<T>::iter() {
+                if validator.status == RegistryStatus::Active {
+                    ensure!(
+                        ActiveValidatorsBySubnet::<T>::get(validator.subnet_id)
+                            .contains(&validator_id),
+                        "Qubitum active validator missing from route index"
+                    );
+                }
+            }
+
+            Ok(())
         }
 
         fn burn_free(who: &T::AccountId, amount: BalanceOf<T>) -> DispatchResult {
