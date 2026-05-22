@@ -80,8 +80,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
     fn submit_proof() -> Weight {
         Weight::from_parts(85_000_000, 10_000)
-            .saturating_add(T::DbWeight::get().reads(17_u64))
-            .saturating_add(T::DbWeight::get().writes(15_u64))
+            .saturating_add(T::DbWeight::get().reads(19_u64))
+            .saturating_add(T::DbWeight::get().writes(17_u64))
     }
 
     fn slash_miner() -> Weight {
@@ -98,14 +98,14 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
     fn request_inference() -> Weight {
         Weight::from_parts(50_000_000, 7_000)
-            .saturating_add(T::DbWeight::get().reads(26_u64))
-            .saturating_add(T::DbWeight::get().writes(7_u64))
+            .saturating_add(T::DbWeight::get().reads(27_u64))
+            .saturating_add(T::DbWeight::get().writes(8_u64))
     }
 
     fn cancel_inference() -> Weight {
         Weight::from_parts(45_000_000, 6_500)
-            .saturating_add(T::DbWeight::get().reads(5_u64))
-            .saturating_add(T::DbWeight::get().writes(5_u64))
+            .saturating_add(T::DbWeight::get().reads(7_u64))
+            .saturating_add(T::DbWeight::get().writes(7_u64))
     }
 }
 
@@ -160,8 +160,8 @@ impl WeightInfo for () {
 
     fn submit_proof() -> Weight {
         Weight::from_parts(85_000_000, 10_000)
-            .saturating_add(RocksDbWeight::get().reads(17_u64))
-            .saturating_add(RocksDbWeight::get().writes(15_u64))
+            .saturating_add(RocksDbWeight::get().reads(19_u64))
+            .saturating_add(RocksDbWeight::get().writes(17_u64))
     }
 
     fn slash_miner() -> Weight {
@@ -178,13 +178,13 @@ impl WeightInfo for () {
 
     fn request_inference() -> Weight {
         Weight::from_parts(50_000_000, 7_000)
-            .saturating_add(RocksDbWeight::get().reads(26_u64))
-            .saturating_add(RocksDbWeight::get().writes(7_u64))
+            .saturating_add(RocksDbWeight::get().reads(27_u64))
+            .saturating_add(RocksDbWeight::get().writes(8_u64))
     }
 
     fn cancel_inference() -> Weight {
         Weight::from_parts(45_000_000, 6_500)
-            .saturating_add(RocksDbWeight::get().reads(5_u64))
-            .saturating_add(RocksDbWeight::get().writes(5_u64))
+            .saturating_add(RocksDbWeight::get().reads(7_u64))
+            .saturating_add(RocksDbWeight::get().writes(7_u64))
     }
 }

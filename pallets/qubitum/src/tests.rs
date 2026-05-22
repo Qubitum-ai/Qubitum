@@ -1,11 +1,13 @@
 #![allow(clippy::arithmetic_side_effects, clippy::unwrap_used)]
 
 use crate::{
-    ActiveMinersBySubnet, ActiveValidatorsBySubnet, ChainInferenceRequest, Error, HoldReason,
-    InferenceRequestParams, InferenceRequestStatus, InferenceRequests, MinerCount, Miners,
-    PendingMinerRequests, PendingValidatorRequests, ProofRecords, RequestCount, SubnetCount,
-    Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
-    TotalTreasuryFees, TotalValidatorFees, ValidatorCount, Validators,
+    ActiveMinersBySubnet, ActiveValidatorsBySubnet, CancelledInferenceRequestCount,
+    ChainInferenceRequest, ChainRequestStatusCounts, Error, HoldReason, InferenceRequestParams,
+    InferenceRequestStatus, InferenceRequests, MinerCount, Miners, PendingInferenceRequestCount,
+    PendingMinerRequests, PendingValidatorRequests, ProofRecords, RejectedInferenceRequestCount,
+    RequestCount, SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned,
+    TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees,
+    TotalValidatorFees, ValidatorCount, Validators,
     mock::{
         Balances, Qubitum, RuntimeOrigin, System, Test, new_test_ext, set_verification_outcome,
     },
@@ -419,6 +421,15 @@ fn submit_proof_records_commitments_for_active_participants() {
         assert_eq!(TotalTreasuryFees::<Test>::get(), 5);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
         assert_eq!(
+            Qubitum::request_status_counts(),
+            ChainRequestStatusCounts {
+                pending: 0,
+                settled: 1,
+                cancelled: 0,
+                rejected: 0,
+            }
+        );
+        assert_eq!(
             Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
             0
         );
@@ -456,6 +467,15 @@ fn request_inference_escrows_payment() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
+        assert_eq!(
+            Qubitum::request_status_counts(),
+            ChainRequestStatusCounts {
+                pending: 1,
+                settled: 0,
+                cancelled: 0,
+                rejected: 0,
+            }
+        );
     });
 }
 
@@ -850,6 +870,10 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         ActiveValidatorsBySubnet::<Test>::remove(0);
         PendingMinerRequests::<Test>::remove(0);
         PendingValidatorRequests::<Test>::remove(0);
+        PendingInferenceRequestCount::<Test>::put(0);
+        SettledInferenceRequestCount::<Test>::put(0);
+        CancelledInferenceRequestCount::<Test>::put(0);
+        RejectedInferenceRequestCount::<Test>::put(0);
         StorageVersion::new(1).put::<crate::Pallet<Test>>();
 
         assert_eq!(Qubitum::route_assignment(0, 42), None);
@@ -864,10 +888,19 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(3)
+            StorageVersion::new(4)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
+        assert_eq!(
+            Qubitum::request_status_counts(),
+            ChainRequestStatusCounts {
+                pending: 1,
+                settled: 0,
+                cancelled: 0,
+                rejected: 0,
+            }
+        );
         assert!(Qubitum::route_assignment(0, 42).is_some());
     });
 }
@@ -939,6 +972,15 @@ fn cancel_inference_releases_pending_escrow() {
         assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 1_000);
+        assert_eq!(
+            Qubitum::request_status_counts(),
+            ChainRequestStatusCounts {
+                pending: 0,
+                settled: 0,
+                cancelled: 1,
+                rejected: 0,
+            }
+        );
     });
 }
 
@@ -1145,6 +1187,15 @@ fn verifier_rejection_slashes_and_refunds_request() {
         assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 1_000);
+        assert_eq!(
+            Qubitum::request_status_counts(),
+            ChainRequestStatusCounts {
+                pending: 0,
+                settled: 0,
+                cancelled: 0,
+                rejected: 1,
+            }
+        );
         let miner = Miners::<Test>::get(0).unwrap();
         assert_eq!(miner.bond, 90_000_000_000);
         assert_eq!(miner.status, RegistryStatus::Slashed);

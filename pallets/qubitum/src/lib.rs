@@ -139,7 +139,7 @@ pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
 
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(3);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(4);
     const MAX_VALIDATOR_ROUTING_ATTEMPTS: usize = 16;
 
     #[pallet::pallet]
@@ -365,6 +365,25 @@ pub mod pallet {
     }
 
     #[derive(
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        TypeInfo,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Debug,
+        MaxEncodedLen,
+    )]
+    pub struct ChainRequestStatusCounts {
+        pub pending: RequestId,
+        pub settled: RequestId,
+        pub cancelled: RequestId,
+        pub rejected: RequestId,
+    }
+
+    #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
     pub struct InferenceRequestParams<Balance> {
@@ -446,6 +465,18 @@ pub mod pallet {
         StorageMap<_, Twox64Concat, ValidatorId, RequestId, ValueQuery>;
 
     #[pallet::storage]
+    pub type PendingInferenceRequestCount<T: Config> = StorageValue<_, RequestId, ValueQuery>;
+
+    #[pallet::storage]
+    pub type SettledInferenceRequestCount<T: Config> = StorageValue<_, RequestId, ValueQuery>;
+
+    #[pallet::storage]
+    pub type CancelledInferenceRequestCount<T: Config> = StorageValue<_, RequestId, ValueQuery>;
+
+    #[pallet::storage]
+    pub type RejectedInferenceRequestCount<T: Config> = StorageValue<_, RequestId, ValueQuery>;
+
+    #[pallet::storage]
     pub type TotalBurned<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
 
     #[pallet::storage]
@@ -473,7 +504,8 @@ pub mod pallet {
 
             let weight = Self::rebuild_active_routing_indexes()
                 .saturating_add(Self::rebuild_pending_assignment_counters())
-                .saturating_add(Self::rebuild_inference_accounting());
+                .saturating_add(Self::rebuild_inference_accounting())
+                .saturating_add(Self::rebuild_request_status_counts());
             STORAGE_VERSION.put::<Pallet<T>>();
             weight.saturating_add(T::DbWeight::get().reads_writes(1, 1))
         }
@@ -655,6 +687,8 @@ pub mod pallet {
         PendingAssignedRequests,
         /// Pending assignment accounting was inconsistent.
         PendingAssignmentUnderflow,
+        /// Request status accounting was inconsistent.
+        RequestStatusCounterUnderflow,
         /// Subnet has reached the active miner routing index bound.
         TooManyActiveMiners,
         /// Subnet has reached the active validator routing index bound.
@@ -951,6 +985,7 @@ pub mod pallet {
 
             T::Currency::hold(&HoldReason::InferencePayment.into(), &user, params.payment)?;
             Self::increment_pending_assignment(params.miner_id, params.validator_id)?;
+            Self::increment_request_status_count(InferenceRequestStatus::Pending)?;
             Self::record_inference_escrow(params.payment);
             InferenceRequests::<T>::insert(
                 request_id,
@@ -1014,6 +1049,10 @@ pub mod pallet {
                 },
             )?;
             Self::decrement_pending_assignment(miner_id, validator_id)?;
+            Self::transition_request_status(
+                InferenceRequestStatus::Pending,
+                InferenceRequestStatus::Cancelled,
+            )?;
             Self::record_inference_refund(payment);
 
             Self::deposit_event(Event::InferenceCancelled {
@@ -1226,6 +1265,15 @@ pub mod pallet {
             }
         }
 
+        pub fn request_status_counts() -> ChainRequestStatusCounts {
+            ChainRequestStatusCounts {
+                pending: PendingInferenceRequestCount::<T>::get(),
+                settled: SettledInferenceRequestCount::<T>::get(),
+                cancelled: CancelledInferenceRequestCount::<T>::get(),
+                rejected: RejectedInferenceRequestCount::<T>::get(),
+            }
+        }
+
         pub fn route_assignment(
             subnet_id: SubnetId,
             request_id: RequestId,
@@ -1336,6 +1384,64 @@ pub mod pallet {
             TotalInferenceEscrowed::<T>::mutate(|total| {
                 *total = total.saturating_add(payment);
             });
+        }
+
+        fn increment_request_status_count(status: InferenceRequestStatus) -> DispatchResult {
+            match status {
+                InferenceRequestStatus::Pending => {
+                    PendingInferenceRequestCount::<T>::try_mutate(Self::increment_request_count)
+                }
+                InferenceRequestStatus::Settled => {
+                    SettledInferenceRequestCount::<T>::try_mutate(Self::increment_request_count)
+                }
+                InferenceRequestStatus::Cancelled => {
+                    CancelledInferenceRequestCount::<T>::try_mutate(Self::increment_request_count)
+                }
+                InferenceRequestStatus::Rejected => {
+                    RejectedInferenceRequestCount::<T>::try_mutate(Self::increment_request_count)
+                }
+            }
+        }
+
+        fn decrement_request_status_count(status: InferenceRequestStatus) -> DispatchResult {
+            match status {
+                InferenceRequestStatus::Pending => {
+                    PendingInferenceRequestCount::<T>::try_mutate(Self::decrement_request_count)
+                }
+                InferenceRequestStatus::Settled => {
+                    SettledInferenceRequestCount::<T>::try_mutate(Self::decrement_request_count)
+                }
+                InferenceRequestStatus::Cancelled => {
+                    CancelledInferenceRequestCount::<T>::try_mutate(Self::decrement_request_count)
+                }
+                InferenceRequestStatus::Rejected => {
+                    RejectedInferenceRequestCount::<T>::try_mutate(Self::decrement_request_count)
+                }
+            }
+        }
+
+        fn transition_request_status(
+            from: InferenceRequestStatus,
+            to: InferenceRequestStatus,
+        ) -> DispatchResult {
+            if from == to {
+                return Ok(());
+            }
+
+            Self::decrement_request_status_count(from)?;
+            Self::increment_request_status_count(to)
+        }
+
+        fn increment_request_count(count: &mut RequestId) -> DispatchResult {
+            *count = count.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
+            Ok(())
+        }
+
+        fn decrement_request_count(count: &mut RequestId) -> DispatchResult {
+            *count = count
+                .checked_sub(1)
+                .ok_or(Error::<T>::RequestStatusCounterUnderflow)?;
+            Ok(())
         }
 
         fn record_inference_settlement(
@@ -1604,6 +1710,41 @@ pub mod pallet {
             T::DbWeight::get().reads_writes(request_reads, 5)
         }
 
+        fn rebuild_request_status_counts() -> Weight {
+            let mut request_reads = 0_u64;
+            let mut counts = ChainRequestStatusCounts {
+                pending: 0,
+                settled: 0,
+                cancelled: 0,
+                rejected: 0,
+            };
+
+            for (_, request) in InferenceRequests::<T>::iter() {
+                request_reads = request_reads.saturating_add(1);
+                match request.status {
+                    InferenceRequestStatus::Pending => {
+                        counts.pending = counts.pending.saturating_add(1);
+                    }
+                    InferenceRequestStatus::Settled => {
+                        counts.settled = counts.settled.saturating_add(1);
+                    }
+                    InferenceRequestStatus::Cancelled => {
+                        counts.cancelled = counts.cancelled.saturating_add(1);
+                    }
+                    InferenceRequestStatus::Rejected => {
+                        counts.rejected = counts.rejected.saturating_add(1);
+                    }
+                }
+            }
+
+            PendingInferenceRequestCount::<T>::put(counts.pending);
+            SettledInferenceRequestCount::<T>::put(counts.settled);
+            CancelledInferenceRequestCount::<T>::put(counts.cancelled);
+            RejectedInferenceRequestCount::<T>::put(counts.rejected);
+
+            T::DbWeight::get().reads_writes(request_reads, 4)
+        }
+
         #[cfg(feature = "try-runtime")]
         fn ensure_active_routing_indexes_match() -> Result<(), sp_runtime::TryRuntimeError> {
             for (subnet_id, miner_ids) in ActiveMinersBySubnet::<T>::iter() {
@@ -1731,6 +1872,37 @@ pub mod pallet {
             ensure!(
                 Self::accounting() == expected_accounting,
                 "Qubitum inference accounting mismatch"
+            );
+
+            let mut expected_status_counts = ChainRequestStatusCounts {
+                pending: 0,
+                settled: 0,
+                cancelled: 0,
+                rejected: 0,
+            };
+            for (_, request) in InferenceRequests::<T>::iter() {
+                match request.status {
+                    InferenceRequestStatus::Pending => {
+                        expected_status_counts.pending =
+                            expected_status_counts.pending.saturating_add(1);
+                    }
+                    InferenceRequestStatus::Settled => {
+                        expected_status_counts.settled =
+                            expected_status_counts.settled.saturating_add(1);
+                    }
+                    InferenceRequestStatus::Cancelled => {
+                        expected_status_counts.cancelled =
+                            expected_status_counts.cancelled.saturating_add(1);
+                    }
+                    InferenceRequestStatus::Rejected => {
+                        expected_status_counts.rejected =
+                            expected_status_counts.rejected.saturating_add(1);
+                    }
+                }
+            }
+            ensure!(
+                Self::request_status_counts() == expected_status_counts,
+                "Qubitum request status counter mismatch"
             );
 
             Ok(())
@@ -1907,6 +2079,10 @@ pub mod pallet {
                     )?;
                     request.status = InferenceRequestStatus::Settled;
                     Self::decrement_pending_assignment(request.miner_id, request.validator_id)?;
+                    Self::transition_request_status(
+                        InferenceRequestStatus::Pending,
+                        InferenceRequestStatus::Settled,
+                    )?;
                     Self::record_inference_settlement(
                         miner_payment,
                         validator_fee,
@@ -1945,6 +2121,10 @@ pub mod pallet {
                     )?;
                     request.status = InferenceRequestStatus::Rejected;
                     Self::decrement_pending_assignment(request.miner_id, request.validator_id)?;
+                    Self::transition_request_status(
+                        InferenceRequestStatus::Pending,
+                        InferenceRequestStatus::Rejected,
+                    )?;
                     Self::record_inference_refund(request.payment);
 
                     Ok((request.user.clone(), request.payment))
