@@ -140,6 +140,7 @@ pub mod pallet {
     use frame_system::pallet_prelude::*;
 
     const STORAGE_VERSION: StorageVersion = StorageVersion::new(1);
+    const MAX_VALIDATOR_ROUTING_ATTEMPTS: usize = 16;
 
     #[pallet::pallet]
     #[pallet::without_storage_info]
@@ -1138,9 +1139,10 @@ pub mod pallet {
             }
 
             let miner_id = Self::route_active_miner(subnet_id, request_id)?;
-            let validator_seed = request_id.rotate_left(32) ^ u64::from(subnet_id);
-            let validator_id = Self::route_active_validator(subnet_id, validator_seed)?;
             let miner = Miners::<T>::get(miner_id)?;
+            let validator_seed = request_id.rotate_left(32) ^ u64::from(subnet_id);
+            let validator_id =
+                Self::route_active_validator(subnet_id, validator_seed, &miner.operator)?;
             let validator = Validators::<T>::get(validator_id)?;
             Self::ensure_distinct_operators(&miner, &validator).ok()?;
 
@@ -1187,14 +1189,35 @@ pub mod pallet {
             ids.get(target).copied()
         }
 
-        fn route_active_validator(subnet_id: SubnetId, seed: u64) -> Option<ValidatorId> {
+        fn route_active_validator(
+            subnet_id: SubnetId,
+            seed: u64,
+            miner_operator: &T::AccountId,
+        ) -> Option<ValidatorId> {
             let ids = ActiveValidatorsBySubnet::<T>::get(subnet_id);
             if ids.is_empty() {
                 return None;
             }
 
-            let target = Self::route_index(seed, ids.len())?;
-            ids.get(target).copied()
+            let start = Self::route_index(seed, ids.len())?;
+            let attempts = ids.len().min(MAX_VALIDATOR_ROUTING_ATTEMPTS);
+            for offset in 0..attempts {
+                let target = start.checked_add(offset)?.checked_rem(ids.len())?;
+                let Some(validator_id) = ids.get(target).copied() else {
+                    continue;
+                };
+                let Some(validator) = Validators::<T>::get(validator_id) else {
+                    continue;
+                };
+                if validator.subnet_id == subnet_id
+                    && validator.status == RegistryStatus::Active
+                    && validator.operator != *miner_operator
+                {
+                    return Some(validator_id);
+                }
+            }
+
+            None
         }
 
         fn route_index(seed: u64, len: usize) -> Option<usize> {

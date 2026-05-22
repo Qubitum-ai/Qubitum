@@ -584,6 +584,55 @@ fn route_assignment_rejects_self_validation_operator() {
 }
 
 #[test]
+fn route_assignment_skips_self_validation_validator_when_alternative_exists() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::Code,
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(10),
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(2),
+            0,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(3),
+            0,
+            MIN_MINER_BOND
+        ));
+
+        let assignment = Qubitum::route_assignment(0, 42).unwrap();
+        assert_eq!(assignment.miner_id, 0);
+        assert_eq!(assignment.validator_id, 1);
+        assert_ok!(Qubitum::request_inference(
+            RuntimeOrigin::signed(4),
+            42,
+            InferenceRequestParams {
+                subnet_id: 0,
+                miner_id: assignment.miner_id,
+                validator_id: assignment.validator_id,
+                input_commitment: commitment(1),
+                payment: 1_000,
+                validator_fee_bps: 250,
+                treasury_fee_bps: 50,
+            },
+        ));
+    });
+}
+
+#[test]
 fn active_miner_index_stays_sorted_by_id() {
     new_test_ext().execute_with(|| {
         assert_ok!(Qubitum::create_subnet(
