@@ -114,6 +114,26 @@ struct LegacyChainValidatorV7 {
 }
 
 #[derive(Encode)]
+struct LegacyChainMinerV9 {
+    id: u64,
+    operator_commitment: [u8; 32],
+    subnet_id: u16,
+    model_commitment: [u8; 32],
+    proof_system: ProofSystem,
+    bond: u128,
+    status: RegistryStatus,
+}
+
+#[derive(Encode)]
+struct LegacyChainValidatorV9 {
+    id: u64,
+    operator_commitment: [u8; 32],
+    subnet_id: u16,
+    stake: u128,
+    status: RegistryStatus,
+}
+
+#[derive(Encode)]
 struct LegacyChainInferenceRequestV8 {
     request_id: u64,
     user: u64,
@@ -333,7 +353,10 @@ fn register_and_activate_miner_locks_bond() {
 
         let miner = Miners::<Test>::get(0).unwrap();
         assert_eq!(miner.status, RegistryStatus::Active);
-        assert_eq!(miner.bond, MIN_MINER_BOND);
+        assert_eq!(
+            miner.bond_commitment,
+            Qubitum::balance_commitment(MIN_MINER_BOND)
+        );
         assert_eq!(MinerCount::<Test>::get(), 1);
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
@@ -432,7 +455,7 @@ fn miner_exit_requires_cooldown_and_releases_bond() {
 
         let miner = Miners::<Test>::get(0).unwrap();
         assert_eq!(miner.status, RegistryStatus::Disabled);
-        assert_eq!(miner.bond, 0);
+        assert_eq!(miner.bond_commitment, Qubitum::balance_commitment(0));
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
             0
@@ -456,7 +479,7 @@ fn slashed_miner_can_exit_with_remaining_bond() {
 
         let miner = Miners::<Test>::get(0).unwrap();
         assert_eq!(miner.status, RegistryStatus::Disabled);
-        assert_eq!(miner.bond, 0);
+        assert_eq!(miner.bond_commitment, Qubitum::balance_commitment(0));
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
             0
@@ -472,7 +495,10 @@ fn root_slash_burns_held_validator_stake() {
         assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 3, 1_000));
 
         let validator = Validators::<Test>::get(0).unwrap();
-        assert_eq!(validator.stake, 90_000_000_000);
+        assert_eq!(
+            validator.stake_commitment,
+            Qubitum::balance_commitment(90_000_000_000)
+        );
         assert_eq!(validator.status, RegistryStatus::Slashed);
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
@@ -496,7 +522,7 @@ fn slashed_validator_can_exit_with_remaining_stake() {
 
         let validator = Validators::<Test>::get(0).unwrap();
         assert_eq!(validator.status, RegistryStatus::Disabled);
-        assert_eq!(validator.stake, 0);
+        assert_eq!(validator.stake_commitment, Qubitum::balance_commitment(0));
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
             0
@@ -799,7 +825,7 @@ fn validator_exit_requires_cooldown_and_releases_stake() {
 
         let validator = Validators::<Test>::get(0).unwrap();
         assert_eq!(validator.status, RegistryStatus::Disabled);
-        assert_eq!(validator.stake, 0);
+        assert_eq!(validator.stake_commitment, Qubitum::balance_commitment(0));
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
             0
@@ -910,8 +936,16 @@ fn stored_runtime_records_do_not_expose_raw_inference_or_model_payloads() {
             &2_u64.encode()
         ));
         assert!(!contains_subsequence(
+            &Miners::<Test>::get(0).unwrap().encode(),
+            &MIN_MINER_BOND.encode()
+        ));
+        assert!(!contains_subsequence(
             &Validators::<Test>::get(0).unwrap().encode(),
             &3_u64.encode()
+        ));
+        assert!(!contains_subsequence(
+            &Validators::<Test>::get(0).unwrap().encode(),
+            &MIN_MINER_BOND.encode()
         ));
         assert!(!contains_subsequence(
             &InferenceRequests::<Test>::get(43).unwrap().encode(),
@@ -1251,7 +1285,7 @@ fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
         assert_eq!(record.accepted_at, 55);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(9)
+            StorageVersion::new(10)
         );
     });
 }
@@ -1288,7 +1322,15 @@ fn runtime_upgrade_migrates_registry_operators_to_commitments() {
         assert_eq!(miner.id, 7);
         assert_eq!(miner.operator_commitment, Qubitum::account_commitment(&22));
         assert_eq!(miner.model_commitment, commitment(44));
+        assert_eq!(
+            miner.bond_commitment,
+            Qubitum::balance_commitment(MIN_MINER_BOND)
+        );
         assert!(!contains_subsequence(&miner.encode(), &22_u64.encode()));
+        assert!(!contains_subsequence(
+            &miner.encode(),
+            &MIN_MINER_BOND.encode()
+        ));
 
         let validator = Validators::<Test>::get(9).unwrap();
         assert_eq!(validator.id, 9);
@@ -1296,11 +1338,79 @@ fn runtime_upgrade_migrates_registry_operators_to_commitments() {
             validator.operator_commitment,
             Qubitum::account_commitment(&33)
         );
-        assert_eq!(validator.stake, MIN_MINER_BOND);
+        assert_eq!(
+            validator.stake_commitment,
+            Qubitum::balance_commitment(MIN_MINER_BOND)
+        );
         assert!(!contains_subsequence(&validator.encode(), &33_u64.encode()));
+        assert!(!contains_subsequence(
+            &validator.encode(),
+            &MIN_MINER_BOND.encode()
+        ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(9)
+            StorageVersion::new(10)
+        );
+    });
+}
+
+#[test]
+fn runtime_upgrade_migrates_participant_capital_to_commitments() {
+    new_test_ext().execute_with(|| {
+        let legacy_miner = LegacyChainMinerV9 {
+            id: 7,
+            operator_commitment: Qubitum::account_commitment(&22),
+            subnet_id: 3,
+            model_commitment: commitment(44),
+            proof_system: ProofSystem::RiscZeroStark,
+            bond: MIN_MINER_BOND,
+            status: RegistryStatus::Active,
+        };
+        let legacy_validator = LegacyChainValidatorV9 {
+            id: 9,
+            operator_commitment: Qubitum::account_commitment(&33),
+            subnet_id: 3,
+            stake: MIN_MINER_BOND,
+            status: RegistryStatus::Active,
+        };
+        sp_io::storage::set(&Miners::<Test>::hashed_key_for(7), &legacy_miner.encode());
+        sp_io::storage::set(
+            &Validators::<Test>::hashed_key_for(9),
+            &legacy_validator.encode(),
+        );
+        StorageVersion::new(9).put::<crate::Pallet<Test>>();
+
+        <Qubitum as Hooks<u64>>::on_runtime_upgrade();
+
+        let miner = Miners::<Test>::get(7).unwrap();
+        assert_eq!(miner.id, 7);
+        assert_eq!(miner.operator_commitment, Qubitum::account_commitment(&22));
+        assert_eq!(
+            miner.bond_commitment,
+            Qubitum::balance_commitment(MIN_MINER_BOND)
+        );
+        assert!(!contains_subsequence(
+            &miner.encode(),
+            &MIN_MINER_BOND.encode()
+        ));
+
+        let validator = Validators::<Test>::get(9).unwrap();
+        assert_eq!(validator.id, 9);
+        assert_eq!(
+            validator.operator_commitment,
+            Qubitum::account_commitment(&33)
+        );
+        assert_eq!(
+            validator.stake_commitment,
+            Qubitum::balance_commitment(MIN_MINER_BOND)
+        );
+        assert!(!contains_subsequence(
+            &validator.encode(),
+            &MIN_MINER_BOND.encode()
+        ));
+        assert_eq!(
+            StorageVersion::get::<crate::Pallet<Test>>(),
+            StorageVersion::new(10)
         );
     });
 }
@@ -1337,7 +1447,7 @@ fn runtime_upgrade_migrates_request_users_to_commitments() {
         assert!(!contains_subsequence(&request.encode(), &44_u64.encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(9)
+            StorageVersion::new(10)
         );
     });
 }
@@ -1869,7 +1979,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(9)
+            StorageVersion::new(10)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
@@ -2300,14 +2410,20 @@ fn verifier_rejection_slashes_and_refunds_request() {
             }
         );
         let miner = Miners::<Test>::get(0).unwrap();
-        assert_eq!(miner.bond, 90_000_000_000);
+        assert_eq!(
+            miner.bond_commitment,
+            Qubitum::balance_commitment(90_000_000_000)
+        );
         assert_eq!(miner.status, RegistryStatus::Slashed);
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
             90_000_000_000
         );
         let validator = Validators::<Test>::get(0).unwrap();
-        assert_eq!(validator.stake, 90_000_000_000);
+        assert_eq!(
+            validator.stake_commitment,
+            Qubitum::balance_commitment(90_000_000_000)
+        );
         assert_eq!(validator.status, RegistryStatus::Slashed);
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
@@ -2342,10 +2458,16 @@ fn invalid_proof_challenge_slashes_miner_without_validator_self_slash() {
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 1_000);
 
         let miner = Miners::<Test>::get(0).unwrap();
-        assert_eq!(miner.bond, 90_000_000_000);
+        assert_eq!(
+            miner.bond_commitment,
+            Qubitum::balance_commitment(90_000_000_000)
+        );
         assert_eq!(miner.status, RegistryStatus::Slashed);
         let validator = Validators::<Test>::get(0).unwrap();
-        assert_eq!(validator.stake, MIN_MINER_BOND);
+        assert_eq!(
+            validator.stake_commitment,
+            Qubitum::balance_commitment(MIN_MINER_BOND)
+        );
         assert_eq!(validator.status, RegistryStatus::Active);
     });
 }
@@ -2464,7 +2586,10 @@ fn root_slash_burns_held_miner_bond() {
         assert_ok!(Qubitum::slash_miner(RuntimeOrigin::root(), 0, 2, 1_000));
 
         let miner = Miners::<Test>::get(0).unwrap();
-        assert_eq!(miner.bond, 90_000_000_000);
+        assert_eq!(
+            miner.bond_commitment,
+            Qubitum::balance_commitment(90_000_000_000)
+        );
         assert_eq!(miner.status, RegistryStatus::Slashed);
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
