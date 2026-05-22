@@ -23,7 +23,8 @@ use frame_support::{
 };
 use qubitum_protocol::{
     BlockNumber, Commitment, InferenceProofSubmission, MinerId, ProofEnvelope, ProofSystem,
-    RegistryStatus, RequestId, SubnetDomain, SubnetId, ValidatorId, VerificationOutcome,
+    RegistryStatus, RequestId, SignatureMode, SubnetDomain, SubnetId, ValidatorId,
+    VerificationOutcome,
 };
 use scale_info::TypeInfo;
 use sp_runtime::{DispatchError, Saturating, traits::SaturatedConversion};
@@ -205,6 +206,10 @@ pub mod pallet {
         /// Maximum accepted age of proof submission metadata.
         #[pallet::constant]
         type MaxProofSubmissionAgeBlocks: Get<BlockNumber>;
+
+        /// Active account-signature policy for the Qubitum roadmap phase.
+        #[pallet::constant]
+        type SignatureMode: Get<SignatureMode>;
 
         /// Runtime hold reason adapter.
         type RuntimeHoldReason: From<HoldReason>;
@@ -397,6 +402,7 @@ pub mod pallet {
         pub max_proof_size_bytes: u32,
         pub max_verification_latency_ms: u32,
         pub max_proof_submission_age_blocks: BlockNumber,
+        pub signature_mode: SignatureMode,
         pub miner_exit_cooldown_blocks: BlockNumber,
         pub validator_exit_cooldown_blocks: BlockNumber,
         pub request_cancel_delay_blocks: BlockNumber,
@@ -1384,6 +1390,7 @@ pub mod pallet {
                 max_proof_size_bytes: T::MaxProofSizeBytes::get(),
                 max_verification_latency_ms: T::MaxVerificationLatencyMs::get(),
                 max_proof_submission_age_blocks: T::MaxProofSubmissionAgeBlocks::get(),
+                signature_mode: T::SignatureMode::get(),
                 miner_exit_cooldown_blocks: T::MinerExitCooldownBlocks::get(),
                 validator_exit_cooldown_blocks: T::ValidatorExitCooldownBlocks::get(),
                 request_cancel_delay_blocks: T::RequestCancelDelayBlocks::get(),

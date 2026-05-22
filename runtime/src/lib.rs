@@ -272,7 +272,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     //   `spec_version`, and `authoring_version` are the same between Wasm and native.
     // This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
     //   the compatible custom types.
-    spec_version: 420,
+    spec_version: 421,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -541,6 +541,8 @@ parameter_types! {
     pub const QubitumMaxProofSizeBytes: u32 = qubitum_protocol::TARGET_PROOF_SIZE_MAX_BYTES;
     pub const QubitumMaxVerificationLatencyMs: u32 = qubitum_protocol::TARGET_VERIFICATION_MS;
     pub const QubitumMaxProofSubmissionAgeBlocks: u64 = 50;
+    pub const QubitumSignatureMode: qubitum_protocol::SignatureMode =
+        qubitum_protocol::SignatureMode::ClassicalEcdsa;
     pub const QubitumMinerExitCooldownBlocks: u64 = prod_or_fast!(7 * 24 * 60 * 60 / 12, 50);
     pub const QubitumValidatorExitCooldownBlocks: u64 = prod_or_fast!(7 * 24 * 60 * 60 / 12, 50);
     pub const QubitumRequestCancelDelayBlocks: u64 = 50;
@@ -562,6 +564,7 @@ impl pallet_qubitum::Config for Runtime {
     type MaxProofSizeBytes = QubitumMaxProofSizeBytes;
     type MaxVerificationLatencyMs = QubitumMaxVerificationLatencyMs;
     type MaxProofSubmissionAgeBlocks = QubitumMaxProofSubmissionAgeBlocks;
+    type SignatureMode = QubitumSignatureMode;
     type RuntimeHoldReason = RuntimeHoldReason;
     type WeightInfo = pallet_qubitum::weights::SubstrateWeight<Runtime>;
     type ProofVerifier = pallet_qubitum::ShapeProofVerifier;

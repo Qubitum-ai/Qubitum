@@ -20,8 +20,9 @@ use frame_support::{
 use qubitum_protocol::{
     InferenceProofSubmission, MAX_INVALID_PROOF_SLASH_BPS, MAX_MINER_BOND,
     MIN_INVALID_PROOF_SLASH_BPS, MIN_MINER_BOND, MINER_REGISTRATION_BURN, ProofEnvelope,
-    ProofSystem, ProofVerifierVersion, RegistryStatus, SubnetDomain, TARGET_PROOF_SIZE_MAX_BYTES,
-    TARGET_PROOF_SIZE_MIN_BYTES, TARGET_VERIFICATION_MS, VerificationOutcome,
+    ProofSystem, ProofVerifierVersion, RegistryStatus, SignatureMode, SubnetDomain,
+    TARGET_PROOF_SIZE_MAX_BYTES, TARGET_PROOF_SIZE_MIN_BYTES, TARGET_VERIFICATION_MS,
+    VerificationOutcome,
 };
 
 fn commitment(seed: u8) -> [u8; 32] {
@@ -156,6 +157,7 @@ fn protocol_params_expose_runtime_policy() {
         assert_eq!(params.max_proof_size_bytes, TARGET_PROOF_SIZE_MAX_BYTES);
         assert_eq!(params.max_verification_latency_ms, TARGET_VERIFICATION_MS);
         assert_eq!(params.max_proof_submission_age_blocks, 10);
+        assert_eq!(params.signature_mode, SignatureMode::ClassicalEcdsa);
         assert_eq!(params.miner_exit_cooldown_blocks, 20);
         assert_eq!(params.validator_exit_cooldown_blocks, 20);
         assert_eq!(params.request_cancel_delay_blocks, 10);

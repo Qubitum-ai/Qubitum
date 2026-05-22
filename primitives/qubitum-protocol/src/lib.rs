@@ -148,7 +148,18 @@ impl ProofVerifierVersion {
 }
 
 /// Planned account-signature mode for post-quantum migration.
-#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(
+    codec::Decode,
+    codec::DecodeWithMemTracking,
+    codec::Encode,
+    codec::MaxEncodedLen,
+    scale_info::TypeInfo,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub enum SignatureMode {
     ClassicalEcdsa,
     HybridDilithium,
