@@ -52,7 +52,7 @@ parameter_types! {
     pub const MinMinerBond: Balance = qubitum_protocol::MIN_MINER_BOND;
     pub const MaxMinerBond: Balance = qubitum_protocol::MAX_MINER_BOND;
     pub const MaxActiveMinersPerSubnet: u32 = 16;
-    pub const MaxActiveValidatorsPerSubnet: u32 = 16;
+    pub const MaxActiveValidatorsPerSubnet: u32 = 32;
     pub const MinValidatorStake: Balance = qubitum_protocol::MIN_MINER_BOND;
     pub const MinInvalidProofSlashBps: u16 = qubitum_protocol::MIN_INVALID_PROOF_SLASH_BPS;
     pub const MaxInvalidProofSlashBps: u16 = qubitum_protocol::MAX_INVALID_PROOF_SLASH_BPS;

@@ -179,7 +179,7 @@ fn protocol_params_expose_runtime_policy() {
         assert_eq!(params.min_miner_bond, MIN_MINER_BOND);
         assert_eq!(params.max_miner_bond, MAX_MINER_BOND);
         assert_eq!(params.max_active_miners_per_subnet, 16);
-        assert_eq!(params.max_active_validators_per_subnet, 16);
+        assert_eq!(params.max_active_validators_per_subnet, 32);
         assert_eq!(params.min_validator_stake, MIN_MINER_BOND);
         assert_eq!(
             params.min_invalid_proof_slash_bps,
@@ -1068,6 +1068,60 @@ fn route_assignment_skips_self_validation_validator_when_alternative_exists() {
         assert_ok!(Qubitum::request_inference(
             RuntimeOrigin::signed(4),
             42,
+            InferenceRequestParams {
+                subnet_id: 0,
+                miner_id: assignment.miner_id,
+                validator_id: assignment.validator_id,
+                input_commitment: commitment(1),
+                payment: 1_000,
+                validator_fee_bps: 250,
+                treasury_fee_bps: 50,
+            },
+        ));
+    });
+}
+
+#[test]
+fn route_assignment_scans_past_sixteen_self_validation_conflicts() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::Code,
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(10),
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            MIN_MINER_BOND
+        ));
+
+        for _ in 0..16 {
+            assert_ok!(Qubitum::register_validator(
+                RuntimeOrigin::signed(2),
+                0,
+                MIN_MINER_BOND
+            ));
+        }
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(3),
+            0,
+            MIN_MINER_BOND
+        ));
+        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).len(), 17);
+
+        let assignment = Qubitum::route_assignment(0, 0).unwrap();
+        assert_eq!(assignment.miner_id, 0);
+        assert_eq!(assignment.validator_id, 16);
+
+        assert_ok!(Qubitum::request_inference(
+            RuntimeOrigin::signed(4),
+            0,
             InferenceRequestParams {
                 subnet_id: 0,
                 miner_id: assignment.miner_id,

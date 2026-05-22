@@ -32,7 +32,7 @@ pub trait WeightInfo {
 /// Weights for `pallet_qubitum` using the runtime database weight.
 pub struct SubstrateWeight<T>(PhantomData<T>);
 
-impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
+impl<T: frame_system::Config + crate::Config> WeightInfo for SubstrateWeight<T> {
     fn create_subnet() -> Weight {
         Weight::from_parts(55_000_000, 6_500)
             .saturating_add(T::DbWeight::get().reads(3_u64))
@@ -102,6 +102,9 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
     fn request_inference() -> Weight {
         Weight::from_parts(50_000_000, 7_000)
             .saturating_add(T::DbWeight::get().reads(27_u64))
+            .saturating_add(T::DbWeight::get().reads(u64::from(
+                T::MaxActiveValidatorsPerSubnet::get(),
+            )))
             .saturating_add(T::DbWeight::get().writes(8_u64))
     }
 
@@ -199,7 +202,7 @@ impl WeightInfo for () {
 
     fn request_inference() -> Weight {
         Weight::from_parts(50_000_000, 7_000)
-            .saturating_add(RocksDbWeight::get().reads(27_u64))
+            .saturating_add(RocksDbWeight::get().reads(4_123_u64))
             .saturating_add(RocksDbWeight::get().writes(8_u64))
     }
 

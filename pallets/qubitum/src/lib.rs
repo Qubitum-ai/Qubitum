@@ -141,8 +141,6 @@ pub mod pallet {
     use frame_system::pallet_prelude::*;
 
     const STORAGE_VERSION: StorageVersion = StorageVersion::new(7);
-    const MAX_VALIDATOR_ROUTING_ATTEMPTS: usize = 16;
-
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -1758,8 +1756,7 @@ pub mod pallet {
             }
 
             let start = Self::route_index(seed, ids.len())?;
-            let attempts = ids.len().min(MAX_VALIDATOR_ROUTING_ATTEMPTS);
-            for offset in 0..attempts {
+            for offset in 0..ids.len() {
                 let target = start.checked_add(offset)?.checked_rem(ids.len())?;
                 let Some(validator_id) = ids.get(target).copied() else {
                     continue;
