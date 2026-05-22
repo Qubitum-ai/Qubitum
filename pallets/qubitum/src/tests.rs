@@ -539,6 +539,42 @@ fn route_assignment_removes_slashed_participants() {
 }
 
 #[test]
+fn active_miner_index_stays_sorted_by_id() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::Code,
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(10),
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(11),
+            ProofSystem::RiscZeroStark
+        ));
+
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            1,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            MIN_MINER_BOND
+        ));
+
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0, 1]);
+    });
+}
+
+#[test]
 fn runtime_upgrade_rebuilds_active_routing_indexes() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();

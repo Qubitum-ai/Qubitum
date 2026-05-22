@@ -1197,12 +1197,43 @@ pub mod pallet {
             seed.checked_rem(count)?.try_into().ok()
         }
 
+        fn insert_sorted_miner_id(
+            ids: &mut BoundedVec<MinerId, T::MaxActiveMinersPerSubnet>,
+            miner_id: MinerId,
+        ) -> Result<bool, Error<T>> {
+            if ids.contains(&miner_id) {
+                return Ok(false);
+            }
+
+            let mut sorted = ids.to_vec();
+            sorted.push(miner_id);
+            sorted.sort_unstable();
+            *ids = sorted
+                .try_into()
+                .map_err(|_| Error::<T>::TooManyActiveMiners)?;
+            Ok(true)
+        }
+
+        fn insert_sorted_validator_id(
+            ids: &mut BoundedVec<ValidatorId, T::MaxActiveValidatorsPerSubnet>,
+            validator_id: ValidatorId,
+        ) -> Result<bool, Error<T>> {
+            if ids.contains(&validator_id) {
+                return Ok(false);
+            }
+
+            let mut sorted = ids.to_vec();
+            sorted.push(validator_id);
+            sorted.sort_unstable();
+            *ids = sorted
+                .try_into()
+                .map_err(|_| Error::<T>::TooManyActiveValidators)?;
+            Ok(true)
+        }
+
         fn insert_active_miner(subnet_id: SubnetId, miner_id: MinerId) -> DispatchResult {
             ActiveMinersBySubnet::<T>::try_mutate(subnet_id, |ids| {
-                if !ids.contains(&miner_id) {
-                    ids.try_push(miner_id)
-                        .map_err(|_| Error::<T>::TooManyActiveMiners)?;
-                }
+                Self::insert_sorted_miner_id(ids, miner_id)?;
                 Ok(())
             })
         }
@@ -1218,10 +1249,7 @@ pub mod pallet {
             validator_id: ValidatorId,
         ) -> DispatchResult {
             ActiveValidatorsBySubnet::<T>::try_mutate(subnet_id, |ids| {
-                if !ids.contains(&validator_id) {
-                    ids.try_push(validator_id)
-                        .map_err(|_| Error::<T>::TooManyActiveValidators)?;
-                }
+                Self::insert_sorted_validator_id(ids, validator_id)?;
                 Ok(())
             })
         }
@@ -1253,13 +1281,9 @@ pub mod pallet {
                 miner_reads = miner_reads.saturating_add(1);
                 if miner.status == RegistryStatus::Active {
                     let inserted = ActiveMinersBySubnet::<T>::try_mutate(miner.subnet_id, |ids| {
-                        if !ids.contains(&miner_id) {
-                            ids.try_push(miner_id)
-                                .map_err(|_| Error::<T>::TooManyActiveMiners)?;
-                        }
-                        Ok::<(), Error<T>>(())
+                        Self::insert_sorted_miner_id(ids, miner_id)
                     })
-                    .is_ok();
+                    .unwrap_or(false);
                     if inserted {
                         miner_writes = miner_writes.saturating_add(1);
                     }
@@ -1271,13 +1295,9 @@ pub mod pallet {
                 if validator.status == RegistryStatus::Active {
                     let inserted =
                         ActiveValidatorsBySubnet::<T>::try_mutate(validator.subnet_id, |ids| {
-                            if !ids.contains(&validator_id) {
-                                ids.try_push(validator_id)
-                                    .map_err(|_| Error::<T>::TooManyActiveValidators)?;
-                            }
-                            Ok::<(), Error<T>>(())
+                            Self::insert_sorted_validator_id(ids, validator_id)
                         })
-                        .is_ok();
+                        .unwrap_or(false);
                     if inserted {
                         validator_writes = validator_writes.saturating_add(1);
                     }
