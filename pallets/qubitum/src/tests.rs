@@ -4,7 +4,8 @@ use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, ChainInferenceRequest, Error, HoldReason,
     InferenceRequestParams, InferenceRequestStatus, InferenceRequests, MinerCount, Miners,
     PendingMinerRequests, PendingValidatorRequests, ProofRecords, RequestCount, SubnetCount,
-    Subnets, TotalBurned, ValidatorCount, Validators,
+    Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
+    TotalTreasuryFees, TotalValidatorFees, ValidatorCount, Validators,
     mock::{
         Balances, Qubitum, RuntimeOrigin, System, Test, new_test_ext, set_verification_outcome,
     },
@@ -412,6 +413,11 @@ fn submit_proof_records_commitments_for_active_participants() {
             InferenceRequests::<Test>::get(42).unwrap().status,
             InferenceRequestStatus::Settled
         );
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
+        assert_eq!(TotalMinerPayouts::<Test>::get(), 970);
+        assert_eq!(TotalValidatorFees::<Test>::get(), 25);
+        assert_eq!(TotalTreasuryFees::<Test>::get(), 5);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
             0
@@ -448,6 +454,8 @@ fn request_inference_escrows_payment() {
         assert_eq!(RequestCount::<Test>::get(), 8);
         assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
     });
 }
 
@@ -801,8 +809,10 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(2)
+            StorageVersion::new(3)
         );
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
         assert!(Qubitum::route_assignment(0, 42).is_some());
     });
 }
@@ -873,6 +883,7 @@ fn cancel_inference_releases_pending_escrow() {
         );
         assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 1_000);
     });
 }
 
@@ -1054,6 +1065,7 @@ fn verifier_rejection_slashes_and_refunds_request() {
         );
         assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 1_000);
         let miner = Miners::<Test>::get(0).unwrap();
         assert_eq!(miner.bond, 90_000_000_000);
         assert_eq!(miner.status, RegistryStatus::Slashed);

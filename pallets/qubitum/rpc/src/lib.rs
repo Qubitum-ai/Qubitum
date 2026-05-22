@@ -68,6 +68,9 @@ pub trait QubitumRpcApi<BlockHash> {
 
     #[method(name = "qubitum_getTotalBurned")]
     fn get_total_burned(&self, at: Option<BlockHash>) -> RpcResult<TaoBalance>;
+
+    #[method(name = "qubitum_getAccounting")]
+    fn get_accounting(&self, at: Option<BlockHash>) -> RpcResult<Vec<u8>>;
 }
 
 /// Error type of this RPC API.
@@ -263,5 +266,16 @@ where
         api.qubitum_total_burned(at).map_err(|e| {
             Error::RuntimeError(format!("Unable to get Qubitum total burned: {e:?}")).into()
         })
+    }
+
+    fn get_accounting(&self, at: Option<<Block as BlockT>::Hash>) -> RpcResult<Vec<u8>> {
+        let api = self.client.runtime_api();
+        let at = self.at_or_best(at);
+
+        api.qubitum_accounting(at)
+            .map(|result| result.encode())
+            .map_err(|e| {
+                Error::RuntimeError(format!("Unable to get Qubitum accounting: {e:?}")).into()
+            })
     }
 }

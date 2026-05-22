@@ -139,7 +139,7 @@ pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
 
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(2);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(3);
     const MAX_VALIDATOR_ROUTING_ATTEMPTS: usize = 16;
 
     #[pallet::pallet]
@@ -352,6 +352,17 @@ pub mod pallet {
     #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
+    pub struct ChainAccounting<Balance> {
+        pub total_inference_escrowed: Balance,
+        pub total_miner_payouts: Balance,
+        pub total_validator_fees: Balance,
+        pub total_treasury_fees: Balance,
+        pub total_inference_refunded: Balance,
+    }
+
+    #[derive(
+        Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
+    )]
     pub struct InferenceRequestParams<Balance> {
         pub subnet_id: SubnetId,
         pub miner_id: MinerId,
@@ -433,6 +444,21 @@ pub mod pallet {
     #[pallet::storage]
     pub type TotalBurned<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
 
+    #[pallet::storage]
+    pub type TotalInferenceEscrowed<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
+
+    #[pallet::storage]
+    pub type TotalMinerPayouts<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
+
+    #[pallet::storage]
+    pub type TotalValidatorFees<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
+
+    #[pallet::storage]
+    pub type TotalTreasuryFees<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
+
+    #[pallet::storage]
+    pub type TotalInferenceRefunded<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
+
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn on_runtime_upgrade() -> Weight {
@@ -442,7 +468,8 @@ pub mod pallet {
             }
 
             let weight = Self::rebuild_active_routing_indexes()
-                .saturating_add(Self::rebuild_pending_assignment_counters());
+                .saturating_add(Self::rebuild_pending_assignment_counters())
+                .saturating_add(Self::rebuild_inference_accounting());
             STORAGE_VERSION.put::<Pallet<T>>();
             weight.saturating_add(T::DbWeight::get().reads_writes(1, 1))
         }
@@ -912,6 +939,7 @@ pub mod pallet {
 
             T::Currency::hold(&HoldReason::InferencePayment.into(), &user, params.payment)?;
             Self::increment_pending_assignment(params.miner_id, params.validator_id)?;
+            Self::record_inference_escrow(params.payment);
             InferenceRequests::<T>::insert(
                 request_id,
                 ChainInferenceRequest {
@@ -974,6 +1002,7 @@ pub mod pallet {
                 },
             )?;
             Self::decrement_pending_assignment(miner_id, validator_id)?;
+            Self::record_inference_refund(payment);
 
             Self::deposit_event(Event::InferenceCancelled {
                 request_id,
@@ -1171,6 +1200,16 @@ pub mod pallet {
     }
 
     impl<T: Config> Pallet<T> {
+        pub fn accounting() -> ChainAccounting<BalanceOf<T>> {
+            ChainAccounting {
+                total_inference_escrowed: TotalInferenceEscrowed::<T>::get(),
+                total_miner_payouts: TotalMinerPayouts::<T>::get(),
+                total_validator_fees: TotalValidatorFees::<T>::get(),
+                total_treasury_fees: TotalTreasuryFees::<T>::get(),
+                total_inference_refunded: TotalInferenceRefunded::<T>::get(),
+            }
+        }
+
         pub fn route_assignment(
             subnet_id: SubnetId,
             request_id: RequestId,
@@ -1271,6 +1310,34 @@ pub mod pallet {
                 Ok::<(), Error<T>>(())
             })?;
             Ok(())
+        }
+
+        fn record_inference_escrow(payment: BalanceOf<T>) {
+            TotalInferenceEscrowed::<T>::mutate(|total| {
+                *total = total.saturating_add(payment);
+            });
+        }
+
+        fn record_inference_settlement(
+            miner_payment: BalanceOf<T>,
+            validator_fee: BalanceOf<T>,
+            treasury_fee: BalanceOf<T>,
+        ) {
+            TotalMinerPayouts::<T>::mutate(|total| {
+                *total = total.saturating_add(miner_payment);
+            });
+            TotalValidatorFees::<T>::mutate(|total| {
+                *total = total.saturating_add(validator_fee);
+            });
+            TotalTreasuryFees::<T>::mutate(|total| {
+                *total = total.saturating_add(treasury_fee);
+            });
+        }
+
+        fn record_inference_refund(payment: BalanceOf<T>) {
+            TotalInferenceRefunded::<T>::mutate(|total| {
+                *total = total.saturating_add(payment);
+            });
         }
 
         fn current_block() -> BlockNumber {
@@ -1475,6 +1542,48 @@ pub mod pallet {
             )
         }
 
+        fn rebuild_inference_accounting() -> Weight {
+            let mut request_reads = 0_u64;
+            let mut total_escrowed = BalanceOf::<T>::default();
+            let mut total_miner_payouts = BalanceOf::<T>::default();
+            let mut total_validator_fees = BalanceOf::<T>::default();
+            let mut total_treasury_fees = BalanceOf::<T>::default();
+            let mut total_refunded = BalanceOf::<T>::default();
+
+            for (_, request) in InferenceRequests::<T>::iter() {
+                request_reads = request_reads.saturating_add(1);
+                total_escrowed = total_escrowed.saturating_add(request.payment);
+                match request.status {
+                    InferenceRequestStatus::Settled => {
+                        if let Ok((miner_payment, validator_fee, treasury_fee)) =
+                            Self::payment_split(
+                                request.payment,
+                                request.validator_fee_bps,
+                                request.treasury_fee_bps,
+                            )
+                        {
+                            total_miner_payouts = total_miner_payouts.saturating_add(miner_payment);
+                            total_validator_fees =
+                                total_validator_fees.saturating_add(validator_fee);
+                            total_treasury_fees = total_treasury_fees.saturating_add(treasury_fee);
+                        }
+                    }
+                    InferenceRequestStatus::Cancelled | InferenceRequestStatus::Rejected => {
+                        total_refunded = total_refunded.saturating_add(request.payment);
+                    }
+                    InferenceRequestStatus::Pending => {}
+                }
+            }
+
+            TotalInferenceEscrowed::<T>::put(total_escrowed);
+            TotalMinerPayouts::<T>::put(total_miner_payouts);
+            TotalValidatorFees::<T>::put(total_validator_fees);
+            TotalTreasuryFees::<T>::put(total_treasury_fees);
+            TotalInferenceRefunded::<T>::put(total_refunded);
+
+            T::DbWeight::get().reads_writes(request_reads, 5)
+        }
+
         #[cfg(feature = "try-runtime")]
         fn ensure_active_routing_indexes_match() -> Result<(), sp_runtime::TryRuntimeError> {
             for (subnet_id, miner_ids) in ActiveMinersBySubnet::<T>::iter() {
@@ -1561,6 +1670,48 @@ pub mod pallet {
                     );
                 }
             }
+
+            let mut expected_accounting = ChainAccounting {
+                total_inference_escrowed: BalanceOf::<T>::default(),
+                total_miner_payouts: BalanceOf::<T>::default(),
+                total_validator_fees: BalanceOf::<T>::default(),
+                total_treasury_fees: BalanceOf::<T>::default(),
+                total_inference_refunded: BalanceOf::<T>::default(),
+            };
+            for (_, request) in InferenceRequests::<T>::iter() {
+                expected_accounting.total_inference_escrowed = expected_accounting
+                    .total_inference_escrowed
+                    .saturating_add(request.payment);
+                match request.status {
+                    InferenceRequestStatus::Settled => {
+                        let (miner_payment, validator_fee, treasury_fee) = Self::payment_split(
+                            request.payment,
+                            request.validator_fee_bps,
+                            request.treasury_fee_bps,
+                        )
+                        .map_err(|_| "Qubitum settled request has invalid fee split")?;
+                        expected_accounting.total_miner_payouts = expected_accounting
+                            .total_miner_payouts
+                            .saturating_add(miner_payment);
+                        expected_accounting.total_validator_fees = expected_accounting
+                            .total_validator_fees
+                            .saturating_add(validator_fee);
+                        expected_accounting.total_treasury_fees = expected_accounting
+                            .total_treasury_fees
+                            .saturating_add(treasury_fee);
+                    }
+                    InferenceRequestStatus::Cancelled | InferenceRequestStatus::Rejected => {
+                        expected_accounting.total_inference_refunded = expected_accounting
+                            .total_inference_refunded
+                            .saturating_add(request.payment);
+                    }
+                    InferenceRequestStatus::Pending => {}
+                }
+            }
+            ensure!(
+                Self::accounting() == expected_accounting,
+                "Qubitum inference accounting mismatch"
+            );
 
             Ok(())
         }
@@ -1722,6 +1873,11 @@ pub mod pallet {
                     )?;
                     request.status = InferenceRequestStatus::Settled;
                     Self::decrement_pending_assignment(request.miner_id, request.validator_id)?;
+                    Self::record_inference_settlement(
+                        miner_payment,
+                        validator_fee,
+                        treasury_fee,
+                    );
 
                     Ok((miner_payment, validator_fee, treasury_fee))
                 },
@@ -1755,6 +1911,7 @@ pub mod pallet {
                     )?;
                     request.status = InferenceRequestStatus::Rejected;
                     Self::decrement_pending_assignment(request.miner_id, request.validator_id)?;
+                    Self::record_inference_refund(request.payment);
 
                     Ok((request.user.clone(), request.payment))
                 },

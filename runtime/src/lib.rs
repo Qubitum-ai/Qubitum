@@ -2650,6 +2650,10 @@ impl_runtime_apis! {
         fn qubitum_total_burned() -> TaoBalance {
             pallet_qubitum::TotalBurned::<Runtime>::get()
         }
+
+        fn qubitum_accounting() -> pallet_qubitum::ChainAccounting<TaoBalance> {
+            pallet_qubitum::Pallet::<Runtime>::accounting()
+        }
     }
 
     impl sp_consensus_babe::BabeApi<Block> for Runtime {
