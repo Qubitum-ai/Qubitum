@@ -9,7 +9,9 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 pub mod state;
+pub mod verifier;
 pub use state::*;
+pub use verifier::*;
 
 /// Smallest accounting unit for QBT.
 pub type Balance = u128;
@@ -83,6 +85,7 @@ pub enum ProtocolError {
     UnknownMiner,
     UnknownSubnet,
     UnknownValidator,
+    VerifierError,
 }
 
 /// Execution proof system used by a subnet or proof submission.
@@ -370,6 +373,7 @@ pub struct InferenceProofSubmission {
     pub input_commitment: Commitment,
     pub output_commitment: Commitment,
     pub model_commitment: Commitment,
+    pub proof_commitment: Commitment,
     pub proof_system: ProofSystem,
     pub proof_size_bytes: u32,
     pub verification_latency_ms: u32,
@@ -381,6 +385,7 @@ impl InferenceProofSubmission {
         ensure_commitment(self.input_commitment)?;
         ensure_commitment(self.output_commitment)?;
         ensure_commitment(self.model_commitment)?;
+        ensure_commitment(self.proof_commitment)?;
 
         if self.proof_system != policy.proof_system {
             return Err(ProtocolError::ProofSystemMismatch);
@@ -620,6 +625,7 @@ mod tests {
             input_commitment: commitment(1),
             output_commitment: commitment(2),
             model_commitment: commitment(3),
+            proof_commitment: commitment(4),
             proof_system: ProofSystem::RiscZeroStark,
             proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
             verification_latency_ms: TARGET_VERIFICATION_MS,
@@ -686,6 +692,7 @@ mod tests {
             input_commitment: commitment(7),
             output_commitment: commitment(8),
             model_commitment: commitment(9),
+            proof_commitment: commitment(10),
             proof_system: ProofSystem::RiscZeroStark,
             proof_size_bytes: TARGET_PROOF_SIZE_MAX_BYTES,
             verification_latency_ms: 1,

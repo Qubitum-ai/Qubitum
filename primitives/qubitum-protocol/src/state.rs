@@ -1,8 +1,8 @@
 use super::{
     AccountId, Balance, BlockNumber, Commitment, InferenceProofSubmission, InferenceRecord,
-    MinerId, MinerRegistration, ProtocolError, RegistryStatus, RequestId, SubnetConfig,
-    SubnetDomain, SubnetId, SubnetPolicy, ValidatorId, ValidatorRegistration,
-    settle_inference_payment,
+    MinerId, MinerRegistration, ProofProcessing, ProofVerifier, ProtocolError, RegistryStatus,
+    RequestId, SubnetConfig, SubnetDomain, SubnetId, SubnetPolicy, ValidatorId,
+    ValidatorRegistration, VerificationOutcome, settle_inference_payment,
 };
 use alloc::collections::BTreeMap;
 use alloc::vec;
@@ -329,6 +329,76 @@ impl ProtocolState {
         Ok(record)
     }
 
+    pub fn process_proof<V: ProofVerifier>(
+        &mut self,
+        payer: AccountId,
+        submission: InferenceProofSubmission,
+        payment: Balance,
+        validator_fee_bps: u16,
+        treasury_fee_bps: u16,
+        verifier: &V,
+    ) -> Result<ProofProcessing, ProtocolError> {
+        let policy = self
+            .subnets
+            .get(&submission.subnet_id)
+            .ok_or(ProtocolError::UnknownSubnet)?
+            .policy;
+
+        match verifier.verify(&submission, policy)? {
+            VerificationOutcome::Valid => {
+                let record = self.submit_valid_proof(
+                    payer,
+                    submission,
+                    payment,
+                    validator_fee_bps,
+                    treasury_fee_bps,
+                )?;
+                Ok(ProofProcessing::Accepted(record))
+            }
+            VerificationOutcome::Invalid { slash_bps } => {
+                let miner_slashed = self.slash_miner(submission.miner_id, slash_bps)?;
+                Ok(ProofProcessing::Rejected { miner_slashed })
+            }
+            VerificationOutcome::Error => Err(ProtocolError::VerifierError),
+        }
+    }
+
+    pub fn slash_miner(
+        &mut self,
+        miner_id: MinerId,
+        slash_bps: u16,
+    ) -> Result<Balance, ProtocolError> {
+        let miner = self
+            .miners
+            .get(&miner_id)
+            .ok_or(ProtocolError::UnknownMiner)?;
+        let policy = self
+            .subnets
+            .get(&miner.subnet_id)
+            .ok_or(ProtocolError::UnknownSubnet)?
+            .policy
+            .miner_bond;
+        let slash_amount = policy.slash_amount(miner.bond, slash_bps)?;
+        let operator = miner.operator;
+        let remaining_bond = miner
+            .bond
+            .checked_sub(slash_amount)
+            .ok_or(ProtocolError::ArithmeticOverflow)?;
+
+        self.burn_locked(operator, slash_amount)?;
+
+        let miner = self
+            .miners
+            .get_mut(&miner_id)
+            .ok_or(ProtocolError::UnknownMiner)?;
+        miner.bond = remaining_bond;
+        if remaining_bond < policy.min_bond {
+            miner.status = RegistryStatus::Slashed;
+        }
+
+        Ok(slash_amount)
+    }
+
     fn credit(&mut self, account: AccountId, amount: Balance) -> Result<(), ProtocolError> {
         let ledger = self.accounts.entry(account).or_default();
         ledger.free = ledger
@@ -340,6 +410,23 @@ impl ProtocolState {
 
     fn burn(&mut self, account: AccountId, amount: Balance) -> Result<(), ProtocolError> {
         self.debit_free(account, amount)?;
+        self.total_burned = self
+            .total_burned
+            .checked_add(amount)
+            .ok_or(ProtocolError::ArithmeticOverflow)?;
+        Ok(())
+    }
+
+    fn burn_locked(&mut self, account: AccountId, amount: Balance) -> Result<(), ProtocolError> {
+        let ledger = self.accounts.entry(account).or_default();
+        if ledger.locked < amount {
+            return Err(ProtocolError::InsufficientBalance);
+        }
+
+        ledger.locked = ledger
+            .locked
+            .checked_sub(amount)
+            .ok_or(ProtocolError::ArithmeticOverflow)?;
         self.total_burned = self
             .total_burned
             .checked_add(amount)
@@ -402,8 +489,9 @@ impl ProtocolState {
 mod tests {
     use super::*;
     use crate::{
-        BOND_EXIT_COOLDOWN_BLOCKS, INITIAL_SUPPLY, MAX_MINER_BOND, MIN_MINER_BOND,
-        MINER_REGISTRATION_BURN, ProofSystem, TARGET_PROOF_SIZE_MIN_BYTES,
+        BOND_EXIT_COOLDOWN_BLOCKS, INITIAL_SUPPLY, MAX_MINER_BOND, MIN_INVALID_PROOF_SLASH_BPS,
+        MIN_MINER_BOND, MINER_REGISTRATION_BURN, MockVerifier, ProofSystem,
+        TARGET_PROOF_SIZE_MIN_BYTES,
     };
 
     fn account(seed: u8) -> AccountId {
@@ -549,6 +637,7 @@ mod tests {
                     input_commitment: commitment(1),
                     output_commitment: commitment(2),
                     model_commitment: commitment(10),
+                    proof_commitment: commitment(11),
                     proof_system: ProofSystem::RiscZeroStark,
                     proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
                     verification_latency_ms: 10,
@@ -574,6 +663,63 @@ mod tests {
         assert_eq!(
             state.ledger(&account(99)).free,
             INITIAL_SUPPLY - 4_000_000_000_000_000 + 5
+        );
+    }
+
+    #[test]
+    fn process_proof_uses_verifier_and_slashes_invalid_submission() {
+        let mut state = seeded_state();
+        let subnet_id = state
+            .create_subnet(account(1), SubnetDomain::General, MINER_REGISTRATION_BURN)
+            .unwrap();
+        let miner_id = state
+            .register_miner(
+                account(2),
+                subnet_id,
+                commitment(10),
+                ProofSystem::RiscZeroStark,
+            )
+            .unwrap();
+        state.activate_miner(miner_id, MIN_MINER_BOND).unwrap();
+        let validator_id = state
+            .register_validator(account(3), subnet_id, MIN_MINER_BOND)
+            .unwrap();
+
+        let result = state
+            .process_proof(
+                account(4),
+                InferenceProofSubmission {
+                    request_id: 43,
+                    subnet_id,
+                    miner_id,
+                    validator_id,
+                    input_commitment: commitment(1),
+                    output_commitment: commitment(2),
+                    model_commitment: commitment(10),
+                    proof_commitment: commitment(11),
+                    proof_system: ProofSystem::RiscZeroStark,
+                    proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
+                    verification_latency_ms: 10,
+                    submitted_at: 77,
+                },
+                1_000,
+                250,
+                50,
+                &MockVerifier::rejecting(MIN_INVALID_PROOF_SLASH_BPS),
+            )
+            .unwrap();
+
+        assert_eq!(
+            result,
+            ProofProcessing::Rejected {
+                miner_slashed: 10_000_000_000
+            }
+        );
+        assert_eq!(state.records.get(&43), None);
+        assert_eq!(state.ledger(&account(2)).locked, 90_000_000_000);
+        assert_eq!(
+            state.miners.get(&miner_id).unwrap().status,
+            RegistryStatus::Slashed
         );
     }
 
