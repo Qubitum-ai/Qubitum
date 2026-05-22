@@ -20,6 +20,7 @@ pub trait WeightInfo {
     fn deactivate_validator() -> Weight;
     fn withdraw_validator_stake() -> Weight;
     fn submit_proof() -> Weight;
+    fn challenge_proof() -> Weight;
     fn slash_miner() -> Weight;
     fn slash_validator() -> Weight;
     fn request_inference() -> Weight;
@@ -85,6 +86,12 @@ impl<T: frame_system::Config + crate::Config> WeightInfo for SubstrateWeight<T> 
         Weight::from_parts(85_000_000, 10_000)
             .saturating_add(T::DbWeight::get().reads(19_u64))
             .saturating_add(T::DbWeight::get().writes(17_u64))
+    }
+
+    fn challenge_proof() -> Weight {
+        Weight::from_parts(80_000_000, 9_500)
+            .saturating_add(T::DbWeight::get().reads(18_u64))
+            .saturating_add(T::DbWeight::get().writes(14_u64))
     }
 
     fn slash_miner() -> Weight {
@@ -186,6 +193,12 @@ impl WeightInfo for () {
         Weight::from_parts(85_000_000, 10_000)
             .saturating_add(RocksDbWeight::get().reads(19_u64))
             .saturating_add(RocksDbWeight::get().writes(17_u64))
+    }
+
+    fn challenge_proof() -> Weight {
+        Weight::from_parts(80_000_000, 9_500)
+            .saturating_add(RocksDbWeight::get().reads(18_u64))
+            .saturating_add(RocksDbWeight::get().writes(14_u64))
     }
 
     fn slash_miner() -> Weight {

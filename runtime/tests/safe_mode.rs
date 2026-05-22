@@ -51,6 +51,15 @@ fn qubitum_submit_proof_is_allowed_in_safe_mode() {
 }
 
 #[test]
+fn qubitum_challenge_proof_is_allowed_in_safe_mode() {
+    let call = RuntimeCall::Qubitum(pallet_qubitum::Call::challenge_proof {
+        submission: valid_submission(),
+    });
+
+    assert!(SafeModeWhitelistedCalls::contains(&call));
+}
+
+#[test]
 fn qubitum_registration_is_blocked_in_safe_mode() {
     let call = RuntimeCall::Qubitum(pallet_qubitum::Call::create_subnet {
         domain: SubnetDomain::Code,

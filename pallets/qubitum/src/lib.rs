@@ -673,6 +673,12 @@ pub mod pallet {
             miner_id: MinerId,
             validator_id: ValidatorId,
         },
+        /// An invalid proof challenge was accepted and the request was rejected.
+        ProofChallengeAccepted {
+            request_id: RequestId,
+            challenger: T::AccountId,
+            miner_id: MinerId,
+        },
         /// Escrowed request payment was settled.
         InferenceSettled {
             request_id: RequestId,
@@ -797,6 +803,8 @@ pub mod pallet {
         ProofSubmittedFromFuture,
         /// Proof submission timestamp is older than the accepted age window.
         ProofSubmissionExpired,
+        /// Challenge evidence verified as valid, so it cannot slash the miner.
+        ChallengeProofValid,
         /// Slash percentage is outside accepted bounds.
         InvalidSlashPercent,
         /// Signature commitments do not satisfy the active post-quantum migration policy.
@@ -1016,6 +1024,44 @@ pub mod pallet {
                 treasury_fee,
             });
             Ok(())
+        }
+
+        /// Challenge an invalid miner proof without relying on validator self-incrimination.
+        #[pallet::call_index(16)]
+        #[pallet::weight(T::WeightInfo::challenge_proof())]
+        #[frame_support::transactional]
+        pub fn challenge_proof(
+            origin: OriginFor<T>,
+            submission: InferenceProofSubmission,
+        ) -> DispatchResult {
+            let challenger = ensure_signed(origin)?;
+            let policy = Self::validate_challenge_submission(&submission)?;
+
+            match T::ProofVerifier::verify(&submission, policy)? {
+                VerificationOutcome::Invalid { slash_bps } => {
+                    let amount = Self::slash_miner_bond(submission.miner_id, slash_bps)?;
+                    let (user, payment) = Self::refund_rejected_request(&submission)?;
+                    Self::deposit_event(Event::ProofRejected {
+                        request_id: submission.request_id,
+                        miner_id: submission.miner_id,
+                        slash_bps,
+                        amount,
+                    });
+                    Self::deposit_event(Event::ProofChallengeAccepted {
+                        request_id: submission.request_id,
+                        challenger,
+                        miner_id: submission.miner_id,
+                    });
+                    Self::deposit_event(Event::InferenceRefunded {
+                        request_id: submission.request_id,
+                        user,
+                        payment,
+                    });
+                    Ok(())
+                }
+                VerificationOutcome::Valid => Err(Error::<T>::ChallengeProofValid.into()),
+                VerificationOutcome::Error => Err(Error::<T>::VerifierError.into()),
+            }
         }
 
         /// Slash a miner bond for invalid proof behavior.
@@ -2264,6 +2310,29 @@ pub mod pallet {
             submission: &InferenceProofSubmission,
             validator_operator: &T::AccountId,
         ) -> Result<ProofVerificationPolicy, DispatchError> {
+            let (policy, validator) = Self::validate_submission_for_request(submission)?;
+            ensure!(
+                validator.operator == *validator_operator,
+                Error::<T>::NotValidatorOperator
+            );
+            Ok(policy)
+        }
+
+        fn validate_challenge_submission(
+            submission: &InferenceProofSubmission,
+        ) -> Result<ProofVerificationPolicy, DispatchError> {
+            Self::validate_submission_for_request(submission).map(|(policy, _)| policy)
+        }
+
+        fn validate_submission_for_request(
+            submission: &InferenceProofSubmission,
+        ) -> Result<
+            (
+                ProofVerificationPolicy,
+                ChainValidator<T::AccountId, BalanceOf<T>>,
+            ),
+            DispatchError,
+        > {
             ensure_commitment::<T>(submission.input_commitment)?;
             ensure_commitment::<T>(submission.output_commitment)?;
             ensure_commitment::<T>(submission.model_commitment)?;
@@ -2319,19 +2388,18 @@ pub mod pallet {
                     && validator.status == RegistryStatus::Active,
                 Error::<T>::NotActive
             );
-            ensure!(
-                validator.operator == *validator_operator,
-                Error::<T>::NotValidatorOperator
-            );
             Self::ensure_distinct_operators(&miner, &validator)?;
 
-            Ok(ProofVerificationPolicy {
-                proof_system: subnet.proof_system,
-                model_commitment: miner.model_commitment,
-                min_proof_size_bytes: T::MinProofSizeBytes::get(),
-                max_proof_size_bytes: T::MaxProofSizeBytes::get(),
-                max_verification_latency_ms: T::MaxVerificationLatencyMs::get(),
-            })
+            Ok((
+                ProofVerificationPolicy {
+                    proof_system: subnet.proof_system,
+                    model_commitment: miner.model_commitment,
+                    min_proof_size_bytes: T::MinProofSizeBytes::get(),
+                    max_proof_size_bytes: T::MaxProofSizeBytes::get(),
+                    max_verification_latency_ms: T::MaxVerificationLatencyMs::get(),
+                },
+                validator,
+            ))
         }
 
         fn ensure_submission_fresh(submitted_at: BlockNumber) -> DispatchResult {

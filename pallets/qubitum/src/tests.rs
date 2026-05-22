@@ -1611,6 +1611,73 @@ fn verifier_rejection_slashes_and_refunds_request() {
 }
 
 #[test]
+fn invalid_proof_challenge_slashes_miner_without_validator_self_slash() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(49);
+        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
+
+        assert_ok!(Qubitum::challenge_proof(
+            RuntimeOrigin::signed(4),
+            valid_submission(49)
+        ));
+
+        assert!(ProofRecords::<Test>::get(49).is_none());
+        assert_eq!(
+            InferenceRequests::<Test>::get(49).unwrap().status,
+            InferenceRequestStatus::Rejected
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            0
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 1_000);
+
+        let miner = Miners::<Test>::get(0).unwrap();
+        assert_eq!(miner.bond, 90_000_000_000);
+        assert_eq!(miner.status, RegistryStatus::Slashed);
+        let validator = Validators::<Test>::get(0).unwrap();
+        assert_eq!(validator.stake, MIN_MINER_BOND);
+        assert_eq!(validator.status, RegistryStatus::Active);
+    });
+}
+
+#[test]
+fn valid_proof_challenge_is_rejected_without_state_changes() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(50);
+
+        assert_noop!(
+            Qubitum::challenge_proof(RuntimeOrigin::signed(4), valid_submission(50)),
+            Error::<Test>::ChallengeProofValid
+        );
+
+        assert!(ProofRecords::<Test>::get(50).is_none());
+        assert_eq!(
+            InferenceRequests::<Test>::get(50).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            1_000
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+    });
+}
+
+#[test]
 fn root_slash_burns_held_miner_bond() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
