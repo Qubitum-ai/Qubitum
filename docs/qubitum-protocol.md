@@ -31,13 +31,15 @@ The core protocol structs and enums derive SCALE `Encode`/`Decode` plus `scale-i
 
 ## FRAME Pallet Surface
 
-`pallet-qubitum` provides the first on-chain surface for the protocol. It stores subnets, miners, validators, inference requests, proof records, and total burned QBT using FRAME-native maps, and exposes dispatchables for subnet creation, miner registration and bonding, miner deactivation and bond withdrawal, validator staking, user inference escrow, proof record submission, and root-controlled miner slashing.
+`pallet-qubitum` provides the first on-chain surface for the protocol. It stores subnets, miners, validators, inference requests, proof records, and total burned QBT using FRAME-native maps, and exposes dispatchables for subnet creation, miner registration and bonding, miner deactivation and bond withdrawal, validator staking and stake withdrawal, user inference escrow, proof record submission, and root-controlled miner slashing.
 
 The pallet is wired into `node-subtensor-runtime` as `Qubitum`, with runtime-provided weights and a FRAME benchmarking suite for all dispatchables. Placeholder weights are isolated behind `pallet_qubitum::weights::WeightInfo` so generated benchmark output can replace them without changing call logic.
 
 Users open inference requests by escrowing QBT against a request ID, subnet, input commitment, and fee split. Valid proof submission settles that held payment atomically: miner payment, validator fee, and protocol treasury fee are transferred from escrow, and the request status moves from pending to settled. Invalid verifier outcomes slash the miner bond without settling the user escrow. Pending requests can be cancelled by the request owner after the configured cancellation delay to release escrow.
 
 Miners can exit by moving from active or slashed status into an on-chain cooldown. While exiting, they cannot submit new work, but their remaining held bond is still slashable. After the cooldown expires, the operator can withdraw the residual bond and the miner becomes disabled.
+
+Validators use the same two-step exit pattern: active validators enter a stake cooldown, stop qualifying for proof submissions, and withdraw remaining stake only after the cooldown expires.
 
 Proof submission is constrained to the registered validator operator for the submitted validator ID. The pallet rejects duplicate request IDs, requires an existing pending inference request, requires the submitted model commitment to match the registered miner commitment, validates the proof envelope, and routes every submission through `pallet_qubitum::VerifyProof` before storing a proof record. The current runtime uses a shape-only verifier adapter; a concrete Risc Zero verifier can replace that associated type without changing dispatchable semantics.
 
@@ -77,7 +79,8 @@ cargo test -p node-subtensor-runtime --test safe_mode
 - Miner registration burn: 10 QBT
 - Miner activation bond: 100-10,000 QBT
 - Invalid proof slash: 10-100%
-- Bond exit cooldown: 7 days in the current runtime
+- Miner bond exit cooldown: 7 days in the current runtime
+- Validator stake exit cooldown: 7 days in the current runtime
 - Inference request cancellation delay: 50 blocks in the current runtime
 - Proof size target: 50-200 KB
 - Verification target: under 100 ms on commodity CPU

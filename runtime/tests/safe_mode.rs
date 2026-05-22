@@ -77,3 +77,14 @@ fn qubitum_miner_exit_is_blocked_in_safe_mode() {
     assert!(!SafeModeWhitelistedCalls::contains(&deactivate));
     assert!(!SafeModeWhitelistedCalls::contains(&withdraw));
 }
+
+#[test]
+fn qubitum_validator_exit_is_blocked_in_safe_mode() {
+    let deactivate =
+        RuntimeCall::Qubitum(pallet_qubitum::Call::deactivate_validator { validator_id: 1 });
+    let withdraw =
+        RuntimeCall::Qubitum(pallet_qubitum::Call::withdraw_validator_stake { validator_id: 1 });
+
+    assert!(!SafeModeWhitelistedCalls::contains(&deactivate));
+    assert!(!SafeModeWhitelistedCalls::contains(&withdraw));
+}

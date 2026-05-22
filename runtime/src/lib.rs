@@ -272,7 +272,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     //   `spec_version`, and `authoring_version` are the same between Wasm and native.
     // This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
     //   the compatible custom types.
-    spec_version: 406,
+    spec_version: 407,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 1,
@@ -539,6 +539,7 @@ parameter_types! {
     pub const QubitumMaxProofSizeBytes: u32 = qubitum_protocol::TARGET_PROOF_SIZE_MAX_BYTES;
     pub const QubitumMaxVerificationLatencyMs: u32 = qubitum_protocol::TARGET_VERIFICATION_MS;
     pub const QubitumMinerExitCooldownBlocks: u64 = prod_or_fast!(7 * 24 * 60 * 60 / 12, 50);
+    pub const QubitumValidatorExitCooldownBlocks: u64 = prod_or_fast!(7 * 24 * 60 * 60 / 12, 50);
     pub const QubitumRequestCancelDelayBlocks: u64 = 50;
     pub QubitumProtocolTreasury: AccountId = PalletId(*b"qbt/trsy").into_account_truncating();
 }
@@ -560,6 +561,7 @@ impl pallet_qubitum::Config for Runtime {
     type ProofVerifier = pallet_qubitum::ShapeProofVerifier;
     type ProtocolTreasury = QubitumProtocolTreasury;
     type MinerExitCooldownBlocks = QubitumMinerExitCooldownBlocks;
+    type ValidatorExitCooldownBlocks = QubitumValidatorExitCooldownBlocks;
     type RequestCancelDelayBlocks = QubitumRequestCancelDelayBlocks;
 }
 

@@ -274,6 +274,54 @@ mod benchmarks {
     }
 
     #[benchmark]
+    fn deactivate_validator() {
+        let _owner = create_bench_subnet::<T>();
+        let validator = register_bench_validator::<T>();
+
+        #[extrinsic_call]
+        _(RawOrigin::Signed(validator.clone()), 0);
+
+        let RegistryStatus::Exiting { exit_available_at } = Validators::<T>::get(0).unwrap().status
+        else {
+            panic!("validator must be exiting");
+        };
+        assert!(exit_available_at >= T::ValidatorExitCooldownBlocks::get());
+        assert_last_event::<T>(
+            Event::<T>::ValidatorExitStarted {
+                validator_id: 0,
+                exit_available_at,
+            }
+            .into(),
+        );
+    }
+
+    #[benchmark]
+    fn withdraw_validator_stake() {
+        let _owner = create_bench_subnet::<T>();
+        let validator = register_bench_validator::<T>();
+        Pallet::<T>::deactivate_validator(RawOrigin::Signed(validator.clone()).into(), 0).unwrap();
+        let RegistryStatus::Exiting { exit_available_at } = Validators::<T>::get(0).unwrap().status
+        else {
+            panic!("validator must be exiting");
+        };
+        frame_system::Pallet::<T>::set_block_number(exit_available_at.saturated_into());
+
+        #[extrinsic_call]
+        _(RawOrigin::Signed(validator.clone()), 0);
+
+        let registered_validator = Validators::<T>::get(0).unwrap();
+        assert_eq!(registered_validator.status, RegistryStatus::Disabled);
+        assert_eq!(registered_validator.stake, BalanceOf::<T>::default());
+        assert_last_event::<T>(
+            Event::<T>::ValidatorStakeWithdrawn {
+                validator_id: 0,
+                amount: T::MinValidatorStake::get(),
+            }
+            .into(),
+        );
+    }
+
+    #[benchmark]
     fn submit_proof() {
         let _miner = activate_bench_miner::<T>();
         let validator = register_bench_validator::<T>();

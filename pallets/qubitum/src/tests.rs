@@ -276,6 +276,64 @@ fn register_validator_locks_stake() {
 }
 
 #[test]
+fn validator_exit_requires_cooldown_and_releases_stake() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+
+        assert_noop!(
+            Qubitum::deactivate_validator(RuntimeOrigin::signed(2), 0),
+            Error::<Test>::NotOperator
+        );
+        assert_ok!(Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0));
+
+        let validator = Validators::<Test>::get(0).unwrap();
+        assert_eq!(
+            validator.status,
+            RegistryStatus::Exiting {
+                exit_available_at: 20
+            }
+        );
+
+        assert_noop!(
+            Qubitum::withdraw_validator_stake(RuntimeOrigin::signed(3), 0),
+            Error::<Test>::ValidatorExitUnavailable
+        );
+
+        System::set_block_number(20);
+        assert_ok!(Qubitum::withdraw_validator_stake(
+            RuntimeOrigin::signed(3),
+            0
+        ));
+
+        let validator = Validators::<Test>::get(0).unwrap();
+        assert_eq!(validator.status, RegistryStatus::Disabled);
+        assert_eq!(validator.stake, 0);
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            0
+        );
+        assert_noop!(
+            Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0),
+            Error::<Test>::InvalidValidatorStatus
+        );
+    });
+}
+
+#[test]
+fn submit_proof_rejects_exiting_validator() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(41);
+        assert_ok!(Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0));
+
+        assert_noop!(
+            Qubitum::submit_proof(RuntimeOrigin::signed(3), valid_submission(41)),
+            Error::<Test>::NotActive
+        );
+    });
+}
+
+#[test]
 fn submit_proof_records_commitments_for_active_participants() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();

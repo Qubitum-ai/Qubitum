@@ -206,6 +206,10 @@ pub mod pallet {
         #[pallet::constant]
         type MinerExitCooldownBlocks: Get<BlockNumber>;
 
+        /// Delay before an exiting validator can withdraw remaining stake.
+        #[pallet::constant]
+        type ValidatorExitCooldownBlocks: Get<BlockNumber>;
+
         /// Minimum age of a pending inference request before user cancellation.
         #[pallet::constant]
         type RequestCancelDelayBlocks: Get<BlockNumber>;
@@ -388,6 +392,16 @@ pub mod pallet {
             subnet_id: SubnetId,
             operator: T::AccountId,
         },
+        /// A validator started the stake exit cooldown.
+        ValidatorExitStarted {
+            validator_id: ValidatorId,
+            exit_available_at: BlockNumber,
+        },
+        /// A validator stake was released after cooldown.
+        ValidatorStakeWithdrawn {
+            validator_id: ValidatorId,
+            amount: BalanceOf<T>,
+        },
         /// A user opened an inference request and escrowed QBT.
         InferenceRequested {
             request_id: RequestId,
@@ -452,6 +466,10 @@ pub mod pallet {
         MinerExitUnavailable,
         /// Caller is not the registered operator.
         NotOperator,
+        /// Validator status does not allow this lifecycle transition.
+        InvalidValidatorStatus,
+        /// Validator exit cooldown has not completed.
+        ValidatorExitUnavailable,
         /// Caller is not the validator assigned to the proof.
         NotValidatorOperator,
         /// Commitment cannot be all zeros.
@@ -863,6 +881,86 @@ pub mod pallet {
             )?;
 
             Self::deposit_event(Event::MinerBondWithdrawn { miner_id, amount });
+            Ok(())
+        }
+
+        /// Start a validator exit cooldown before remaining stake can be withdrawn.
+        #[pallet::call_index(10)]
+        #[pallet::weight(T::WeightInfo::deactivate_validator())]
+        pub fn deactivate_validator(
+            origin: OriginFor<T>,
+            validator_id: ValidatorId,
+        ) -> DispatchResult {
+            let operator = ensure_signed(origin)?;
+            let exit_available_at = Self::current_block()
+                .checked_add(T::ValidatorExitCooldownBlocks::get())
+                .ok_or(Error::<T>::ArithmeticOverflow)?;
+
+            Validators::<T>::try_mutate(validator_id, |maybe_validator| -> DispatchResult {
+                let validator = maybe_validator
+                    .as_mut()
+                    .ok_or(Error::<T>::UnknownValidator)?;
+                ensure!(validator.operator == operator, Error::<T>::NotOperator);
+                ensure!(
+                    validator.status == RegistryStatus::Active,
+                    Error::<T>::InvalidValidatorStatus
+                );
+                validator.status = RegistryStatus::Exiting { exit_available_at };
+                Ok(())
+            })?;
+
+            Self::deposit_event(Event::ValidatorExitStarted {
+                validator_id,
+                exit_available_at,
+            });
+            Ok(())
+        }
+
+        /// Withdraw remaining validator stake after the exit cooldown completes.
+        #[pallet::call_index(11)]
+        #[pallet::weight(T::WeightInfo::withdraw_validator_stake())]
+        #[frame_support::transactional]
+        pub fn withdraw_validator_stake(
+            origin: OriginFor<T>,
+            validator_id: ValidatorId,
+        ) -> DispatchResult {
+            let operator = ensure_signed(origin)?;
+            let amount = Validators::<T>::try_mutate(
+                validator_id,
+                |maybe_validator| -> Result<BalanceOf<T>, DispatchError> {
+                    let validator = maybe_validator
+                        .as_mut()
+                        .ok_or(Error::<T>::UnknownValidator)?;
+                    ensure!(validator.operator == operator, Error::<T>::NotOperator);
+                    let RegistryStatus::Exiting { exit_available_at } = validator.status else {
+                        return Err(Error::<T>::InvalidValidatorStatus.into());
+                    };
+                    ensure!(
+                        Self::current_block() >= exit_available_at,
+                        Error::<T>::ValidatorExitUnavailable
+                    );
+
+                    let amount = validator.stake;
+                    let released = if amount == BalanceOf::<T>::default() {
+                        amount
+                    } else {
+                        T::Currency::release(
+                            &HoldReason::ValidatorStake.into(),
+                            &validator.operator,
+                            amount,
+                            Precision::Exact,
+                        )?
+                    };
+                    validator.stake = BalanceOf::<T>::default();
+                    validator.status = RegistryStatus::Disabled;
+                    Ok(released)
+                },
+            )?;
+
+            Self::deposit_event(Event::ValidatorStakeWithdrawn {
+                validator_id,
+                amount,
+            });
             Ok(())
         }
     }
