@@ -280,6 +280,25 @@ pub mod pallet {
     }
 
     #[derive(
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        TypeInfo,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Debug,
+        MaxEncodedLen,
+    )]
+    pub struct ChainPublicSubnet {
+        pub id: SubnetId,
+        pub domain: SubnetDomain,
+        pub proof_system: ProofSystem,
+        pub active: bool,
+    }
+
+    #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
     pub struct ChainMiner<AccountId, Balance> {
@@ -1618,6 +1637,15 @@ pub mod pallet {
 
         pub fn next_route_availability(subnet_id: SubnetId) -> ChainRouteAvailability {
             Self::route_availability(subnet_id, RequestCount::<T>::get())
+        }
+
+        pub fn public_subnet(subnet_id: SubnetId) -> Option<ChainPublicSubnet> {
+            Subnets::<T>::get(subnet_id).map(|subnet| ChainPublicSubnet {
+                id: subnet.id,
+                domain: subnet.domain,
+                proof_system: subnet.proof_system,
+                active: subnet.active,
+            })
         }
 
         pub fn public_miner(miner_id: MinerId) -> Option<ChainPublicMiner> {

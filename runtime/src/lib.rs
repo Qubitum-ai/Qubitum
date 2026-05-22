@@ -272,7 +272,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     //   `spec_version`, and `authoring_version` are the same between Wasm and native.
     // This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
     //   the compatible custom types.
-    spec_version: 431,
+    spec_version: 432,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 3,
@@ -2592,8 +2592,8 @@ impl_runtime_apis! {
     impl pallet_qubitum_runtime_api::QubitumRuntimeApi<Block> for Runtime {
         fn qubitum_subnet(
             subnet_id: qubitum_protocol::SubnetId,
-        ) -> Option<pallet_qubitum::ChainSubnet<AccountId32, TaoBalance>> {
-            pallet_qubitum::Subnets::<Runtime>::get(subnet_id)
+        ) -> Option<pallet_qubitum::ChainPublicSubnet> {
+            pallet_qubitum::Pallet::<Runtime>::public_subnet(subnet_id)
         }
 
         fn qubitum_miner(

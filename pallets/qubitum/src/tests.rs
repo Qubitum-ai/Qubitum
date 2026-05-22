@@ -3,14 +3,15 @@
 use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, AutoRouteInferenceRequestParams,
     CancelledInferenceRequestCount, ChainInferenceRequest, ChainPublicInferenceRequest,
-    ChainPublicMiner, ChainPublicProofRecord, ChainPublicValidator, ChainRequestStatusCounts,
-    ChainRouteAvailability, Error, HoldReason, InferenceRequestParams, InferenceRequestStatus,
-    InferenceRequests, MinerCount, MinerIdentityCommitments, MinerIdentitySignatureBundles, Miners,
-    PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests, ProofRecords,
-    PublicRegistryStatus, RejectedInferenceRequestCount, RequestCount,
-    SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned, TotalInferenceEscrowed,
-    TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees, TotalValidatorFees,
-    ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles, Validators,
+    ChainPublicMiner, ChainPublicProofRecord, ChainPublicSubnet, ChainPublicValidator,
+    ChainRequestStatusCounts, ChainRouteAvailability, Error, HoldReason, InferenceRequestParams,
+    InferenceRequestStatus, InferenceRequests, MinerCount, MinerIdentityCommitments,
+    MinerIdentitySignatureBundles, Miners, PendingInferenceRequestCount, PendingMinerRequests,
+    PendingValidatorRequests, ProofRecords, PublicRegistryStatus, RejectedInferenceRequestCount,
+    RequestCount, SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned,
+    TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees,
+    TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
+    ValidatorIdentitySignatureBundles, Validators,
     mock::{
         Balances, Qubitum, RuntimeEvent, RuntimeOrigin, System, Test, new_test_ext,
         set_verification_outcome,
@@ -169,6 +170,38 @@ fn create_subnet_burns_qbt_and_stores_policy() {
             Balances::free_balance(1),
             1_000_000_000_000_000 - MINER_REGISTRATION_BURN
         );
+    });
+}
+
+#[test]
+fn public_subnet_view_redacts_owner_and_economic_policy() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(4),
+            SubnetDomain::Code,
+            ProofSystem::RiscZeroStark
+        ));
+
+        let public_subnet = Qubitum::public_subnet(0).unwrap();
+        assert_eq!(
+            public_subnet,
+            ChainPublicSubnet {
+                id: 0,
+                domain: SubnetDomain::Code,
+                proof_system: ProofSystem::RiscZeroStark,
+                active: true,
+            }
+        );
+
+        let encoded_subnet = public_subnet.encode();
+        for hidden in [
+            4_u64.encode(),
+            MINER_REGISTRATION_BURN.encode(),
+            MIN_MINER_BOND.encode(),
+            MAX_MINER_BOND.encode(),
+        ] {
+            assert!(!contains_subsequence(&encoded_subnet, &hidden));
+        }
     });
 }
 
