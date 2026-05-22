@@ -32,6 +32,12 @@ fn proof(seed: u8) -> ProofEnvelope {
     ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
 }
 
+fn contains_subsequence(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
+}
+
 #[derive(Encode)]
 struct LegacyChainProofRecordV4 {
     request_id: u64,
@@ -489,6 +495,33 @@ fn submit_proof_records_commitments_for_active_participants() {
             1_000_000_000_000_000 - MIN_MINER_BOND + 25
         );
         assert_eq!(Balances::free_balance(99), 5);
+    });
+}
+
+#[test]
+fn stored_runtime_records_do_not_expose_raw_inference_or_model_payloads() {
+    new_test_ext().execute_with(|| {
+        let raw_input = b"PRIVATE_RAW_USER_PROMPT_transfer_strategy_and_customer_context";
+        let raw_output = b"PRIVATE_RAW_MODEL_OUTPUT_ranked_answers_and_reasoning_trace";
+        let raw_model = b"PRIVATE_RAW_MODEL_WEIGHTS_transformer_layer_bytes";
+
+        register_active_miner_and_validator();
+        request_inference(43);
+        System::set_block_number(5);
+        assert_ok!(Qubitum::submit_proof(
+            RuntimeOrigin::signed(3),
+            valid_submission(43)
+        ));
+
+        for encoded in [
+            Miners::<Test>::get(0).unwrap().encode(),
+            InferenceRequests::<Test>::get(43).unwrap().encode(),
+            ProofRecords::<Test>::get(43).unwrap().encode(),
+        ] {
+            assert!(!contains_subsequence(&encoded, raw_input));
+            assert!(!contains_subsequence(&encoded, raw_output));
+            assert!(!contains_subsequence(&encoded, raw_model));
+        }
     });
 }
 
