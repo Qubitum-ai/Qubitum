@@ -68,7 +68,7 @@ pub const TARGET_PROOF_SIZE_MAX_BYTES: u32 = 200 * 1024;
 pub const TARGET_VERIFICATION_MS: u32 = 100;
 
 /// Protocol-level error shared by runtime and off-chain clients.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProtocolError {
     ArithmeticOverflow,
     CooldownNotComplete,
@@ -94,7 +94,7 @@ pub enum ProtocolError {
 }
 
 /// Execution proof system used by a subnet or proof submission.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProofSystem {
     Mock,
     RiscZeroStark,
@@ -103,7 +103,7 @@ pub enum ProofSystem {
 }
 
 /// Planned account-signature mode for post-quantum migration.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SignatureMode {
     ClassicalEcdsa,
     HybridDilithium,
@@ -111,7 +111,7 @@ pub enum SignatureMode {
 }
 
 /// Specialized AI domain for a subnet.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SubnetDomain {
     General,
     Vision,
@@ -121,7 +121,7 @@ pub enum SubnetDomain {
 }
 
 /// Entity lifecycle in Qubitum registries.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RegistryStatus {
     Pending,
     Active,
@@ -131,7 +131,7 @@ pub enum RegistryStatus {
 }
 
 /// Visibility contract for data handled by a proof.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Visibility {
     Private,
     Public,
@@ -139,14 +139,14 @@ pub enum Visibility {
 }
 
 /// Expected visibility of a protocol element.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PrivacyElement {
     pub element: PrivacyElementKind,
     pub visibility: Visibility,
 }
 
 /// Data element covered by Qubitum privacy guarantees.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PrivacyElementKind {
     ModelWeights,
     InferenceInput,
@@ -155,7 +155,7 @@ pub enum PrivacyElementKind {
 }
 
 /// Protocol emission split.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RewardSplit {
     pub miner_bps: u16,
     pub validator_bps: u16,
@@ -206,7 +206,7 @@ impl RewardSplit {
 }
 
 /// Amounts emitted to each protocol recipient class.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EmissionAllocation {
     pub miner: Balance,
     pub validator: Balance,
@@ -214,7 +214,7 @@ pub struct EmissionAllocation {
 }
 
 /// Miner bond and slash policy.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MinerBondPolicy {
     pub registration_burn: Balance,
     pub min_bond: Balance,
@@ -265,7 +265,7 @@ impl MinerBondPolicy {
 }
 
 /// Runtime policy for a Qubitum subnet.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SubnetPolicy {
     pub creation_burn: Balance,
     pub miner_bond: MinerBondPolicy,
@@ -307,7 +307,7 @@ impl SubnetPolicy {
 }
 
 /// Registered Qubitum subnet metadata.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Debug, Eq, PartialEq)]
 pub struct SubnetConfig {
     pub id: SubnetId,
     pub owner: AccountId,
@@ -317,7 +317,7 @@ pub struct SubnetConfig {
 }
 
 /// Registered miner metadata.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Debug, Eq, PartialEq)]
 pub struct MinerRegistration {
     pub id: MinerId,
     pub operator: AccountId,
@@ -351,7 +351,7 @@ impl MinerRegistration {
 }
 
 /// Registered validator metadata.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Debug, Eq, PartialEq)]
 pub struct ValidatorRegistration {
     pub id: ValidatorId,
     pub operator: AccountId,
@@ -369,7 +369,7 @@ impl ValidatorRegistration {
 }
 
 /// Proof submission routed from a miner through a validator.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Debug, Eq, PartialEq)]
 pub struct InferenceProofSubmission {
     pub request_id: RequestId,
     pub subnet_id: SubnetId,
@@ -411,7 +411,7 @@ impl InferenceProofSubmission {
 }
 
 /// Verifier result before settlement.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum VerificationOutcome {
     Valid,
     Invalid { slash_bps: u16 },
@@ -419,7 +419,7 @@ pub enum VerificationOutcome {
 }
 
 /// Recorded successful inference.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Debug, Eq, PartialEq)]
 pub struct InferenceRecord {
     pub request_id: RequestId,
     pub subnet_id: SubnetId,
@@ -447,7 +447,7 @@ impl InferenceRecord {
 }
 
 /// Payment settlement for a valid inference.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InferenceSettlement {
     pub miner_payment: Balance,
     pub validator_fee: Balance,

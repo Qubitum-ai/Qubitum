@@ -8,6 +8,13 @@ publish = false
 [lints]
 workspace = true
 
+[dependencies]
+codec = { workspace = true, features = ["derive"] }
+scale-info = { workspace = true, features = ["derive"] }
+
 [features]
 default = ["std"]
-std = []
+std = [
+	"codec/std",
+	"scale-info/std",
+]

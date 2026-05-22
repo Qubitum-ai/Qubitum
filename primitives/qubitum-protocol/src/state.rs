@@ -8,7 +8,9 @@ use alloc::collections::BTreeMap;
 use alloc::vec;
 
 /// Balance accounting tracked by the protocol state machine.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(
+    codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Default, Eq, PartialEq,
+)]
 pub struct AccountLedger {
     pub free: Balance,
     pub locked: Balance,
@@ -23,7 +25,7 @@ impl AccountLedger {
 }
 
 /// Minimal state machine for Qubitum protocol transitions.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Debug, Eq, PartialEq)]
 pub struct ProtocolState {
     pub treasury_account: AccountId,
     pub accounts: BTreeMap<AccountId, AccountLedger>,

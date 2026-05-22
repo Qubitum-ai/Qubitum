@@ -13545,6 +13545,10 @@ dependencies = [
 [[package]]
 name = "qubitum-protocol"
 version = "0.1.0"
+dependencies = [
+ "parity-scale-codec",
+ "scale-info",
+]
 
 [[package]]
 name = "quick-error"

@@ -13,7 +13,9 @@ pub trait ProofVerifier {
 }
 
 /// Verifier that accepts any submission matching policy shape constraints.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(
+    codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Default, Eq, PartialEq,
+)]
 pub struct ShapeVerifier;
 
 impl ProofVerifier for ShapeVerifier {
@@ -28,7 +30,7 @@ impl ProofVerifier for ShapeVerifier {
 }
 
 /// Deterministic verifier for local protocol tests.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MockVerifier {
     pub expected_proof_commitment: Option<Commitment>,
     pub forced_invalid_slash_bps: Option<u16>,
@@ -82,7 +84,7 @@ impl ProofVerifier for MockVerifier {
 }
 
 /// Result of processing a proof against a verifier.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Debug, Eq, PartialEq)]
 pub enum ProofProcessing {
     Accepted(InferenceRecord),
     Rejected { miner_slashed: super::Balance },

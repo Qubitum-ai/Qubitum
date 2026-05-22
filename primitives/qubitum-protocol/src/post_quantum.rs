@@ -1,7 +1,7 @@
 use super::{Commitment, ProtocolError, SignatureMode};
 
 /// Signature algorithm family used by an account or transaction envelope.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SignatureAlgorithm {
     Ecdsa,
     Sr25519,
@@ -26,7 +26,7 @@ impl SignatureAlgorithm {
 }
 
 /// Commitment to a public key and signature payload.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SignatureCommitment {
     pub algorithm: SignatureAlgorithm,
     pub public_key_commitment: Commitment,
@@ -34,14 +34,14 @@ pub struct SignatureCommitment {
 }
 
 /// Transaction signature bundle used during migration.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SignatureBundle {
     pub classical: Option<SignatureCommitment>,
     pub post_quantum: Option<SignatureCommitment>,
 }
 
 /// Enforces the roadmap phase for accepted account signatures.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SignaturePolicy {
     pub mode: SignatureMode,
 }
