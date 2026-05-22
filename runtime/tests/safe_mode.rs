@@ -85,6 +85,19 @@ fn qubitum_request_inference_is_blocked_in_safe_mode() {
     });
 
     assert!(!SafeModeWhitelistedCalls::contains(&call));
+
+    let auto = RuntimeCall::Qubitum(pallet_qubitum::Call::request_inference_auto_route {
+        request_id: 1,
+        params: pallet_qubitum::AutoRouteInferenceRequestParams {
+            subnet_id: 0,
+            input_commitment: commitment(1),
+            payment: 1_000u64.into(),
+            validator_fee_bps: 250,
+            treasury_fee_bps: 50,
+        },
+    });
+
+    assert!(!SafeModeWhitelistedCalls::contains(&auto));
 }
 
 #[test]

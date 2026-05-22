@@ -494,6 +494,17 @@ pub mod pallet {
         pub treasury_fee_bps: u16,
     }
 
+    #[derive(
+        Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
+    )]
+    pub struct AutoRouteInferenceRequestParams<Balance> {
+        pub subnet_id: SubnetId,
+        pub input_commitment: Commitment,
+        pub payment: Balance,
+        pub validator_fee_bps: u16,
+        pub treasury_fee_bps: u16,
+    }
+
     #[pallet::storage]
     pub type SubnetCount<T: Config> = StorageValue<_, SubnetId, ValueQuery>;
 
@@ -694,14 +705,10 @@ pub mod pallet {
         MinerIdentityCommitmentsUpdated { miner_id: MinerId },
         /// A validator published or cleared shielded identity commitments.
         ValidatorIdentityCommitmentsUpdated { validator_id: ValidatorId },
-        /// A user opened an inference request and escrowed QBT.
+        /// An inference request was opened and escrowed.
         InferenceRequested {
             request_id: RequestId,
-            user: T::AccountId,
             subnet_id: SubnetId,
-            miner_id: MinerId,
-            validator_id: ValidatorId,
-            payment: BalanceOf<T>,
         },
         /// A proof record was accepted.
         ProofAccepted {
@@ -1134,18 +1141,14 @@ pub mod pallet {
             params: InferenceRequestParams<BalanceOf<T>>,
         ) -> DispatchResult {
             let user = ensure_signed(origin)?;
-            ensure_commitment::<T>(params.input_commitment)?;
-            ensure!(
-                !InferenceRequests::<T>::contains_key(request_id),
-                Error::<T>::DuplicateRequest
-            );
-            ensure!(
-                params.payment > BalanceOf::<T>::default(),
-                Error::<T>::InvalidPayment
-            );
-            Self::validate_fee_split(params.validator_fee_bps, params.treasury_fee_bps)?;
-            let subnet = Subnets::<T>::get(params.subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
-            ensure!(subnet.active, Error::<T>::NotActive);
+            Self::ensure_inference_request_openable(
+                request_id,
+                params.subnet_id,
+                params.input_commitment,
+                params.payment,
+                params.validator_fee_bps,
+                params.treasury_fee_bps,
+            )?;
             let assignment = Self::route_assignment(params.subnet_id, request_id)
                 .ok_or(Error::<T>::NoRouteAvailable)?;
             ensure!(
@@ -1153,43 +1156,50 @@ pub mod pallet {
                     && assignment.validator_id == params.validator_id,
                 Error::<T>::AssignmentMismatch
             );
-            Self::ensure_request_assignment(
+            Self::open_inference_request(
+                user,
+                request_id,
                 params.subnet_id,
                 params.miner_id,
                 params.validator_id,
+                params.input_commitment,
+                params.payment,
+                params.validator_fee_bps,
+                params.treasury_fee_bps,
+            )
+        }
+
+        /// Open an inference request with chain-owned miner and validator assignment.
+        #[pallet::call_index(17)]
+        #[pallet::weight(T::WeightInfo::request_inference())]
+        #[frame_support::transactional]
+        pub fn request_inference_auto_route(
+            origin: OriginFor<T>,
+            request_id: RequestId,
+            params: AutoRouteInferenceRequestParams<BalanceOf<T>>,
+        ) -> DispatchResult {
+            let user = ensure_signed(origin)?;
+            Self::ensure_inference_request_openable(
+                request_id,
+                params.subnet_id,
+                params.input_commitment,
+                params.payment,
+                params.validator_fee_bps,
+                params.treasury_fee_bps,
             )?;
-            Self::ensure_next_request_id(request_id)?;
-
-            T::Currency::hold(&HoldReason::InferencePayment.into(), &user, params.payment)?;
-            Self::increment_pending_assignment(params.miner_id, params.validator_id)?;
-            Self::increment_request_status_count(InferenceRequestStatus::Pending)?;
-            Self::record_inference_escrow(params.payment);
-            InferenceRequests::<T>::insert(
-                request_id,
-                ChainInferenceRequest {
-                    request_id,
-                    user: user.clone(),
-                    subnet_id: params.subnet_id,
-                    miner_id: params.miner_id,
-                    validator_id: params.validator_id,
-                    input_commitment: params.input_commitment,
-                    payment: params.payment,
-                    validator_fee_bps: params.validator_fee_bps,
-                    treasury_fee_bps: params.treasury_fee_bps,
-                    created_at: Self::current_block(),
-                    status: InferenceRequestStatus::Pending,
-                },
-            );
-
-            Self::deposit_event(Event::InferenceRequested {
-                request_id,
+            let assignment = Self::route_assignment(params.subnet_id, request_id)
+                .ok_or(Error::<T>::NoRouteAvailable)?;
+            Self::open_inference_request(
                 user,
-                subnet_id: params.subnet_id,
-                miner_id: params.miner_id,
-                validator_id: params.validator_id,
-                payment: params.payment,
-            });
-            Ok(())
+                request_id,
+                params.subnet_id,
+                assignment.miner_id,
+                assignment.validator_id,
+                params.input_commitment,
+                params.payment,
+                params.validator_fee_bps,
+                params.treasury_fee_bps,
+            )
         }
 
         /// Cancel a pending inference request and release escrowed QBT.
@@ -1646,6 +1656,72 @@ pub mod pallet {
                 subnet_id: record.subnet_id,
                 proof_system: record.proof_system,
             })
+        }
+
+        fn ensure_inference_request_openable(
+            request_id: RequestId,
+            subnet_id: SubnetId,
+            input_commitment: Commitment,
+            payment: BalanceOf<T>,
+            validator_fee_bps: u16,
+            treasury_fee_bps: u16,
+        ) -> DispatchResult {
+            ensure_commitment::<T>(input_commitment)?;
+            ensure!(
+                !InferenceRequests::<T>::contains_key(request_id),
+                Error::<T>::DuplicateRequest
+            );
+            ensure!(
+                payment > BalanceOf::<T>::default(),
+                Error::<T>::InvalidPayment
+            );
+            Self::validate_fee_split(validator_fee_bps, treasury_fee_bps)?;
+            let subnet = Subnets::<T>::get(subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
+            ensure!(subnet.active, Error::<T>::NotActive);
+            Ok(())
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn open_inference_request(
+            user: T::AccountId,
+            request_id: RequestId,
+            subnet_id: SubnetId,
+            miner_id: MinerId,
+            validator_id: ValidatorId,
+            input_commitment: Commitment,
+            payment: BalanceOf<T>,
+            validator_fee_bps: u16,
+            treasury_fee_bps: u16,
+        ) -> DispatchResult {
+            Self::ensure_request_assignment(subnet_id, miner_id, validator_id)?;
+            Self::ensure_next_request_id(request_id)?;
+
+            T::Currency::hold(&HoldReason::InferencePayment.into(), &user, payment)?;
+            Self::increment_pending_assignment(miner_id, validator_id)?;
+            Self::increment_request_status_count(InferenceRequestStatus::Pending)?;
+            Self::record_inference_escrow(payment);
+            InferenceRequests::<T>::insert(
+                request_id,
+                ChainInferenceRequest {
+                    request_id,
+                    user,
+                    subnet_id,
+                    miner_id,
+                    validator_id,
+                    input_commitment,
+                    payment,
+                    validator_fee_bps,
+                    treasury_fee_bps,
+                    created_at: Self::current_block(),
+                    status: InferenceRequestStatus::Pending,
+                },
+            );
+
+            Self::deposit_event(Event::InferenceRequested {
+                request_id,
+                subnet_id,
+            });
+            Ok(())
         }
 
         fn next_subnet_id() -> Result<SubnetId, DispatchError> {

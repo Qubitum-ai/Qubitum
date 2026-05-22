@@ -407,11 +407,7 @@ mod benchmarks {
         assert_last_event::<T>(
             Event::<T>::InferenceRequested {
                 request_id: 42,
-                user,
                 subnet_id: 0,
-                miner_id: 0,
-                validator_id: 0,
-                payment,
             }
             .into(),
         );

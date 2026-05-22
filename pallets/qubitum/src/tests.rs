@@ -1,17 +1,18 @@
 #![allow(clippy::arithmetic_side_effects, clippy::unwrap_used)]
 
 use crate::{
-    ActiveMinersBySubnet, ActiveValidatorsBySubnet, CancelledInferenceRequestCount,
-    ChainInferenceRequest, ChainPublicInferenceRequest, ChainPublicProofRecord,
-    ChainRequestStatusCounts, Error, HoldReason, InferenceRequestParams, InferenceRequestStatus,
-    InferenceRequests, MinerCount, MinerIdentityCommitments, MinerIdentitySignatureBundles, Miners,
-    PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests, ProofRecords,
-    RejectedInferenceRequestCount, RequestCount, SettledInferenceRequestCount, SubnetCount,
-    Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
-    TotalTreasuryFees, TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
-    ValidatorIdentitySignatureBundles, Validators,
+    ActiveMinersBySubnet, ActiveValidatorsBySubnet, AutoRouteInferenceRequestParams,
+    CancelledInferenceRequestCount, ChainInferenceRequest, ChainPublicInferenceRequest,
+    ChainPublicProofRecord, ChainRequestStatusCounts, Error, HoldReason, InferenceRequestParams,
+    InferenceRequestStatus, InferenceRequests, MinerCount, MinerIdentityCommitments,
+    MinerIdentitySignatureBundles, Miners, PendingInferenceRequestCount, PendingMinerRequests,
+    PendingValidatorRequests, ProofRecords, RejectedInferenceRequestCount, RequestCount,
+    SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned, TotalInferenceEscrowed,
+    TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees, TotalValidatorFees,
+    ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles, Validators,
     mock::{
-        Balances, Qubitum, RuntimeOrigin, System, Test, new_test_ext, set_verification_outcome,
+        Balances, Qubitum, RuntimeEvent, RuntimeOrigin, System, Test, new_test_ext,
+        set_verification_outcome,
     },
 };
 use codec::Encode;
@@ -1460,6 +1461,48 @@ fn request_inference_rejects_non_canonical_assignment() {
             ),
             Error::<Test>::AssignmentMismatch
         );
+    });
+}
+
+#[test]
+fn auto_route_request_computes_assignment_without_caller_supplied_participants() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        System::set_block_number(1);
+        System::reset_events();
+        RequestCount::<Test>::put(54);
+
+        assert_ok!(Qubitum::request_inference_auto_route(
+            RuntimeOrigin::signed(4),
+            54,
+            AutoRouteInferenceRequestParams {
+                subnet_id: 0,
+                input_commitment: commitment(1),
+                payment: 1_000,
+                validator_fee_bps: 250,
+                treasury_fee_bps: 50,
+            },
+        ));
+
+        let request = InferenceRequests::<Test>::get(54).unwrap();
+        assert_eq!(request.user, 4);
+        assert_eq!(request.miner_id, 0);
+        assert_eq!(request.validator_id, 0);
+        assert_eq!(request.status, InferenceRequestStatus::Pending);
+        assert_eq!(RequestCount::<Test>::get(), 55);
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            1_000
+        );
+        assert!(System::events().iter().any(|record| matches!(
+            &record.event,
+            RuntimeEvent::Qubitum(crate::Event::InferenceRequested {
+                request_id: 54,
+                subnet_id: 0,
+            })
+        )));
     });
 }
 
