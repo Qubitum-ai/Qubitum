@@ -8,8 +8,10 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
+pub mod post_quantum;
 pub mod state;
 pub mod verifier;
+pub use post_quantum::*;
 pub use state::*;
 pub use verifier::*;
 
@@ -80,8 +82,11 @@ pub enum ProtocolError {
     InvalidStake,
     LatencyExceeded,
     MissingCommitment,
+    MissingClassicalSignature,
+    MissingPostQuantumSignature,
     NotActive,
     ProofSystemMismatch,
+    UnsupportedSignatureAlgorithm,
     UnknownMiner,
     UnknownSubnet,
     UnknownValidator,

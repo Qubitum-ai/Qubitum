@@ -37,3 +37,11 @@ The example creates a QBT genesis ledger, burns QBT to create a subnet, register
 Model weights and inference inputs are private. The chain stores commitments and proof metadata, not raw inputs or model weights. Inference outputs are public or user-visible, and miner identity may be shielded through optional identity commitments.
 
 Validators verify that inference executed correctly, that the committed model version was used, and that latency bounds were met. Validators do not learn model weights, raw inference input, or model internals.
+
+## Post-Quantum Signature Policy
+
+The primitives encode three signature modes for migration:
+
+- Classical launch mode: classical signatures are accepted for compatibility.
+- Hybrid mode: transactions must carry both a classical signature commitment and a post-quantum signature commitment.
+- Full post-quantum mode: post-quantum signature commitments are required without depending on a classical signature.
