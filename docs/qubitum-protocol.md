@@ -23,6 +23,17 @@ The example creates a QBT genesis ledger, burns QBT to create a subnet, register
 
 The core protocol structs and enums derive SCALE `Encode`/`Decode` plus `scale-info` metadata. That keeps the primitives usable for Substrate storage, extrinsics, runtime APIs, RPC metadata, and future migration tooling instead of being test-only Rust structs.
 
+## FRAME Pallet Surface
+
+`pallet-qubitum` provides the first on-chain surface for the protocol. It stores subnets, miners, validators, proof records, and total burned QBT using FRAME-native maps, and exposes dispatchables for subnet creation, miner registration and bonding, validator staking, proof record submission, and root-controlled miner slashing.
+
+Current focused checks:
+
+```sh
+cargo test -p pallet-qubitum
+cargo clippy -p pallet-qubitum --all-targets -- -D warnings
+```
+
 ## Core Constants
 
 - Token: QBT

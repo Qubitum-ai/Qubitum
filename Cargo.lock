@@ -10316,6 +10316,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "pallet-qubitum"
+version = "0.1.0"
+dependencies = [
+ "frame-support",
+ "frame-system",
+ "pallet-balances",
+ "parity-scale-codec",
+ "qubitum-protocol",
+ "scale-info",
+ "sp-core",
+ "sp-io",
+ "sp-runtime",
+ "sp-std",
+]
+
+[[package]]
 name = "pallet-ranked-collective"
 version = "41.0.0"
 source = "git+https://github.com/opentensor/polkadot-sdk.git?rev=7cc54bf2d50ae3921d718736dfeb0de9468539c7#7cc54bf2d50ae3921d718736dfeb0de9468539c7"

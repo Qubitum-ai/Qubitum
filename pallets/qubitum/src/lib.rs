@@ -1,0 +1,547 @@
+#![cfg_attr(not(feature = "std"), no_std)]
+
+#[cfg(test)]
+mod mock;
+#[cfg(test)]
+mod tests;
+
+pub use pallet::*;
+
+use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
+use frame_support::{
+    dispatch::DispatchResult,
+    ensure,
+    pallet_prelude::{CheckedDiv, CheckedMul},
+    traits::tokens::{
+        Fortitude, Precision, Preservation,
+        fungible::{self, Mutate as _, MutateHold as _},
+    },
+};
+use qubitum_protocol::{
+    Commitment, InferenceProofSubmission, MinerId, ProofSystem, RegistryStatus, RequestId,
+    SubnetDomain, SubnetId, ValidatorId,
+};
+use scale_info::TypeInfo;
+use sp_runtime::{DispatchError, Saturating, traits::SaturatedConversion};
+
+type BalanceOf<T> =
+    <<T as Config>::Currency as fungible::Inspect<<T as frame_system::Config>::AccountId>>::Balance;
+
+#[frame_support::pallet]
+#[allow(clippy::expect_used)]
+pub mod pallet {
+    use super::*;
+    use frame_support::pallet_prelude::*;
+    use frame_system::pallet_prelude::*;
+
+    #[pallet::pallet]
+    #[pallet::without_storage_info]
+    pub struct Pallet<T>(_);
+
+    #[pallet::config]
+    pub trait Config: frame_system::Config<RuntimeEvent: From<Event<Self>>> {
+        /// Native QBT currency implementation.
+        type Currency: fungible::Inspect<Self::AccountId>
+            + fungible::Mutate<Self::AccountId>
+            + fungible::MutateHold<Self::AccountId, Reason = Self::RuntimeHoldReason>;
+
+        /// Amount burned when creating a subnet.
+        #[pallet::constant]
+        type SubnetCreationBurn: Get<BalanceOf<Self>>;
+
+        /// Amount burned when registering a miner.
+        #[pallet::constant]
+        type MinerRegistrationBurn: Get<BalanceOf<Self>>;
+
+        /// Minimum miner bond.
+        #[pallet::constant]
+        type MinMinerBond: Get<BalanceOf<Self>>;
+
+        /// Maximum miner bond.
+        #[pallet::constant]
+        type MaxMinerBond: Get<BalanceOf<Self>>;
+
+        /// Minimum validator stake.
+        #[pallet::constant]
+        type MinValidatorStake: Get<BalanceOf<Self>>;
+
+        /// Minimum invalid-proof slash in basis points.
+        #[pallet::constant]
+        type MinInvalidProofSlashBps: Get<u16>;
+
+        /// Maximum invalid-proof slash in basis points.
+        #[pallet::constant]
+        type MaxInvalidProofSlashBps: Get<u16>;
+
+        /// Lower accepted proof commitment size metadata bound.
+        #[pallet::constant]
+        type MinProofSizeBytes: Get<u32>;
+
+        /// Upper accepted proof commitment size metadata bound.
+        #[pallet::constant]
+        type MaxProofSizeBytes: Get<u32>;
+
+        /// Maximum accepted verification latency.
+        #[pallet::constant]
+        type MaxVerificationLatencyMs: Get<u32>;
+
+        /// Runtime hold reason adapter.
+        type RuntimeHoldReason: From<HoldReason>;
+    }
+
+    #[pallet::composite_enum]
+    pub enum HoldReason {
+        /// Funds held as miner bond.
+        MinerBond,
+        /// Funds held as validator stake.
+        ValidatorStake,
+    }
+
+    #[derive(
+        Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
+    )]
+    pub struct ChainSubnet<AccountId, Balance> {
+        pub id: SubnetId,
+        pub owner: AccountId,
+        pub domain: SubnetDomain,
+        pub proof_system: ProofSystem,
+        pub creation_burn: Balance,
+        pub min_miner_bond: Balance,
+        pub max_miner_bond: Balance,
+        pub min_validator_stake: Balance,
+        pub active: bool,
+    }
+
+    #[derive(
+        Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
+    )]
+    pub struct ChainMiner<AccountId, Balance> {
+        pub id: MinerId,
+        pub operator: AccountId,
+        pub subnet_id: SubnetId,
+        pub model_commitment: Commitment,
+        pub proof_system: ProofSystem,
+        pub bond: Balance,
+        pub status: RegistryStatus,
+    }
+
+    #[derive(
+        Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
+    )]
+    pub struct ChainValidator<AccountId, Balance> {
+        pub id: ValidatorId,
+        pub operator: AccountId,
+        pub subnet_id: SubnetId,
+        pub stake: Balance,
+        pub status: RegistryStatus,
+    }
+
+    #[derive(
+        Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
+    )]
+    pub struct ChainProofRecord {
+        pub request_id: RequestId,
+        pub subnet_id: SubnetId,
+        pub miner_id: MinerId,
+        pub validator_id: ValidatorId,
+        pub input_commitment: Commitment,
+        pub output_commitment: Commitment,
+        pub model_commitment: Commitment,
+        pub proof_commitment: Commitment,
+    }
+
+    #[pallet::storage]
+    pub type SubnetCount<T: Config> = StorageValue<_, SubnetId, ValueQuery>;
+
+    #[pallet::storage]
+    pub type MinerCount<T: Config> = StorageValue<_, MinerId, ValueQuery>;
+
+    #[pallet::storage]
+    pub type ValidatorCount<T: Config> = StorageValue<_, ValidatorId, ValueQuery>;
+
+    #[pallet::storage]
+    pub type Subnets<T: Config> =
+        StorageMap<_, Twox64Concat, SubnetId, ChainSubnet<T::AccountId, BalanceOf<T>>, OptionQuery>;
+
+    #[pallet::storage]
+    pub type Miners<T: Config> =
+        StorageMap<_, Twox64Concat, MinerId, ChainMiner<T::AccountId, BalanceOf<T>>, OptionQuery>;
+
+    #[pallet::storage]
+    pub type Validators<T: Config> = StorageMap<
+        _,
+        Twox64Concat,
+        ValidatorId,
+        ChainValidator<T::AccountId, BalanceOf<T>>,
+        OptionQuery,
+    >;
+
+    #[pallet::storage]
+    pub type ProofRecords<T: Config> =
+        StorageMap<_, Twox64Concat, RequestId, ChainProofRecord, OptionQuery>;
+
+    #[pallet::storage]
+    pub type TotalBurned<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
+
+    #[pallet::event]
+    #[pallet::generate_deposit(pub(super) fn deposit_event)]
+    pub enum Event<T: Config> {
+        /// A subnet was created.
+        SubnetCreated {
+            subnet_id: SubnetId,
+            owner: T::AccountId,
+        },
+        /// A miner was registered.
+        MinerRegistered {
+            miner_id: MinerId,
+            subnet_id: SubnetId,
+            operator: T::AccountId,
+        },
+        /// A miner bond was locked and activated.
+        MinerActivated {
+            miner_id: MinerId,
+            bond: BalanceOf<T>,
+        },
+        /// A validator was registered and staked.
+        ValidatorRegistered {
+            validator_id: ValidatorId,
+            subnet_id: SubnetId,
+            operator: T::AccountId,
+        },
+        /// A proof record was accepted.
+        ProofAccepted {
+            request_id: RequestId,
+            miner_id: MinerId,
+            validator_id: ValidatorId,
+        },
+        /// A miner was slashed.
+        MinerSlashed {
+            miner_id: MinerId,
+            amount: BalanceOf<T>,
+        },
+    }
+
+    #[pallet::error]
+    pub enum Error<T> {
+        /// Arithmetic overflow.
+        ArithmeticOverflow,
+        /// The subnet does not exist.
+        UnknownSubnet,
+        /// The miner does not exist.
+        UnknownMiner,
+        /// The validator does not exist.
+        UnknownValidator,
+        /// The requested proof system does not match subnet policy.
+        ProofSystemMismatch,
+        /// Bond amount is outside subnet bounds.
+        InvalidBond,
+        /// Validator stake is below subnet minimum.
+        InvalidStake,
+        /// Miner or validator is not active.
+        NotActive,
+        /// Caller is not the registered operator.
+        NotOperator,
+        /// Commitment cannot be all zeros.
+        MissingCommitment,
+        /// Proof size metadata is outside accepted bounds.
+        InvalidProofSize,
+        /// Verification latency exceeds policy.
+        LatencyExceeded,
+        /// Slash percentage is outside accepted bounds.
+        InvalidSlashPercent,
+    }
+
+    #[pallet::call]
+    impl<T: Config> Pallet<T> {
+        /// Create a permissionless Qubitum subnet by burning QBT.
+        #[pallet::call_index(0)]
+        #[pallet::weight(Weight::from_parts(20_000, 0))]
+        pub fn create_subnet(
+            origin: OriginFor<T>,
+            domain: SubnetDomain,
+            proof_system: ProofSystem,
+        ) -> DispatchResult {
+            let owner = ensure_signed(origin)?;
+            Self::burn_free(&owner, T::SubnetCreationBurn::get())?;
+
+            let subnet_id = Self::next_subnet_id()?;
+            let subnet = ChainSubnet {
+                id: subnet_id,
+                owner: owner.clone(),
+                domain,
+                proof_system,
+                creation_burn: T::SubnetCreationBurn::get(),
+                min_miner_bond: T::MinMinerBond::get(),
+                max_miner_bond: T::MaxMinerBond::get(),
+                min_validator_stake: T::MinValidatorStake::get(),
+                active: true,
+            };
+
+            Subnets::<T>::insert(subnet_id, subnet);
+            Self::deposit_event(Event::SubnetCreated { subnet_id, owner });
+            Ok(())
+        }
+
+        /// Register a miner by burning QBT and committing to a model.
+        #[pallet::call_index(1)]
+        #[pallet::weight(Weight::from_parts(20_000, 0))]
+        pub fn register_miner(
+            origin: OriginFor<T>,
+            subnet_id: SubnetId,
+            model_commitment: Commitment,
+            proof_system: ProofSystem,
+        ) -> DispatchResult {
+            let operator = ensure_signed(origin)?;
+            ensure_commitment::<T>(model_commitment)?;
+            let subnet = Subnets::<T>::get(subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
+            ensure!(
+                subnet.proof_system == proof_system,
+                Error::<T>::ProofSystemMismatch
+            );
+
+            Self::burn_free(&operator, T::MinerRegistrationBurn::get())?;
+            let miner_id = Self::next_miner_id()?;
+            let miner = ChainMiner {
+                id: miner_id,
+                operator: operator.clone(),
+                subnet_id,
+                model_commitment,
+                proof_system,
+                bond: BalanceOf::<T>::default(),
+                status: RegistryStatus::Pending,
+            };
+
+            Miners::<T>::insert(miner_id, miner);
+            Self::deposit_event(Event::MinerRegistered {
+                miner_id,
+                subnet_id,
+                operator,
+            });
+            Ok(())
+        }
+
+        /// Lock a miner bond and activate the miner.
+        #[pallet::call_index(2)]
+        #[pallet::weight(Weight::from_parts(20_000, 0))]
+        pub fn activate_miner(
+            origin: OriginFor<T>,
+            miner_id: MinerId,
+            bond: BalanceOf<T>,
+        ) -> DispatchResult {
+            let operator = ensure_signed(origin)?;
+            Miners::<T>::try_mutate(miner_id, |maybe_miner| -> DispatchResult {
+                let miner = maybe_miner.as_mut().ok_or(Error::<T>::UnknownMiner)?;
+                ensure!(miner.operator == operator, Error::<T>::NotOperator);
+                let subnet = Subnets::<T>::get(miner.subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
+                ensure!(
+                    bond >= subnet.min_miner_bond && bond <= subnet.max_miner_bond,
+                    Error::<T>::InvalidBond
+                );
+
+                T::Currency::hold(&HoldReason::MinerBond.into(), &operator, bond)?;
+                miner.bond = bond;
+                miner.status = RegistryStatus::Active;
+                Ok(())
+            })?;
+
+            Self::deposit_event(Event::MinerActivated { miner_id, bond });
+            Ok(())
+        }
+
+        /// Register and stake a validator for a subnet.
+        #[pallet::call_index(3)]
+        #[pallet::weight(Weight::from_parts(20_000, 0))]
+        pub fn register_validator(
+            origin: OriginFor<T>,
+            subnet_id: SubnetId,
+            stake: BalanceOf<T>,
+        ) -> DispatchResult {
+            let operator = ensure_signed(origin)?;
+            let subnet = Subnets::<T>::get(subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
+            ensure!(
+                stake >= subnet.min_validator_stake,
+                Error::<T>::InvalidStake
+            );
+            T::Currency::hold(&HoldReason::ValidatorStake.into(), &operator, stake)?;
+
+            let validator_id = Self::next_validator_id()?;
+            let validator = ChainValidator {
+                id: validator_id,
+                operator: operator.clone(),
+                subnet_id,
+                stake,
+                status: RegistryStatus::Active,
+            };
+
+            Validators::<T>::insert(validator_id, validator);
+            Self::deposit_event(Event::ValidatorRegistered {
+                validator_id,
+                subnet_id,
+                operator,
+            });
+            Ok(())
+        }
+
+        /// Submit a proof record after validator verification.
+        #[pallet::call_index(4)]
+        #[pallet::weight(Weight::from_parts(30_000, 0))]
+        pub fn submit_proof(
+            origin: OriginFor<T>,
+            submission: InferenceProofSubmission,
+        ) -> DispatchResult {
+            let _who = ensure_signed(origin)?;
+            Self::validate_submission(&submission)?;
+
+            ProofRecords::<T>::insert(
+                submission.request_id,
+                ChainProofRecord {
+                    request_id: submission.request_id,
+                    subnet_id: submission.subnet_id,
+                    miner_id: submission.miner_id,
+                    validator_id: submission.validator_id,
+                    input_commitment: submission.input_commitment,
+                    output_commitment: submission.output_commitment,
+                    model_commitment: submission.model_commitment,
+                    proof_commitment: submission.proof_commitment,
+                },
+            );
+
+            Self::deposit_event(Event::ProofAccepted {
+                request_id: submission.request_id,
+                miner_id: submission.miner_id,
+                validator_id: submission.validator_id,
+            });
+            Ok(())
+        }
+
+        /// Slash a miner bond for invalid proof behavior.
+        #[pallet::call_index(5)]
+        #[pallet::weight(Weight::from_parts(20_000, 0))]
+        pub fn slash_miner(
+            origin: OriginFor<T>,
+            miner_id: MinerId,
+            slash_bps: u16,
+        ) -> DispatchResult {
+            ensure_root(origin)?;
+            ensure!(
+                slash_bps >= T::MinInvalidProofSlashBps::get()
+                    && slash_bps <= T::MaxInvalidProofSlashBps::get(),
+                Error::<T>::InvalidSlashPercent
+            );
+
+            let amount = Miners::<T>::try_mutate(miner_id, |maybe_miner| {
+                let miner = maybe_miner.as_mut().ok_or(Error::<T>::UnknownMiner)?;
+                let slash_amount = pro_rata::<T>(miner.bond, slash_bps)?;
+                let burned = T::Currency::burn_held(
+                    &HoldReason::MinerBond.into(),
+                    &miner.operator,
+                    slash_amount,
+                    Precision::Exact,
+                    Fortitude::Force,
+                )?;
+                miner.bond = miner
+                    .bond
+                    .checked_sub(&burned)
+                    .ok_or(Error::<T>::ArithmeticOverflow)?;
+                if miner.bond < T::MinMinerBond::get() {
+                    miner.status = RegistryStatus::Slashed;
+                }
+                Ok::<BalanceOf<T>, DispatchError>(burned)
+            })?;
+
+            TotalBurned::<T>::mutate(|total| {
+                *total = total.saturating_add(amount);
+            });
+            Self::deposit_event(Event::MinerSlashed { miner_id, amount });
+            Ok(())
+        }
+    }
+
+    impl<T: Config> Pallet<T> {
+        fn next_subnet_id() -> Result<SubnetId, DispatchError> {
+            let id = SubnetCount::<T>::get();
+            let next = id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
+            SubnetCount::<T>::put(next);
+            Ok(id)
+        }
+
+        fn next_miner_id() -> Result<MinerId, DispatchError> {
+            let id = MinerCount::<T>::get();
+            let next = id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
+            MinerCount::<T>::put(next);
+            Ok(id)
+        }
+
+        fn next_validator_id() -> Result<ValidatorId, DispatchError> {
+            let id = ValidatorCount::<T>::get();
+            let next = id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
+            ValidatorCount::<T>::put(next);
+            Ok(id)
+        }
+
+        fn burn_free(who: &T::AccountId, amount: BalanceOf<T>) -> DispatchResult {
+            let burned = T::Currency::burn_from(
+                who,
+                amount,
+                Preservation::Expendable,
+                Precision::Exact,
+                Fortitude::Polite,
+            )?;
+            TotalBurned::<T>::mutate(|total| {
+                *total = total.saturating_add(burned);
+            });
+            Ok(())
+        }
+
+        fn validate_submission(submission: &InferenceProofSubmission) -> DispatchResult {
+            ensure_commitment::<T>(submission.input_commitment)?;
+            ensure_commitment::<T>(submission.output_commitment)?;
+            ensure_commitment::<T>(submission.model_commitment)?;
+            ensure_commitment::<T>(submission.proof_commitment)?;
+
+            let subnet =
+                Subnets::<T>::get(submission.subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
+            ensure!(
+                subnet.proof_system == submission.proof_system,
+                Error::<T>::ProofSystemMismatch
+            );
+            ensure!(
+                submission.proof_size_bytes >= T::MinProofSizeBytes::get()
+                    && submission.proof_size_bytes <= T::MaxProofSizeBytes::get(),
+                Error::<T>::InvalidProofSize
+            );
+            ensure!(
+                submission.verification_latency_ms <= T::MaxVerificationLatencyMs::get(),
+                Error::<T>::LatencyExceeded
+            );
+
+            let miner = Miners::<T>::get(submission.miner_id).ok_or(Error::<T>::UnknownMiner)?;
+            ensure!(
+                miner.subnet_id == submission.subnet_id && miner.status == RegistryStatus::Active,
+                Error::<T>::NotActive
+            );
+            let validator = Validators::<T>::get(submission.validator_id)
+                .ok_or(Error::<T>::UnknownValidator)?;
+            ensure!(
+                validator.subnet_id == submission.subnet_id
+                    && validator.status == RegistryStatus::Active,
+                Error::<T>::NotActive
+            );
+            Ok(())
+        }
+    }
+}
+
+fn ensure_commitment<T: Config>(commitment: Commitment) -> DispatchResult {
+    ensure!(commitment != [0; 32], pallet::Error::<T>::MissingCommitment);
+    Ok(())
+}
+
+fn pro_rata<T: Config>(amount: BalanceOf<T>, bps: u16) -> Result<BalanceOf<T>, DispatchError> {
+    let bps: BalanceOf<T> = u64::from(bps).saturated_into();
+    let denominator: BalanceOf<T> = u64::from(qubitum_protocol::BPS_DENOMINATOR).saturated_into();
+    amount
+        .checked_mul(&bps)
+        .and_then(|value| value.checked_div(&denominator))
+        .ok_or_else(|| pallet::Error::<T>::ArithmeticOverflow.into())
+}

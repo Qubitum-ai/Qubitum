@@ -5,6 +5,7 @@ Qubitum is a post-quantum-ready protocol for private, verifiable AI inference. T
 Current Qubitum implementation entry points:
 
 - Core protocol primitives: [`primitives/qubitum-protocol`](./primitives/qubitum-protocol)
+- On-chain pallet surface: [`pallets/qubitum`](./pallets/qubitum)
 - Protocol notes: [`docs/qubitum-protocol.md`](./docs/qubitum-protocol.md)
 - Single-subnet flow: `cargo run -p qubitum-protocol --example single_subnet`
 - Focused verification: `cargo test -p qubitum-protocol`

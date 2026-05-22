@@ -9,7 +9,7 @@ publish = false
 workspace = true
 
 [dependencies]
-codec = { workspace = true, features = ["derive"] }
+codec = { workspace = true, features = ["derive", "max-encoded-len"] }
 scale-info = { workspace = true, features = ["derive"] }
 
 [features]

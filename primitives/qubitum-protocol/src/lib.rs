@@ -94,7 +94,18 @@ pub enum ProtocolError {
 }
 
 /// Execution proof system used by a subnet or proof submission.
-#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(
+    codec::Decode,
+    codec::DecodeWithMemTracking,
+    codec::Encode,
+    codec::MaxEncodedLen,
+    scale_info::TypeInfo,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub enum ProofSystem {
     Mock,
     RiscZeroStark,
@@ -111,7 +122,18 @@ pub enum SignatureMode {
 }
 
 /// Specialized AI domain for a subnet.
-#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(
+    codec::Decode,
+    codec::DecodeWithMemTracking,
+    codec::Encode,
+    codec::MaxEncodedLen,
+    scale_info::TypeInfo,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub enum SubnetDomain {
     General,
     Vision,
@@ -121,7 +143,18 @@ pub enum SubnetDomain {
 }
 
 /// Entity lifecycle in Qubitum registries.
-#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(
+    codec::Decode,
+    codec::DecodeWithMemTracking,
+    codec::Encode,
+    codec::MaxEncodedLen,
+    scale_info::TypeInfo,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub enum RegistryStatus {
     Pending,
     Active,
@@ -369,7 +402,17 @@ impl ValidatorRegistration {
 }
 
 /// Proof submission routed from a miner through a validator.
-#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Debug, Eq, PartialEq)]
+#[derive(
+    codec::Decode,
+    codec::DecodeWithMemTracking,
+    codec::Encode,
+    codec::MaxEncodedLen,
+    scale_info::TypeInfo,
+    Clone,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct InferenceProofSubmission {
     pub request_id: RequestId,
     pub subnet_id: SubnetId,
