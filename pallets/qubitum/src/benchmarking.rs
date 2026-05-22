@@ -230,6 +230,10 @@ mod benchmarks {
                 output_commitment: commitment(2),
                 model_commitment: commitment(10),
                 proof: proof(11),
+                proof_system: ProofSystem::RiscZeroStark,
+                proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
+                verification_latency_ms: 10,
+                submitted_at: 77,
             })
         );
     }

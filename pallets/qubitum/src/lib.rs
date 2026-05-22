@@ -22,8 +22,8 @@ use frame_support::{
     },
 };
 use qubitum_protocol::{
-    Commitment, InferenceProofSubmission, MinerId, ProofEnvelope, ProofSystem, RegistryStatus,
-    RequestId, SubnetDomain, SubnetId, ValidatorId, VerificationOutcome,
+    BlockNumber, Commitment, InferenceProofSubmission, MinerId, ProofEnvelope, ProofSystem,
+    RegistryStatus, RequestId, SubnetDomain, SubnetId, ValidatorId, VerificationOutcome,
 };
 use scale_info::TypeInfo;
 use sp_runtime::{DispatchError, Saturating, traits::SaturatedConversion};
@@ -259,6 +259,10 @@ pub mod pallet {
         pub output_commitment: Commitment,
         pub model_commitment: Commitment,
         pub proof: ProofEnvelope,
+        pub proof_system: ProofSystem,
+        pub proof_size_bytes: u32,
+        pub verification_latency_ms: u32,
+        pub submitted_at: BlockNumber,
     }
 
     #[pallet::storage]
@@ -545,6 +549,10 @@ pub mod pallet {
                     output_commitment: submission.output_commitment,
                     model_commitment: submission.model_commitment,
                     proof: submission.proof,
+                    proof_system: submission.proof_system,
+                    proof_size_bytes: submission.proof_size_bytes,
+                    verification_latency_ms: submission.verification_latency_ms,
+                    submitted_at: submission.submitted_at,
                 },
             );
 

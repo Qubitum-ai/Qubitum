@@ -185,6 +185,10 @@ fn submit_proof_records_commitments_for_active_participants() {
         assert_eq!(record.proof.proof_commitment, commitment(11));
         assert_eq!(record.proof.journal_commitment, commitment(12));
         assert_eq!(record.proof.image_id, commitment(13));
+        assert_eq!(record.proof_system, ProofSystem::RiscZeroStark);
+        assert_eq!(record.proof_size_bytes, TARGET_PROOF_SIZE_MIN_BYTES);
+        assert_eq!(record.verification_latency_ms, 10);
+        assert_eq!(record.submitted_at, 77);
     });
 }
 
