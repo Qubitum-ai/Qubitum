@@ -1,3 +1,16 @@
+# Qubitum AI
+
+Qubitum is a post-quantum-ready protocol for private, verifiable AI inference. This repository imports OpenTensor/Subtensor history and adds Qubitum-specific protocol milestones on `main`.
+
+Current Qubitum implementation entry points:
+
+- Core protocol primitives: [`primitives/qubitum-protocol`](./primitives/qubitum-protocol)
+- Protocol notes: [`docs/qubitum-protocol.md`](./docs/qubitum-protocol.md)
+- Single-subnet flow: `cargo run -p qubitum-protocol --example single_subnet`
+- Focused verification: `cargo test -p qubitum-protocol`
+
+---
+
 ```commandline             _      _
 ███████╗██╗   ██╗██████╗ ████████╗███████╗███╗   ██╗███████╗ ██████╗ ██████╗
 ██╔════╝██║   ██║██╔══██╗╚══██╔══╝██╔════╝████╗  ██║██╔════╝██╔═══██╗██╔══██╗

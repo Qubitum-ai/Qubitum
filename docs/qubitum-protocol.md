@@ -9,6 +9,16 @@ Qubitum is a marketplace for private, verifiable AI inference. Miners run infere
 3. Multi-subnet: permissionless subnet creation for specialized domains such as vision, code, and biology.
 4. Post-quantum migration: hybrid Dilithium signatures, then full post-quantum account migration.
 
+## Local Single-Subnet Flow
+
+The protocol primitives include a runnable single-subnet scenario:
+
+```sh
+cargo run -p qubitum-protocol --example single_subnet
+```
+
+The example creates a QBT genesis ledger, burns QBT to create a subnet, registers and bonds a miner, registers and stakes a validator, verifies a proof through the mock verifier, records the inference, and settles user payment between miner, validator, and treasury.
+
 ## Core Constants
 
 - Token: QBT
