@@ -198,6 +198,52 @@ mod benchmarks {
     }
 
     #[benchmark]
+    fn deactivate_miner() {
+        let miner = activate_bench_miner::<T>();
+
+        #[extrinsic_call]
+        _(RawOrigin::Signed(miner.clone()), 0);
+
+        let RegistryStatus::Exiting { exit_available_at } = Miners::<T>::get(0).unwrap().status
+        else {
+            panic!("miner must be exiting");
+        };
+        assert!(exit_available_at >= T::MinerExitCooldownBlocks::get());
+        assert_last_event::<T>(
+            Event::<T>::MinerExitStarted {
+                miner_id: 0,
+                exit_available_at,
+            }
+            .into(),
+        );
+    }
+
+    #[benchmark]
+    fn withdraw_miner_bond() {
+        let miner = activate_bench_miner::<T>();
+        Pallet::<T>::deactivate_miner(RawOrigin::Signed(miner.clone()).into(), 0).unwrap();
+        let RegistryStatus::Exiting { exit_available_at } = Miners::<T>::get(0).unwrap().status
+        else {
+            panic!("miner must be exiting");
+        };
+        frame_system::Pallet::<T>::set_block_number(exit_available_at.saturated_into());
+
+        #[extrinsic_call]
+        _(RawOrigin::Signed(miner.clone()), 0);
+
+        let registered_miner = Miners::<T>::get(0).unwrap();
+        assert_eq!(registered_miner.status, RegistryStatus::Disabled);
+        assert_eq!(registered_miner.bond, BalanceOf::<T>::default());
+        assert_last_event::<T>(
+            Event::<T>::MinerBondWithdrawn {
+                miner_id: 0,
+                amount: T::MinMinerBond::get(),
+            }
+            .into(),
+        );
+    }
+
+    #[benchmark]
     fn register_validator() {
         let _owner = create_bench_subnet::<T>();
         let validator: T::AccountId = account("validator", 0, SEED);

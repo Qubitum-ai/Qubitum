@@ -159,6 +159,98 @@ fn activate_miner_rejects_bad_operator_and_bad_bond() {
 }
 
 #[test]
+fn activate_miner_rejects_duplicate_activation() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::General,
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(10),
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            MIN_MINER_BOND
+        ));
+
+        assert_noop!(
+            Qubitum::activate_miner(RuntimeOrigin::signed(2), 0, MIN_MINER_BOND),
+            Error::<Test>::InvalidMinerStatus
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            MIN_MINER_BOND
+        );
+    });
+}
+
+#[test]
+fn miner_exit_requires_cooldown_and_releases_bond() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+
+        assert_noop!(
+            Qubitum::deactivate_miner(RuntimeOrigin::signed(3), 0),
+            Error::<Test>::NotOperator
+        );
+        assert_ok!(Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0));
+
+        let miner = Miners::<Test>::get(0).unwrap();
+        assert_eq!(
+            miner.status,
+            RegistryStatus::Exiting {
+                exit_available_at: 20
+            }
+        );
+
+        assert_noop!(
+            Qubitum::withdraw_miner_bond(RuntimeOrigin::signed(2), 0),
+            Error::<Test>::MinerExitUnavailable
+        );
+
+        System::set_block_number(20);
+        assert_ok!(Qubitum::withdraw_miner_bond(RuntimeOrigin::signed(2), 0));
+
+        let miner = Miners::<Test>::get(0).unwrap();
+        assert_eq!(miner.status, RegistryStatus::Disabled);
+        assert_eq!(miner.bond, 0);
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            0
+        );
+        assert_noop!(
+            Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0),
+            Error::<Test>::InvalidMinerStatus
+        );
+    });
+}
+
+#[test]
+fn slashed_miner_can_exit_with_remaining_bond() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        assert_ok!(Qubitum::slash_miner(RuntimeOrigin::root(), 0, 1_000));
+
+        assert_ok!(Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0));
+        System::set_block_number(20);
+        assert_ok!(Qubitum::withdraw_miner_bond(RuntimeOrigin::signed(2), 0));
+
+        let miner = Miners::<Test>::get(0).unwrap();
+        assert_eq!(miner.status, RegistryStatus::Disabled);
+        assert_eq!(miner.bond, 0);
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            0
+        );
+    });
+}
+
+#[test]
 fn register_validator_locks_stake() {
     new_test_ext().execute_with(|| {
         assert_ok!(Qubitum::create_subnet(

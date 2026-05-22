@@ -14,6 +14,8 @@ pub trait WeightInfo {
     fn create_subnet() -> Weight;
     fn register_miner() -> Weight;
     fn activate_miner() -> Weight;
+    fn deactivate_miner() -> Weight;
+    fn withdraw_miner_bond() -> Weight;
     fn register_validator() -> Weight;
     fn submit_proof() -> Weight;
     fn slash_miner() -> Weight;
@@ -41,6 +43,18 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
         Weight::from_parts(70_000_000, 7_000)
             .saturating_add(T::DbWeight::get().reads(3_u64))
             .saturating_add(T::DbWeight::get().writes(3_u64))
+    }
+
+    fn deactivate_miner() -> Weight {
+        Weight::from_parts(45_000_000, 5_000)
+            .saturating_add(T::DbWeight::get().reads(1_u64))
+            .saturating_add(T::DbWeight::get().writes(1_u64))
+    }
+
+    fn withdraw_miner_bond() -> Weight {
+        Weight::from_parts(55_000_000, 6_500)
+            .saturating_add(T::DbWeight::get().reads(2_u64))
+            .saturating_add(T::DbWeight::get().writes(2_u64))
     }
 
     fn register_validator() -> Weight {
@@ -91,6 +105,18 @@ impl WeightInfo for () {
         Weight::from_parts(70_000_000, 7_000)
             .saturating_add(RocksDbWeight::get().reads(3_u64))
             .saturating_add(RocksDbWeight::get().writes(3_u64))
+    }
+
+    fn deactivate_miner() -> Weight {
+        Weight::from_parts(45_000_000, 5_000)
+            .saturating_add(RocksDbWeight::get().reads(1_u64))
+            .saturating_add(RocksDbWeight::get().writes(1_u64))
+    }
+
+    fn withdraw_miner_bond() -> Weight {
+        Weight::from_parts(55_000_000, 6_500)
+            .saturating_add(RocksDbWeight::get().reads(2_u64))
+            .saturating_add(RocksDbWeight::get().writes(2_u64))
     }
 
     fn register_validator() -> Weight {

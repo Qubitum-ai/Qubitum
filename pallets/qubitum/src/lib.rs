@@ -202,6 +202,10 @@ pub mod pallet {
         /// Account receiving protocol treasury fees from inference settlement.
         type ProtocolTreasury: Get<Self::AccountId>;
 
+        /// Delay before an exiting miner can withdraw remaining bond.
+        #[pallet::constant]
+        type MinerExitCooldownBlocks: Get<BlockNumber>;
+
         /// Minimum age of a pending inference request before user cancellation.
         #[pallet::constant]
         type RequestCancelDelayBlocks: Get<BlockNumber>;
@@ -368,6 +372,16 @@ pub mod pallet {
             miner_id: MinerId,
             bond: BalanceOf<T>,
         },
+        /// A miner started the bond exit cooldown.
+        MinerExitStarted {
+            miner_id: MinerId,
+            exit_available_at: BlockNumber,
+        },
+        /// A miner bond was released after cooldown.
+        MinerBondWithdrawn {
+            miner_id: MinerId,
+            amount: BalanceOf<T>,
+        },
         /// A validator was registered and staked.
         ValidatorRegistered {
             validator_id: ValidatorId,
@@ -432,6 +446,10 @@ pub mod pallet {
         InvalidStake,
         /// Miner or validator is not active.
         NotActive,
+        /// Miner status does not allow this lifecycle transition.
+        InvalidMinerStatus,
+        /// Miner exit cooldown has not completed.
+        MinerExitUnavailable,
         /// Caller is not the registered operator.
         NotOperator,
         /// Caller is not the validator assigned to the proof.
@@ -550,6 +568,10 @@ pub mod pallet {
             Miners::<T>::try_mutate(miner_id, |maybe_miner| -> DispatchResult {
                 let miner = maybe_miner.as_mut().ok_or(Error::<T>::UnknownMiner)?;
                 ensure!(miner.operator == operator, Error::<T>::NotOperator);
+                ensure!(
+                    miner.status == RegistryStatus::Pending,
+                    Error::<T>::InvalidMinerStatus
+                );
                 let subnet = Subnets::<T>::get(miner.subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
                 ensure!(
                     bond >= subnet.min_miner_bond && bond <= subnet.max_miner_bond,
@@ -771,6 +793,76 @@ pub mod pallet {
                 user,
                 payment,
             });
+            Ok(())
+        }
+
+        /// Start a miner exit cooldown before remaining bond can be withdrawn.
+        #[pallet::call_index(8)]
+        #[pallet::weight(T::WeightInfo::deactivate_miner())]
+        pub fn deactivate_miner(origin: OriginFor<T>, miner_id: MinerId) -> DispatchResult {
+            let operator = ensure_signed(origin)?;
+            let exit_available_at = Self::current_block()
+                .checked_add(T::MinerExitCooldownBlocks::get())
+                .ok_or(Error::<T>::ArithmeticOverflow)?;
+
+            Miners::<T>::try_mutate(miner_id, |maybe_miner| -> DispatchResult {
+                let miner = maybe_miner.as_mut().ok_or(Error::<T>::UnknownMiner)?;
+                ensure!(miner.operator == operator, Error::<T>::NotOperator);
+                ensure!(
+                    matches!(
+                        miner.status,
+                        RegistryStatus::Active | RegistryStatus::Slashed
+                    ),
+                    Error::<T>::InvalidMinerStatus
+                );
+                miner.status = RegistryStatus::Exiting { exit_available_at };
+                Ok(())
+            })?;
+
+            Self::deposit_event(Event::MinerExitStarted {
+                miner_id,
+                exit_available_at,
+            });
+            Ok(())
+        }
+
+        /// Withdraw remaining miner bond after the exit cooldown completes.
+        #[pallet::call_index(9)]
+        #[pallet::weight(T::WeightInfo::withdraw_miner_bond())]
+        #[frame_support::transactional]
+        pub fn withdraw_miner_bond(origin: OriginFor<T>, miner_id: MinerId) -> DispatchResult {
+            let operator = ensure_signed(origin)?;
+            let amount = Miners::<T>::try_mutate(
+                miner_id,
+                |maybe_miner| -> Result<BalanceOf<T>, DispatchError> {
+                    let miner = maybe_miner.as_mut().ok_or(Error::<T>::UnknownMiner)?;
+                    ensure!(miner.operator == operator, Error::<T>::NotOperator);
+                    let RegistryStatus::Exiting { exit_available_at } = miner.status else {
+                        return Err(Error::<T>::InvalidMinerStatus.into());
+                    };
+                    ensure!(
+                        Self::current_block() >= exit_available_at,
+                        Error::<T>::MinerExitUnavailable
+                    );
+
+                    let amount = miner.bond;
+                    let released = if amount == BalanceOf::<T>::default() {
+                        amount
+                    } else {
+                        T::Currency::release(
+                            &HoldReason::MinerBond.into(),
+                            &miner.operator,
+                            amount,
+                            Precision::Exact,
+                        )?
+                    };
+                    miner.bond = BalanceOf::<T>::default();
+                    miner.status = RegistryStatus::Disabled;
+                    Ok(released)
+                },
+            )?;
+
+            Self::deposit_event(Event::MinerBondWithdrawn { miner_id, amount });
             Ok(())
         }
     }
@@ -999,7 +1091,9 @@ pub mod pallet {
                     .bond
                     .checked_sub(&burned)
                     .ok_or(Error::<T>::ArithmeticOverflow)?;
-                if miner.bond < T::MinMinerBond::get() {
+                if miner.bond < T::MinMinerBond::get()
+                    && !matches!(miner.status, RegistryStatus::Exiting { .. })
+                {
                     miner.status = RegistryStatus::Slashed;
                 }
                 Ok::<BalanceOf<T>, DispatchError>(burned)
