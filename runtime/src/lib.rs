@@ -272,7 +272,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     //   `spec_version`, and `authoring_version` are the same between Wasm and native.
     // This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
     //   the compatible custom types.
-    spec_version: 432,
+    spec_version: 433,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 3,
@@ -2659,18 +2659,6 @@ impl_runtime_apis! {
 
         fn qubitum_next_request_id() -> qubitum_protocol::RequestId {
             pallet_qubitum::RequestCount::<Runtime>::get()
-        }
-
-        fn qubitum_pending_miner_requests(
-            miner_id: qubitum_protocol::MinerId,
-        ) -> qubitum_protocol::RequestId {
-            pallet_qubitum::PendingMinerRequests::<Runtime>::get(miner_id)
-        }
-
-        fn qubitum_pending_validator_requests(
-            validator_id: qubitum_protocol::ValidatorId,
-        ) -> qubitum_protocol::RequestId {
-            pallet_qubitum::PendingValidatorRequests::<Runtime>::get(validator_id)
         }
 
         fn qubitum_counts() -> (
