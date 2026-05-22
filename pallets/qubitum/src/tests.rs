@@ -65,7 +65,7 @@ fn valid_submission(request_id: u64) -> InferenceProofSubmission {
         proof_system: ProofSystem::RiscZeroStark,
         proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
         verification_latency_ms: 10,
-        submitted_at: 77,
+        submitted_at: System::block_number(),
     }
 }
 
@@ -993,6 +993,30 @@ fn submit_proof_rejects_latency_or_missing_commitment() {
         assert_noop!(
             Qubitum::submit_proof(RuntimeOrigin::signed(3), wrong_verifier),
             Error::<Test>::ProofSystemMismatch
+        );
+    });
+}
+
+#[test]
+fn submit_proof_rejects_future_or_expired_timestamp() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        System::set_block_number(20);
+        request_inference(60);
+
+        let mut future = valid_submission(60);
+        future.submitted_at = 21;
+        assert_noop!(
+            Qubitum::submit_proof(RuntimeOrigin::signed(3), future),
+            Error::<Test>::ProofSubmittedFromFuture
+        );
+
+        request_inference(61);
+        let mut expired = valid_submission(61);
+        expired.submitted_at = 9;
+        assert_noop!(
+            Qubitum::submit_proof(RuntimeOrigin::signed(3), expired),
+            Error::<Test>::ProofSubmissionExpired
         );
     });
 }

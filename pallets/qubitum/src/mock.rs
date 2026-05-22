@@ -59,6 +59,7 @@ parameter_types! {
     pub const MinProofSizeBytes: u32 = qubitum_protocol::TARGET_PROOF_SIZE_MIN_BYTES;
     pub const MaxProofSizeBytes: u32 = qubitum_protocol::TARGET_PROOF_SIZE_MAX_BYTES;
     pub const MaxVerificationLatencyMs: u32 = qubitum_protocol::TARGET_VERIFICATION_MS;
+    pub const MaxProofSubmissionAgeBlocks: u64 = 10;
     pub const ProtocolTreasury: AccountId = 99;
     pub const MinerExitCooldownBlocks: u64 = 20;
     pub const ValidatorExitCooldownBlocks: u64 = 20;
@@ -105,6 +106,7 @@ impl pallet_qubitum::Config for Test {
     type MinProofSizeBytes = MinProofSizeBytes;
     type MaxProofSizeBytes = MaxProofSizeBytes;
     type MaxVerificationLatencyMs = MaxVerificationLatencyMs;
+    type MaxProofSubmissionAgeBlocks = MaxProofSubmissionAgeBlocks;
     type RuntimeHoldReason = RuntimeHoldReason;
     type WeightInfo = ();
     type ProofVerifier = TestProofVerifier;

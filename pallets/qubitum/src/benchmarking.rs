@@ -90,7 +90,7 @@ fn register_bench_validator<T: Config>() -> T::AccountId {
     validator
 }
 
-fn proof_submission() -> InferenceProofSubmission {
+fn proof_submission<T: Config>() -> InferenceProofSubmission {
     InferenceProofSubmission {
         request_id: 42,
         subnet_id: 0,
@@ -103,7 +103,7 @@ fn proof_submission() -> InferenceProofSubmission {
         proof_system: ProofSystem::RiscZeroStark,
         proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
         verification_latency_ms: 10,
-        submitted_at: 77,
+        submitted_at: frame_system::Pallet::<T>::block_number().saturated_into(),
     }
 }
 
@@ -332,7 +332,7 @@ mod benchmarks {
         let _miner = activate_bench_miner::<T>();
         let validator = register_bench_validator::<T>();
         let _user = request_bench_inference::<T>(42);
-        let submission = proof_submission();
+        let submission = proof_submission::<T>();
         let submitted_at = frame_system::Pallet::<T>::block_number().saturated_into();
 
         #[extrinsic_call]

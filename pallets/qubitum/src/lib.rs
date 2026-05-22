@@ -202,6 +202,10 @@ pub mod pallet {
         #[pallet::constant]
         type MaxVerificationLatencyMs: Get<u32>;
 
+        /// Maximum accepted age of proof submission metadata.
+        #[pallet::constant]
+        type MaxProofSubmissionAgeBlocks: Get<BlockNumber>;
+
         /// Runtime hold reason adapter.
         type RuntimeHoldReason: From<HoldReason>;
 
@@ -663,6 +667,10 @@ pub mod pallet {
         InvalidProofSize,
         /// Verification latency exceeds policy.
         LatencyExceeded,
+        /// Proof submission timestamp is ahead of the current block.
+        ProofSubmittedFromFuture,
+        /// Proof submission timestamp is older than the accepted age window.
+        ProofSubmissionExpired,
         /// Slash percentage is outside accepted bounds.
         InvalidSlashPercent,
         /// Proof verifier reported an internal error.
@@ -1811,6 +1819,7 @@ pub mod pallet {
                 submission.verification_latency_ms <= T::MaxVerificationLatencyMs::get(),
                 Error::<T>::LatencyExceeded
             );
+            Self::ensure_submission_fresh(submission.submitted_at)?;
 
             let miner = Miners::<T>::get(submission.miner_id).ok_or(Error::<T>::UnknownMiner)?;
             ensure!(
@@ -1841,6 +1850,19 @@ pub mod pallet {
                 max_proof_size_bytes: T::MaxProofSizeBytes::get(),
                 max_verification_latency_ms: T::MaxVerificationLatencyMs::get(),
             })
+        }
+
+        fn ensure_submission_fresh(submitted_at: BlockNumber) -> DispatchResult {
+            let current = Self::current_block();
+            ensure!(
+                submitted_at <= current,
+                Error::<T>::ProofSubmittedFromFuture
+            );
+            ensure!(
+                submitted_at >= current.saturating_sub(T::MaxProofSubmissionAgeBlocks::get()),
+                Error::<T>::ProofSubmissionExpired
+            );
+            Ok(())
         }
 
         fn settle_request_payment(
