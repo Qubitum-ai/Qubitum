@@ -1,7 +1,8 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use pallet_qubitum::{
-    ChainInferenceRequest, ChainMiner, ChainProofRecord, ChainSubnet, ChainValidator,
+    ChainAssignment, ChainInferenceRequest, ChainMiner, ChainProofRecord, ChainSubnet,
+    ChainValidator,
 };
 use qubitum_protocol::{MinerId, RequestId, SubnetId, ValidatorId};
 use sp_runtime::AccountId32;
@@ -14,6 +15,7 @@ sp_api::decl_runtime_apis! {
         fn qubitum_validator(validator_id: ValidatorId) -> Option<ChainValidator<AccountId32, TaoBalance>>;
         fn qubitum_inference_request(request_id: RequestId) -> Option<ChainInferenceRequest<AccountId32, TaoBalance>>;
         fn qubitum_proof_record(request_id: RequestId) -> Option<ChainProofRecord>;
+        fn qubitum_route_assignment(subnet_id: SubnetId, request_id: RequestId) -> Option<ChainAssignment>;
         fn qubitum_counts() -> (SubnetId, MinerId, ValidatorId);
         fn qubitum_total_burned() -> TaoBalance;
     }

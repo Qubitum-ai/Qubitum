@@ -463,7 +463,7 @@ fn request_inference_requires_active_assigned_participants() {
                     treasury_fee_bps: 50,
                 },
             ),
-            Error::<Test>::UnknownMiner
+            Error::<Test>::NoRouteAvailable
         );
 
         assert_ok!(Qubitum::register_miner(
@@ -492,7 +492,72 @@ fn request_inference_requires_active_assigned_participants() {
                     treasury_fee_bps: 50,
                 },
             ),
-            Error::<Test>::NotActive
+            Error::<Test>::NoRouteAvailable
+        );
+    });
+}
+
+#[test]
+fn route_assignment_returns_active_participants_only() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        assert_eq!(
+            Qubitum::route_assignment(0, 42).map(|assignment| {
+                (
+                    assignment.request_id,
+                    assignment.subnet_id,
+                    assignment.miner_id,
+                    assignment.validator_id,
+                )
+            }),
+            Some((42, 0, 0, 0))
+        );
+
+        assert_ok!(Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0));
+        assert_eq!(Qubitum::route_assignment(0, 42), None);
+    });
+}
+
+#[test]
+fn request_inference_rejects_non_canonical_assignment() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(10),
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            1,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(3),
+            0,
+            MIN_MINER_BOND
+        ));
+
+        let assignment = Qubitum::route_assignment(0, 52).unwrap();
+        assert_eq!(assignment.miner_id, 0);
+        assert_eq!(assignment.validator_id, 0);
+
+        assert_noop!(
+            Qubitum::request_inference(
+                RuntimeOrigin::signed(4),
+                52,
+                InferenceRequestParams {
+                    subnet_id: 0,
+                    miner_id: 1,
+                    validator_id: assignment.validator_id,
+                    input_commitment: commitment(1),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::AssignmentMismatch
         );
     });
 }

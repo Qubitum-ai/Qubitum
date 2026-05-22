@@ -27,6 +27,7 @@ use qubitum_protocol::{
 };
 use scale_info::TypeInfo;
 use sp_runtime::{DispatchError, Saturating, traits::SaturatedConversion};
+use sp_std::vec::Vec;
 
 type BalanceOf<T> =
     <<T as Config>::Currency as fungible::Inspect<<T as frame_system::Config>::AccountId>>::Balance;
@@ -318,6 +319,25 @@ pub mod pallet {
     }
 
     #[derive(
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        TypeInfo,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Debug,
+        MaxEncodedLen,
+    )]
+    pub struct ChainAssignment {
+        pub request_id: RequestId,
+        pub subnet_id: SubnetId,
+        pub miner_id: MinerId,
+        pub validator_id: ValidatorId,
+    }
+
+    #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
     pub struct InferenceRequestParams<Balance> {
@@ -514,6 +534,10 @@ pub mod pallet {
         RequestMismatch,
         /// Assigned miner or validator does not belong to the request subnet.
         ParticipantMismatch,
+        /// No active miner and validator route is available for the subnet.
+        NoRouteAvailable,
+        /// Submitted assignment does not match the deterministic route.
+        AssignmentMismatch,
         /// Inference payment must be greater than zero.
         InvalidPayment,
         /// Validator and treasury fee split is invalid.
@@ -772,6 +796,13 @@ pub mod pallet {
             Self::validate_fee_split(params.validator_fee_bps, params.treasury_fee_bps)?;
             let subnet = Subnets::<T>::get(params.subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
             ensure!(subnet.active, Error::<T>::NotActive);
+            let assignment = Self::route_assignment(params.subnet_id, request_id)
+                .ok_or(Error::<T>::NoRouteAvailable)?;
+            ensure!(
+                assignment.miner_id == params.miner_id
+                    && assignment.validator_id == params.validator_id,
+                Error::<T>::AssignmentMismatch
+            );
             Self::ensure_request_assignment(
                 params.subnet_id,
                 params.miner_id,
@@ -1027,6 +1058,27 @@ pub mod pallet {
     }
 
     impl<T: Config> Pallet<T> {
+        pub fn route_assignment(
+            subnet_id: SubnetId,
+            request_id: RequestId,
+        ) -> Option<ChainAssignment> {
+            let subnet = Subnets::<T>::get(subnet_id)?;
+            if !subnet.active {
+                return None;
+            }
+
+            let miner_id = Self::route_active_miner(subnet_id, request_id)?;
+            let validator_seed = request_id.rotate_left(32) ^ u64::from(subnet_id);
+            let validator_id = Self::route_active_validator(subnet_id, validator_seed)?;
+
+            Some(ChainAssignment {
+                request_id,
+                subnet_id,
+                miner_id,
+                validator_id,
+            })
+        }
+
         fn next_subnet_id() -> Result<SubnetId, DispatchError> {
             let id = SubnetCount::<T>::get();
             let next = id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
@@ -1050,6 +1102,40 @@ pub mod pallet {
 
         fn current_block() -> BlockNumber {
             frame_system::Pallet::<T>::block_number().saturated_into()
+        }
+
+        fn route_active_miner(subnet_id: SubnetId, seed: u64) -> Option<MinerId> {
+            let mut ids: Vec<MinerId> = Miners::<T>::iter()
+                .filter_map(|(miner_id, miner)| {
+                    (miner.subnet_id == subnet_id && miner.status == RegistryStatus::Active)
+                        .then_some(miner_id)
+                })
+                .collect();
+            if ids.is_empty() {
+                return None;
+            }
+
+            ids.sort_unstable();
+            let count: u64 = ids.len().try_into().ok()?;
+            let target: usize = seed.checked_rem(count)?.try_into().ok()?;
+            ids.get(target).copied()
+        }
+
+        fn route_active_validator(subnet_id: SubnetId, seed: u64) -> Option<ValidatorId> {
+            let mut ids: Vec<ValidatorId> = Validators::<T>::iter()
+                .filter_map(|(validator_id, validator)| {
+                    (validator.subnet_id == subnet_id && validator.status == RegistryStatus::Active)
+                        .then_some(validator_id)
+                })
+                .collect();
+            if ids.is_empty() {
+                return None;
+            }
+
+            ids.sort_unstable();
+            let count: u64 = ids.len().try_into().ok()?;
+            let target: usize = seed.checked_rem(count)?.try_into().ok()?;
+            ids.get(target).copied()
         }
 
         fn burn_free(who: &T::AccountId, amount: BalanceOf<T>) -> DispatchResult {

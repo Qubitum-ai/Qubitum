@@ -35,7 +35,7 @@ The core protocol structs and enums derive SCALE `Encode`/`Decode` plus `scale-i
 
 The pallet is wired into `node-subtensor-runtime` as `Qubitum`, with runtime-provided weights and a FRAME benchmarking suite for all dispatchables. Placeholder weights are isolated behind `pallet_qubitum::weights::WeightInfo` so generated benchmark output can replace them without changing call logic.
 
-Users open inference requests by escrowing QBT against a request ID, subnet, assigned miner, assigned validator, input commitment, and fee split. The pallet verifies that the assigned miner and validator are active members of the subnet before holding funds. Valid proof submission must match the request assignment, then settles that held payment atomically: miner payment, validator fee, and protocol treasury fee are transferred from escrow, and the request status moves from pending to settled. Invalid verifier outcomes slash both the miner bond and validator stake without settling the user escrow. Pending requests can be cancelled by the request owner after the configured cancellation delay to release escrow.
+Users open inference requests by escrowing QBT against a request ID, subnet, assigned miner, assigned validator, input commitment, and fee split. The pallet deterministically routes each request to active subnet participants and rejects non-canonical assignments before holding funds. Valid proof submission must match the request assignment, then settles that held payment atomically: miner payment, validator fee, and protocol treasury fee are transferred from escrow, and the request status moves from pending to settled. Invalid verifier outcomes slash both the miner bond and validator stake without settling the user escrow. Pending requests can be cancelled by the request owner after the configured cancellation delay to release escrow.
 
 Miners can exit by moving from active or slashed status into an on-chain cooldown. While exiting, they cannot submit new work, but their remaining held bond is still slashable. After the cooldown expires, the operator can withdraw the residual bond and the miner becomes disabled.
 
@@ -54,7 +54,7 @@ The proof envelope commits to the off-chain proof artifact without storing raw p
 
 This keeps block execution bounded while preserving enough metadata for validators, indexers, and future Risc Zero adapters to audit what was verified. Accepted proof records also retain proof system, proof size, verification latency, and chain-stamped submission block metadata for RPC consumers.
 
-`pallet-qubitum-runtime-api` exposes typed runtime queries for subnet, miner, validator, inference-request, proof-record, registry-count, and total-burned state. `pallet-qubitum-rpc` wires those queries into node JSON-RPC methods under the `qubitum_*` namespace, returning SCALE-encoded bytes for complex structs and a direct balance for total burned state.
+`pallet-qubitum-runtime-api` exposes typed runtime queries for subnet, miner, validator, inference-request, proof-record, deterministic request assignment, registry-count, and total-burned state. `pallet-qubitum-rpc` wires those queries into node JSON-RPC methods under the `qubitum_*` namespace, returning SCALE-encoded bytes for complex structs and a direct balance for total burned state.
 
 Runtime safe mode explicitly allows Qubitum `submit_proof` so already-routed verified work can keep settling, while blocking Qubitum subnet creation, participant registration, miner exits, new inference requests, and request cancellation until safe mode exits.
 
