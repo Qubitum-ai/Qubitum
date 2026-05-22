@@ -5,7 +5,11 @@ mod mock;
 #[cfg(test)]
 mod tests;
 
+mod benchmarking;
+pub mod weights;
+
 pub use pallet::*;
+pub use weights::WeightInfo;
 
 use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use frame_support::{
@@ -87,6 +91,9 @@ pub mod pallet {
 
         /// Runtime hold reason adapter.
         type RuntimeHoldReason: From<HoldReason>;
+
+        /// Weight information for dispatchables.
+        type WeightInfo: WeightInfo;
     }
 
     #[pallet::composite_enum]
@@ -255,7 +262,7 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         /// Create a permissionless Qubitum subnet by burning QBT.
         #[pallet::call_index(0)]
-        #[pallet::weight(Weight::from_parts(20_000, 0))]
+        #[pallet::weight(T::WeightInfo::create_subnet())]
         pub fn create_subnet(
             origin: OriginFor<T>,
             domain: SubnetDomain,
@@ -284,7 +291,7 @@ pub mod pallet {
 
         /// Register a miner by burning QBT and committing to a model.
         #[pallet::call_index(1)]
-        #[pallet::weight(Weight::from_parts(20_000, 0))]
+        #[pallet::weight(T::WeightInfo::register_miner())]
         pub fn register_miner(
             origin: OriginFor<T>,
             subnet_id: SubnetId,
@@ -322,7 +329,7 @@ pub mod pallet {
 
         /// Lock a miner bond and activate the miner.
         #[pallet::call_index(2)]
-        #[pallet::weight(Weight::from_parts(20_000, 0))]
+        #[pallet::weight(T::WeightInfo::activate_miner())]
         pub fn activate_miner(
             origin: OriginFor<T>,
             miner_id: MinerId,
@@ -350,7 +357,7 @@ pub mod pallet {
 
         /// Register and stake a validator for a subnet.
         #[pallet::call_index(3)]
-        #[pallet::weight(Weight::from_parts(20_000, 0))]
+        #[pallet::weight(T::WeightInfo::register_validator())]
         pub fn register_validator(
             origin: OriginFor<T>,
             subnet_id: SubnetId,
@@ -384,7 +391,7 @@ pub mod pallet {
 
         /// Submit a proof record after validator verification.
         #[pallet::call_index(4)]
-        #[pallet::weight(Weight::from_parts(30_000, 0))]
+        #[pallet::weight(T::WeightInfo::submit_proof())]
         pub fn submit_proof(
             origin: OriginFor<T>,
             submission: InferenceProofSubmission,
@@ -416,7 +423,7 @@ pub mod pallet {
 
         /// Slash a miner bond for invalid proof behavior.
         #[pallet::call_index(5)]
-        #[pallet::weight(Weight::from_parts(20_000, 0))]
+        #[pallet::weight(T::WeightInfo::slash_miner())]
         pub fn slash_miner(
             origin: OriginFor<T>,
             miner_id: MinerId,

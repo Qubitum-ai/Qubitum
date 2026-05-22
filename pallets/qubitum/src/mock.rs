@@ -73,6 +73,7 @@ impl pallet_qubitum::Config for Test {
     type MaxProofSizeBytes = MaxProofSizeBytes;
     type MaxVerificationLatencyMs = MaxVerificationLatencyMs;
     type RuntimeHoldReason = RuntimeHoldReason;
+    type WeightInfo = ();
 }
 
 pub fn new_test_ext() -> sp_io::TestExternalities {

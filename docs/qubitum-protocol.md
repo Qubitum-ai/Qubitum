@@ -27,11 +27,16 @@ The core protocol structs and enums derive SCALE `Encode`/`Decode` plus `scale-i
 
 `pallet-qubitum` provides the first on-chain surface for the protocol. It stores subnets, miners, validators, proof records, and total burned QBT using FRAME-native maps, and exposes dispatchables for subnet creation, miner registration and bonding, validator staking, proof record submission, and root-controlled miner slashing.
 
+The pallet is wired into `node-subtensor-runtime` as `Qubitum`, with runtime-provided weights and a FRAME benchmarking suite for all dispatchables. Placeholder weights are isolated behind `pallet_qubitum::weights::WeightInfo` so generated benchmark output can replace them without changing call logic.
+
 Current focused checks:
 
 ```sh
 cargo test -p pallet-qubitum
+cargo test -p pallet-qubitum --features runtime-benchmarks
 cargo clippy -p pallet-qubitum --all-targets -- -D warnings
+cargo check -p node-subtensor-runtime
+cargo check -p node-subtensor-runtime --features runtime-benchmarks
 ```
 
 ## Core Constants

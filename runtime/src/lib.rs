@@ -552,6 +552,7 @@ impl pallet_qubitum::Config for Runtime {
     type MaxProofSizeBytes = QubitumMaxProofSizeBytes;
     type MaxVerificationLatencyMs = QubitumMaxVerificationLatencyMs;
     type RuntimeHoldReason = RuntimeHoldReason;
+    type WeightInfo = pallet_qubitum::weights::SubstrateWeight<Runtime>;
 }
 
 // Implement AuthorshipInfo trait for Runtime to satisfy pallet transaction
@@ -1791,6 +1792,7 @@ mod benches {
         [pallet_crowdloan, Crowdloan]
         [pallet_subtensor_swap, Swap]
         [pallet_shield, MevShield]
+        [pallet_qubitum, Qubitum]
         [pallet_subtensor_proxy, Proxy]
         [pallet_subtensor_utility, Utility]
     );
