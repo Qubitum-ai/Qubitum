@@ -111,6 +111,7 @@ fn request_bench_inference<T: Config>(request_id: u64) -> T::AccountId {
     let user: T::AccountId = account("user", 0, SEED);
     let payment = T::MinMinerBond::get();
     fund::<T>(&user, payment.saturating_add(payment));
+    RequestCount::<T>::put(request_id);
     Pallet::<T>::request_inference(
         RawOrigin::Signed(user.clone()).into(),
         request_id,
@@ -382,6 +383,7 @@ mod benchmarks {
         let user: T::AccountId = account("user", 0, SEED);
         let payment = T::MinMinerBond::get();
         fund::<T>(&user, payment.saturating_add(payment));
+        RequestCount::<T>::put(42);
 
         #[extrinsic_call]
         _(

@@ -98,8 +98,8 @@ impl<T: frame_system::Config> WeightInfo for SubstrateWeight<T> {
 
     fn request_inference() -> Weight {
         Weight::from_parts(50_000_000, 7_000)
-            .saturating_add(T::DbWeight::get().reads(22_u64))
-            .saturating_add(T::DbWeight::get().writes(3_u64))
+            .saturating_add(T::DbWeight::get().reads(23_u64))
+            .saturating_add(T::DbWeight::get().writes(4_u64))
     }
 
     fn cancel_inference() -> Weight {
@@ -178,8 +178,8 @@ impl WeightInfo for () {
 
     fn request_inference() -> Weight {
         Weight::from_parts(50_000_000, 7_000)
-            .saturating_add(RocksDbWeight::get().reads(22_u64))
-            .saturating_add(RocksDbWeight::get().writes(3_u64))
+            .saturating_add(RocksDbWeight::get().reads(23_u64))
+            .saturating_add(RocksDbWeight::get().writes(4_u64))
     }
 
     fn cancel_inference() -> Weight {

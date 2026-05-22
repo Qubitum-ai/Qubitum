@@ -3,7 +3,7 @@
 use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, ChainInferenceRequest, Error, HoldReason,
     InferenceRequestParams, InferenceRequestStatus, InferenceRequests, MinerCount, Miners,
-    ProofRecords, SubnetCount, Subnets, TotalBurned, ValidatorCount, Validators,
+    ProofRecords, RequestCount, SubnetCount, Subnets, TotalBurned, ValidatorCount, Validators,
     mock::{
         Balances, Qubitum, RuntimeOrigin, System, Test, new_test_ext, set_verification_outcome,
     },
@@ -68,6 +68,7 @@ fn valid_submission(request_id: u64) -> InferenceProofSubmission {
 }
 
 fn request_inference(request_id: u64) {
+    RequestCount::<Test>::put(request_id);
     assert_ok!(Qubitum::request_inference(
         RuntimeOrigin::signed(4),
         request_id,
@@ -440,6 +441,33 @@ fn request_inference_escrows_payment() {
             Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
             1_000
         );
+        assert_eq!(RequestCount::<Test>::get(), 8);
+    });
+}
+
+#[test]
+fn request_inference_rejects_non_next_request_id() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        let assignment = Qubitum::route_assignment(0, 1).unwrap();
+
+        assert_noop!(
+            Qubitum::request_inference(
+                RuntimeOrigin::signed(4),
+                1,
+                InferenceRequestParams {
+                    subnet_id: 0,
+                    miner_id: assignment.miner_id,
+                    validator_id: assignment.validator_id,
+                    input_commitment: commitment(1),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::InvalidRequestId
+        );
+        assert_eq!(RequestCount::<Test>::get(), 0);
     });
 }
 
@@ -616,6 +644,7 @@ fn route_assignment_skips_self_validation_validator_when_alternative_exists() {
         let assignment = Qubitum::route_assignment(0, 42).unwrap();
         assert_eq!(assignment.miner_id, 0);
         assert_eq!(assignment.validator_id, 1);
+        RequestCount::<Test>::put(42);
         assert_ok!(Qubitum::request_inference(
             RuntimeOrigin::signed(4),
             42,

@@ -401,6 +401,9 @@ pub mod pallet {
     >;
 
     #[pallet::storage]
+    pub type RequestCount<T: Config> = StorageValue<_, RequestId, ValueQuery>;
+
+    #[pallet::storage]
     pub type ActiveMinersBySubnet<T: Config> = StorageMap<
         _,
         Twox64Concat,
@@ -581,6 +584,8 @@ pub mod pallet {
         DuplicateProof,
         /// Inference request already exists.
         DuplicateRequest,
+        /// Request ID must match the chain-owned next request ID.
+        InvalidRequestId,
         /// Inference request is missing.
         UnknownRequest,
         /// Inference request has already been settled.
@@ -877,6 +882,7 @@ pub mod pallet {
                 params.miner_id,
                 params.validator_id,
             )?;
+            Self::ensure_next_request_id(request_id)?;
 
             T::Currency::hold(&HoldReason::InferencePayment.into(), &user, params.payment)?;
             InferenceRequests::<T>::insert(
@@ -1173,6 +1179,16 @@ pub mod pallet {
             let next = id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
             ValidatorCount::<T>::put(next);
             Ok(id)
+        }
+
+        fn ensure_next_request_id(request_id: RequestId) -> DispatchResult {
+            let expected = RequestCount::<T>::get();
+            ensure!(request_id == expected, Error::<T>::InvalidRequestId);
+            let next = request_id
+                .checked_add(1)
+                .ok_or(Error::<T>::ArithmeticOverflow)?;
+            RequestCount::<T>::put(next);
+            Ok(())
         }
 
         fn current_block() -> BlockNumber {
