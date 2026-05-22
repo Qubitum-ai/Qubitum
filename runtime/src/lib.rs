@@ -2623,6 +2623,18 @@ impl_runtime_apis! {
             pallet_qubitum::RequestCount::<Runtime>::get()
         }
 
+        fn qubitum_pending_miner_requests(
+            miner_id: qubitum_protocol::MinerId,
+        ) -> qubitum_protocol::RequestId {
+            pallet_qubitum::PendingMinerRequests::<Runtime>::get(miner_id)
+        }
+
+        fn qubitum_pending_validator_requests(
+            validator_id: qubitum_protocol::ValidatorId,
+        ) -> qubitum_protocol::RequestId {
+            pallet_qubitum::PendingValidatorRequests::<Runtime>::get(validator_id)
+        }
+
         fn qubitum_counts() -> (
             qubitum_protocol::SubnetId,
             qubitum_protocol::MinerId,

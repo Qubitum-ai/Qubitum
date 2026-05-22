@@ -49,6 +49,20 @@ pub trait QubitumRpcApi<BlockHash> {
     #[method(name = "qubitum_nextRequestId")]
     fn next_request_id(&self, at: Option<BlockHash>) -> RpcResult<RequestId>;
 
+    #[method(name = "qubitum_getPendingMinerRequests")]
+    fn get_pending_miner_requests(
+        &self,
+        miner_id: MinerId,
+        at: Option<BlockHash>,
+    ) -> RpcResult<RequestId>;
+
+    #[method(name = "qubitum_getPendingValidatorRequests")]
+    fn get_pending_validator_requests(
+        &self,
+        validator_id: ValidatorId,
+        at: Option<BlockHash>,
+    ) -> RpcResult<RequestId>;
+
     #[method(name = "qubitum_getCounts")]
     fn get_counts(&self, at: Option<BlockHash>) -> RpcResult<Vec<u8>>;
 
@@ -197,6 +211,40 @@ where
         api.qubitum_next_request_id(at).map_err(|e| {
             Error::RuntimeError(format!("Unable to get Qubitum next request ID: {e:?}")).into()
         })
+    }
+
+    fn get_pending_miner_requests(
+        &self,
+        miner_id: MinerId,
+        at: Option<<Block as BlockT>::Hash>,
+    ) -> RpcResult<RequestId> {
+        let api = self.client.runtime_api();
+        let at = self.at_or_best(at);
+
+        api.qubitum_pending_miner_requests(at, miner_id)
+            .map_err(|e| {
+                Error::RuntimeError(format!(
+                    "Unable to get Qubitum pending miner requests: {e:?}"
+                ))
+                .into()
+            })
+    }
+
+    fn get_pending_validator_requests(
+        &self,
+        validator_id: ValidatorId,
+        at: Option<<Block as BlockT>::Hash>,
+    ) -> RpcResult<RequestId> {
+        let api = self.client.runtime_api();
+        let at = self.at_or_best(at);
+
+        api.qubitum_pending_validator_requests(at, validator_id)
+            .map_err(|e| {
+                Error::RuntimeError(format!(
+                    "Unable to get Qubitum pending validator requests: {e:?}"
+                ))
+                .into()
+            })
     }
 
     fn get_counts(&self, at: Option<<Block as BlockT>::Hash>) -> RpcResult<Vec<u8>> {
