@@ -8,6 +8,9 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
+pub mod state;
+pub use state::*;
+
 /// Smallest accounting unit for QBT.
 pub type Balance = u128;
 /// Chain block number.
@@ -65,6 +68,8 @@ pub const TARGET_VERIFICATION_MS: u32 = 100;
 pub enum ProtocolError {
     ArithmeticOverflow,
     CooldownNotComplete,
+    DuplicateSubnet,
+    InsufficientBalance,
     InvalidBond,
     InvalidCreationBurn,
     InvalidProofSize,
@@ -73,7 +78,11 @@ pub enum ProtocolError {
     InvalidStake,
     LatencyExceeded,
     MissingCommitment,
+    NotActive,
     ProofSystemMismatch,
+    UnknownMiner,
+    UnknownSubnet,
+    UnknownValidator,
 }
 
 /// Execution proof system used by a subnet or proof submission.
