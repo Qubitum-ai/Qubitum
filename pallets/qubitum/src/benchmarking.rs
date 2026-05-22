@@ -4,8 +4,9 @@
 #![allow(clippy::arithmetic_side_effects, clippy::unwrap_used)]
 
 use crate::{
-    BalanceOf, ChainProofRecord, Event, InferenceRequestStatus, InferenceRequests, MinerCount,
-    Miners, ProofRecords, SubnetCount, Subnets, TotalBurned, ValidatorCount, Validators, pallet::*,
+    BalanceOf, ChainProofRecord, Event, InferenceRequestParams, InferenceRequestStatus,
+    InferenceRequests, MinerCount, Miners, ProofRecords, SubnetCount, Subnets, TotalBurned,
+    ValidatorCount, Validators, pallet::*,
 };
 use frame_benchmarking::{account, v2::*};
 use frame_support::traits::{Get, fungible::Mutate};
@@ -113,11 +114,15 @@ fn request_bench_inference<T: Config>(request_id: u64) -> T::AccountId {
     Pallet::<T>::request_inference(
         RawOrigin::Signed(user.clone()).into(),
         request_id,
-        0,
-        commitment(1),
-        T::MinMinerBond::get(),
-        250,
-        50,
+        InferenceRequestParams {
+            subnet_id: 0,
+            miner_id: 0,
+            validator_id: 0,
+            input_commitment: commitment(1),
+            payment: T::MinMinerBond::get(),
+            validator_fee_bps: 250,
+            treasury_fee_bps: 50,
+        },
     )
     .unwrap();
     user
@@ -375,7 +380,8 @@ mod benchmarks {
 
     #[benchmark]
     fn request_inference() {
-        let _owner = create_bench_subnet::<T>();
+        let _miner = activate_bench_miner::<T>();
+        let _validator = register_bench_validator::<T>();
         let user: T::AccountId = account("user", 0, SEED);
         let payment = T::MinMinerBond::get();
         fund::<T>(&user, payment.saturating_add(payment));
@@ -384,11 +390,15 @@ mod benchmarks {
         _(
             RawOrigin::Signed(user.clone()),
             42,
-            0,
-            commitment(1),
-            payment,
-            250,
-            50,
+            InferenceRequestParams {
+                subnet_id: 0,
+                miner_id: 0,
+                validator_id: 0,
+                input_commitment: commitment(1),
+                payment,
+                validator_fee_bps: 250,
+                treasury_fee_bps: 50,
+            },
         );
 
         let request = InferenceRequests::<T>::get(42).unwrap();
@@ -399,6 +409,8 @@ mod benchmarks {
                 request_id: 42,
                 user,
                 subnet_id: 0,
+                miner_id: 0,
+                validator_id: 0,
                 payment,
             }
             .into(),
@@ -407,7 +419,8 @@ mod benchmarks {
 
     #[benchmark]
     fn cancel_inference() {
-        let _owner = create_bench_subnet::<T>();
+        let _miner = activate_bench_miner::<T>();
+        let _validator = register_bench_validator::<T>();
         let user = request_bench_inference::<T>(42);
         frame_system::Pallet::<T>::set_block_number(
             T::RequestCancelDelayBlocks::get().saturated_into(),

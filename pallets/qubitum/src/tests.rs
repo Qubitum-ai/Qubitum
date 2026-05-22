@@ -1,8 +1,9 @@
 #![allow(clippy::arithmetic_side_effects, clippy::unwrap_used)]
 
 use crate::{
-    Error, HoldReason, InferenceRequestStatus, InferenceRequests, MinerCount, Miners, ProofRecords,
-    SubnetCount, Subnets, TotalBurned, ValidatorCount, Validators,
+    Error, HoldReason, InferenceRequestParams, InferenceRequestStatus, InferenceRequests,
+    MinerCount, Miners, ProofRecords, SubnetCount, Subnets, TotalBurned, ValidatorCount,
+    Validators,
     mock::{
         Balances, Qubitum, RuntimeOrigin, System, Test, new_test_ext, set_verification_outcome,
     },
@@ -67,11 +68,15 @@ fn request_inference(request_id: u64) {
     assert_ok!(Qubitum::request_inference(
         RuntimeOrigin::signed(4),
         request_id,
-        0,
-        commitment(1),
-        1_000,
-        250,
-        50,
+        InferenceRequestParams {
+            subnet_id: 0,
+            miner_id: 0,
+            validator_id: 0,
+            input_commitment: commitment(1),
+            payment: 1_000,
+            validator_fee_bps: 250,
+            treasury_fee_bps: 50,
+        },
     ));
 }
 
@@ -417,22 +422,76 @@ fn submit_proof_records_commitments_for_active_participants() {
 #[test]
 fn request_inference_escrows_payment() {
     new_test_ext().execute_with(|| {
-        assert_ok!(Qubitum::create_subnet(
-            RuntimeOrigin::signed(1),
-            SubnetDomain::Code,
-            ProofSystem::RiscZeroStark
-        ));
-
+        register_active_miner_and_validator();
         request_inference(7);
 
         let request = InferenceRequests::<Test>::get(7).unwrap();
         assert_eq!(request.user, 4);
+        assert_eq!(request.miner_id, 0);
+        assert_eq!(request.validator_id, 0);
         assert_eq!(request.payment, 1_000);
         assert_eq!(request.created_at, 0);
         assert_eq!(request.status, InferenceRequestStatus::Pending);
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
             1_000
+        );
+    });
+}
+
+#[test]
+fn request_inference_requires_active_assigned_participants() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::Code,
+            ProofSystem::RiscZeroStark
+        ));
+
+        assert_noop!(
+            Qubitum::request_inference(
+                RuntimeOrigin::signed(4),
+                10,
+                InferenceRequestParams {
+                    subnet_id: 0,
+                    miner_id: 0,
+                    validator_id: 0,
+                    input_commitment: commitment(1),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::UnknownMiner
+        );
+
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(10),
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(3),
+            0,
+            MIN_MINER_BOND
+        ));
+
+        assert_noop!(
+            Qubitum::request_inference(
+                RuntimeOrigin::signed(4),
+                10,
+                InferenceRequestParams {
+                    subnet_id: 0,
+                    miner_id: 0,
+                    validator_id: 0,
+                    input_commitment: commitment(1),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::NotActive
         );
     });
 }
@@ -573,6 +632,44 @@ fn submit_proof_rejects_duplicate_wrong_validator_or_model() {
         assert_noop!(
             Qubitum::submit_proof(RuntimeOrigin::signed(3), wrong_model),
             Error::<Test>::ModelCommitmentMismatch
+        );
+    });
+}
+
+#[test]
+fn submit_proof_rejects_unassigned_participants() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(10),
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            1,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(3),
+            0,
+            MIN_MINER_BOND
+        ));
+        request_inference(52);
+
+        let mut wrong_miner = valid_submission(52);
+        wrong_miner.miner_id = 1;
+        assert_noop!(
+            Qubitum::submit_proof(RuntimeOrigin::signed(3), wrong_miner),
+            Error::<Test>::RequestMismatch
+        );
+
+        let mut wrong_validator = valid_submission(52);
+        wrong_validator.validator_id = 1;
+        assert_noop!(
+            Qubitum::submit_proof(RuntimeOrigin::signed(3), wrong_validator),
+            Error::<Test>::RequestMismatch
         );
     });
 }

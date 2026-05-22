@@ -307,12 +307,27 @@ pub mod pallet {
         pub request_id: RequestId,
         pub user: AccountId,
         pub subnet_id: SubnetId,
+        pub miner_id: MinerId,
+        pub validator_id: ValidatorId,
         pub input_commitment: Commitment,
         pub payment: Balance,
         pub validator_fee_bps: u16,
         pub treasury_fee_bps: u16,
         pub created_at: BlockNumber,
         pub status: InferenceRequestStatus,
+    }
+
+    #[derive(
+        Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
+    )]
+    pub struct InferenceRequestParams<Balance> {
+        pub subnet_id: SubnetId,
+        pub miner_id: MinerId,
+        pub validator_id: ValidatorId,
+        pub input_commitment: Commitment,
+        pub payment: Balance,
+        pub validator_fee_bps: u16,
+        pub treasury_fee_bps: u16,
     }
 
     #[pallet::storage]
@@ -407,6 +422,8 @@ pub mod pallet {
             request_id: RequestId,
             user: T::AccountId,
             subnet_id: SubnetId,
+            miner_id: MinerId,
+            validator_id: ValidatorId,
             payment: BalanceOf<T>,
         },
         /// A proof record was accepted.
@@ -495,6 +512,8 @@ pub mod pallet {
         NotRequestOwner,
         /// Proof submission does not match the escrowed request.
         RequestMismatch,
+        /// Assigned miner or validator does not belong to the request subnet.
+        ParticipantMismatch,
         /// Inference payment must be greater than zero.
         InvalidPayment,
         /// Validator and treasury fee split is invalid.
@@ -732,37 +751,40 @@ pub mod pallet {
         pub fn request_inference(
             origin: OriginFor<T>,
             request_id: RequestId,
-            subnet_id: SubnetId,
-            input_commitment: Commitment,
-            payment: BalanceOf<T>,
-            validator_fee_bps: u16,
-            treasury_fee_bps: u16,
+            params: InferenceRequestParams<BalanceOf<T>>,
         ) -> DispatchResult {
             let user = ensure_signed(origin)?;
-            ensure_commitment::<T>(input_commitment)?;
+            ensure_commitment::<T>(params.input_commitment)?;
             ensure!(
                 !InferenceRequests::<T>::contains_key(request_id),
                 Error::<T>::DuplicateRequest
             );
             ensure!(
-                payment > BalanceOf::<T>::default(),
+                params.payment > BalanceOf::<T>::default(),
                 Error::<T>::InvalidPayment
             );
-            Self::validate_fee_split(validator_fee_bps, treasury_fee_bps)?;
-            let subnet = Subnets::<T>::get(subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
+            Self::validate_fee_split(params.validator_fee_bps, params.treasury_fee_bps)?;
+            let subnet = Subnets::<T>::get(params.subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
             ensure!(subnet.active, Error::<T>::NotActive);
+            Self::ensure_request_assignment(
+                params.subnet_id,
+                params.miner_id,
+                params.validator_id,
+            )?;
 
-            T::Currency::hold(&HoldReason::InferencePayment.into(), &user, payment)?;
+            T::Currency::hold(&HoldReason::InferencePayment.into(), &user, params.payment)?;
             InferenceRequests::<T>::insert(
                 request_id,
                 ChainInferenceRequest {
                     request_id,
                     user: user.clone(),
-                    subnet_id,
-                    input_commitment,
-                    payment,
-                    validator_fee_bps,
-                    treasury_fee_bps,
+                    subnet_id: params.subnet_id,
+                    miner_id: params.miner_id,
+                    validator_id: params.validator_id,
+                    input_commitment: params.input_commitment,
+                    payment: params.payment,
+                    validator_fee_bps: params.validator_fee_bps,
+                    treasury_fee_bps: params.treasury_fee_bps,
                     created_at: Self::current_block(),
                     status: InferenceRequestStatus::Pending,
                 },
@@ -771,8 +793,10 @@ pub mod pallet {
             Self::deposit_event(Event::InferenceRequested {
                 request_id,
                 user,
-                subnet_id,
-                payment,
+                subnet_id: params.subnet_id,
+                miner_id: params.miner_id,
+                validator_id: params.validator_id,
+                payment: params.payment,
             });
             Ok(())
         }
@@ -1036,6 +1060,26 @@ pub mod pallet {
             Ok(())
         }
 
+        fn ensure_request_assignment(
+            subnet_id: SubnetId,
+            miner_id: MinerId,
+            validator_id: ValidatorId,
+        ) -> DispatchResult {
+            let miner = Miners::<T>::get(miner_id).ok_or(Error::<T>::UnknownMiner)?;
+            let validator =
+                Validators::<T>::get(validator_id).ok_or(Error::<T>::UnknownValidator)?;
+            ensure!(
+                miner.subnet_id == subnet_id && validator.subnet_id == subnet_id,
+                Error::<T>::ParticipantMismatch
+            );
+            ensure!(
+                miner.status == RegistryStatus::Active
+                    && validator.status == RegistryStatus::Active,
+                Error::<T>::NotActive
+            );
+            Ok(())
+        }
+
         fn validate_submission(
             submission: &InferenceProofSubmission,
             validator_operator: &T::AccountId,
@@ -1056,6 +1100,8 @@ pub mod pallet {
             );
             ensure!(
                 request.subnet_id == submission.subnet_id
+                    && request.miner_id == submission.miner_id
+                    && request.validator_id == submission.validator_id
                     && request.input_commitment == submission.input_commitment,
                 Error::<T>::RequestMismatch
             );
@@ -1119,6 +1165,8 @@ pub mod pallet {
                     );
                     ensure!(
                         request.subnet_id == submission.subnet_id
+                            && request.miner_id == submission.miner_id
+                            && request.validator_id == submission.validator_id
                             && request.input_commitment == submission.input_commitment,
                         Error::<T>::RequestMismatch
                     );

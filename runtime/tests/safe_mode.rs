@@ -52,11 +52,15 @@ fn qubitum_registration_is_blocked_in_safe_mode() {
 fn qubitum_request_inference_is_blocked_in_safe_mode() {
     let call = RuntimeCall::Qubitum(pallet_qubitum::Call::request_inference {
         request_id: 1,
-        subnet_id: 0,
-        input_commitment: commitment(1),
-        payment: 1_000u64.into(),
-        validator_fee_bps: 250,
-        treasury_fee_bps: 50,
+        params: pallet_qubitum::InferenceRequestParams {
+            subnet_id: 0,
+            miner_id: 0,
+            validator_id: 0,
+            input_commitment: commitment(1),
+            payment: 1_000u64.into(),
+            validator_fee_bps: 250,
+            treasury_fee_bps: 50,
+        },
     });
 
     assert!(!SafeModeWhitelistedCalls::contains(&call));
