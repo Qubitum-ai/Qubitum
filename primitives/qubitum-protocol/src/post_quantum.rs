@@ -1,7 +1,18 @@
 use super::{Commitment, ProtocolError, SignatureMode};
 
 /// Signature algorithm family used by an account or transaction envelope.
-#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(
+    codec::Decode,
+    codec::DecodeWithMemTracking,
+    codec::Encode,
+    codec::MaxEncodedLen,
+    scale_info::TypeInfo,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub enum SignatureAlgorithm {
     Ecdsa,
     Sr25519,
@@ -26,7 +37,18 @@ impl SignatureAlgorithm {
 }
 
 /// Commitment to a public key and signature payload.
-#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(
+    codec::Decode,
+    codec::DecodeWithMemTracking,
+    codec::Encode,
+    codec::MaxEncodedLen,
+    scale_info::TypeInfo,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct SignatureCommitment {
     pub algorithm: SignatureAlgorithm,
     pub public_key_commitment: Commitment,
@@ -34,14 +56,36 @@ pub struct SignatureCommitment {
 }
 
 /// Transaction signature bundle used during migration.
-#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(
+    codec::Decode,
+    codec::DecodeWithMemTracking,
+    codec::Encode,
+    codec::MaxEncodedLen,
+    scale_info::TypeInfo,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct SignatureBundle {
     pub classical: Option<SignatureCommitment>,
     pub post_quantum: Option<SignatureCommitment>,
 }
 
 /// Enforces the roadmap phase for accepted account signatures.
-#[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(
+    codec::Decode,
+    codec::DecodeWithMemTracking,
+    codec::Encode,
+    codec::MaxEncodedLen,
+    scale_info::TypeInfo,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+)]
 pub struct SignaturePolicy {
     pub mode: SignatureMode,
 }
@@ -52,16 +96,19 @@ impl SignaturePolicy {
     }
 
     pub fn validate(self, bundle: SignatureBundle) -> Result<SignatureBundle, ProtocolError> {
+        validate_optional_classical(bundle.classical)?;
+        validate_optional_post_quantum(bundle.post_quantum)?;
+
         match self.mode {
             SignatureMode::ClassicalEcdsa => {
-                validate_classical(bundle.classical)?;
+                require_classical(bundle.classical)?;
             }
             SignatureMode::HybridDilithium => {
-                validate_classical(bundle.classical)?;
-                validate_post_quantum(bundle.post_quantum)?;
+                require_classical(bundle.classical)?;
+                require_post_quantum(bundle.post_quantum)?;
             }
             SignatureMode::FullPostQuantum => {
-                validate_post_quantum(bundle.post_quantum)?;
+                require_post_quantum(bundle.post_quantum)?;
             }
         }
 
@@ -69,8 +116,36 @@ impl SignaturePolicy {
     }
 }
 
-fn validate_classical(signature: Option<SignatureCommitment>) -> Result<(), ProtocolError> {
+fn require_classical(signature: Option<SignatureCommitment>) -> Result<(), ProtocolError> {
     let signature = signature.ok_or(ProtocolError::MissingClassicalSignature)?;
+    validate_classical(signature)
+}
+
+fn require_post_quantum(signature: Option<SignatureCommitment>) -> Result<(), ProtocolError> {
+    let signature = signature.ok_or(ProtocolError::MissingPostQuantumSignature)?;
+    validate_post_quantum(signature)
+}
+
+fn validate_optional_classical(
+    signature: Option<SignatureCommitment>,
+) -> Result<(), ProtocolError> {
+    if let Some(signature) = signature {
+        validate_classical(signature)?;
+    }
+    Ok(())
+}
+
+fn validate_optional_post_quantum(
+    signature: Option<SignatureCommitment>,
+) -> Result<(), ProtocolError> {
+    if let Some(signature) = signature {
+        validate_post_quantum(signature)?;
+    }
+    Ok(())
+}
+
+fn validate_classical(signature: SignatureCommitment) -> Result<(), ProtocolError> {
+    ensure_nonzero_commitments(signature)?;
     if signature.algorithm.is_classical() {
         Ok(())
     } else {
@@ -78,12 +153,20 @@ fn validate_classical(signature: Option<SignatureCommitment>) -> Result<(), Prot
     }
 }
 
-fn validate_post_quantum(signature: Option<SignatureCommitment>) -> Result<(), ProtocolError> {
-    let signature = signature.ok_or(ProtocolError::MissingPostQuantumSignature)?;
+fn validate_post_quantum(signature: SignatureCommitment) -> Result<(), ProtocolError> {
+    ensure_nonzero_commitments(signature)?;
     if signature.algorithm.is_post_quantum() {
         Ok(())
     } else {
         Err(ProtocolError::UnsupportedSignatureAlgorithm)
+    }
+}
+
+fn ensure_nonzero_commitments(signature: SignatureCommitment) -> Result<(), ProtocolError> {
+    if signature.public_key_commitment == [0; 32] || signature.signature_commitment == [0; 32] {
+        Err(ProtocolError::MissingCommitment)
+    } else {
+        Ok(())
     }
 }
 
@@ -160,6 +243,60 @@ mod tests {
         assert_eq!(
             SignaturePolicy::new(SignatureMode::FullPostQuantum).validate(bundle),
             Err(ProtocolError::MissingPostQuantumSignature)
+        );
+    }
+
+    #[test]
+    fn signature_policy_rejects_zero_commitments() {
+        let zero_public_key = SignatureBundle {
+            classical: Some(SignatureCommitment {
+                algorithm: SignatureAlgorithm::Ecdsa,
+                public_key_commitment: [0; 32],
+                signature_commitment: commitment(2),
+            }),
+            post_quantum: None,
+        };
+        assert_eq!(
+            SignaturePolicy::new(SignatureMode::ClassicalEcdsa).validate(zero_public_key),
+            Err(ProtocolError::MissingCommitment)
+        );
+
+        let zero_signature = SignatureBundle {
+            classical: None,
+            post_quantum: Some(SignatureCommitment {
+                algorithm: SignatureAlgorithm::Dilithium3,
+                public_key_commitment: commitment(3),
+                signature_commitment: [0; 32],
+            }),
+        };
+        assert_eq!(
+            SignaturePolicy::new(SignatureMode::FullPostQuantum).validate(zero_signature),
+            Err(ProtocolError::MissingCommitment)
+        );
+    }
+
+    #[test]
+    fn signature_policy_validates_optional_slots_when_present() {
+        let wrong_extra_slot = SignatureBundle {
+            classical: Some(sig(SignatureAlgorithm::Ecdsa, 1)),
+            post_quantum: Some(sig(SignatureAlgorithm::Ed25519, 3)),
+        };
+        assert_eq!(
+            SignaturePolicy::new(SignatureMode::ClassicalEcdsa).validate(wrong_extra_slot),
+            Err(ProtocolError::UnsupportedSignatureAlgorithm)
+        );
+
+        let malformed_extra_slot = SignatureBundle {
+            classical: Some(SignatureCommitment {
+                algorithm: SignatureAlgorithm::Ecdsa,
+                public_key_commitment: [0; 32],
+                signature_commitment: commitment(2),
+            }),
+            post_quantum: Some(sig(SignatureAlgorithm::Dilithium3, 3)),
+        };
+        assert_eq!(
+            SignaturePolicy::new(SignatureMode::FullPostQuantum).validate(malformed_extra_slot),
+            Err(ProtocolError::MissingCommitment)
         );
     }
 }

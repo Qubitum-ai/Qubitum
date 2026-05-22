@@ -23,8 +23,8 @@ use frame_support::{
 };
 use qubitum_protocol::{
     BlockNumber, Commitment, InferenceProofSubmission, MinerId, ProofEnvelope, ProofSystem,
-    RegistryStatus, RequestId, SignatureMode, SubnetDomain, SubnetId, ValidatorId,
-    VerificationOutcome,
+    RegistryStatus, RequestId, SignatureBundle, SignatureMode, SignaturePolicy, SubnetDomain,
+    SubnetId, ValidatorId, VerificationOutcome,
 };
 use scale_info::TypeInfo;
 use sp_runtime::{DispatchError, Saturating, traits::SaturatedConversion};
@@ -140,7 +140,7 @@ pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
 
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(6);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(7);
     const MAX_VALIDATOR_ROUTING_ATTEMPTS: usize = 16;
 
     #[pallet::pallet]
@@ -491,8 +491,16 @@ pub mod pallet {
         StorageMap<_, Twox64Concat, MinerId, ChainIdentityCommitments, OptionQuery>;
 
     #[pallet::storage]
+    pub type MinerIdentitySignatureBundles<T: Config> =
+        StorageMap<_, Twox64Concat, MinerId, SignatureBundle, OptionQuery>;
+
+    #[pallet::storage]
     pub type ValidatorIdentityCommitments<T: Config> =
         StorageMap<_, Twox64Concat, ValidatorId, ChainIdentityCommitments, OptionQuery>;
+
+    #[pallet::storage]
+    pub type ValidatorIdentitySignatureBundles<T: Config> =
+        StorageMap<_, Twox64Concat, ValidatorId, SignatureBundle, OptionQuery>;
 
     #[pallet::storage]
     pub type ProofRecords<T: Config> =
@@ -793,6 +801,8 @@ pub mod pallet {
         ProofSubmissionExpired,
         /// Slash percentage is outside accepted bounds.
         InvalidSlashPercent,
+        /// Signature commitments do not satisfy the active post-quantum migration policy.
+        InvalidSignatureBundle,
         /// Proof verifier reported an internal error.
         VerifierError,
     }
@@ -1404,6 +1414,7 @@ pub mod pallet {
             miner_id: MinerId,
             shielded_identity_commitment: Option<Commitment>,
             endpoint_commitment: Option<Commitment>,
+            signature_bundle: SignatureBundle,
         ) -> DispatchResult {
             let operator = ensure_signed(origin)?;
             let miner = Miners::<T>::get(miner_id).ok_or(Error::<T>::UnknownMiner)?;
@@ -1412,6 +1423,7 @@ pub mod pallet {
             Self::ensure_optional_commitment(endpoint_commitment)?;
 
             if shielded_identity_commitment.is_some() || endpoint_commitment.is_some() {
+                Self::ensure_signature_bundle(signature_bundle)?;
                 MinerIdentityCommitments::<T>::insert(
                     miner_id,
                     ChainIdentityCommitments {
@@ -1419,8 +1431,10 @@ pub mod pallet {
                         endpoint_commitment,
                     },
                 );
+                MinerIdentitySignatureBundles::<T>::insert(miner_id, signature_bundle);
             } else {
                 MinerIdentityCommitments::<T>::remove(miner_id);
+                MinerIdentitySignatureBundles::<T>::remove(miner_id);
             }
 
             Self::deposit_event(Event::MinerIdentityCommitmentsUpdated { miner_id });
@@ -1435,6 +1449,7 @@ pub mod pallet {
             validator_id: ValidatorId,
             shielded_identity_commitment: Option<Commitment>,
             endpoint_commitment: Option<Commitment>,
+            signature_bundle: SignatureBundle,
         ) -> DispatchResult {
             let operator = ensure_signed(origin)?;
             let validator =
@@ -1444,6 +1459,7 @@ pub mod pallet {
             Self::ensure_optional_commitment(endpoint_commitment)?;
 
             if shielded_identity_commitment.is_some() || endpoint_commitment.is_some() {
+                Self::ensure_signature_bundle(signature_bundle)?;
                 ValidatorIdentityCommitments::<T>::insert(
                     validator_id,
                     ChainIdentityCommitments {
@@ -1451,8 +1467,10 @@ pub mod pallet {
                         endpoint_commitment,
                     },
                 );
+                ValidatorIdentitySignatureBundles::<T>::insert(validator_id, signature_bundle);
             } else {
                 ValidatorIdentityCommitments::<T>::remove(validator_id);
+                ValidatorIdentitySignatureBundles::<T>::remove(validator_id);
             }
 
             Self::deposit_event(Event::ValidatorIdentityCommitmentsUpdated { validator_id });
@@ -1710,6 +1728,13 @@ pub mod pallet {
                 ensure_commitment::<T>(commitment)?;
             }
             Ok(())
+        }
+
+        fn ensure_signature_bundle(signature_bundle: SignatureBundle) -> DispatchResult {
+            SignaturePolicy::new(T::SignatureMode::get())
+                .validate(signature_bundle)
+                .map(|_| ())
+                .map_err(|_| Error::<T>::InvalidSignatureBundle.into())
         }
 
         fn route_active_miner(subnet_id: SubnetId, seed: u64) -> Option<MinerId> {

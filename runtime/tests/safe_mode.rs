@@ -1,7 +1,8 @@
 use frame_support::traits::Contains;
 use node_subtensor_runtime::{RuntimeCall, SafeModeWhitelistedCalls};
 use qubitum_protocol::{
-    InferenceProofSubmission, ProofEnvelope, ProofSystem, SubnetDomain, TARGET_PROOF_SIZE_MIN_BYTES,
+    InferenceProofSubmission, ProofEnvelope, ProofSystem, SignatureAlgorithm, SignatureBundle,
+    SignatureCommitment, SubnetDomain, TARGET_PROOF_SIZE_MIN_BYTES,
 };
 
 fn commitment(seed: u8) -> [u8; 32] {
@@ -10,6 +11,17 @@ fn commitment(seed: u8) -> [u8; 32] {
 
 fn proof(seed: u8) -> ProofEnvelope {
     ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
+}
+
+fn classical_signature_bundle() -> SignatureBundle {
+    SignatureBundle {
+        classical: Some(SignatureCommitment {
+            algorithm: SignatureAlgorithm::Ecdsa,
+            public_key_commitment: commitment(30),
+            signature_commitment: commitment(31),
+        }),
+        post_quantum: None,
+    }
 }
 
 fn valid_submission() -> InferenceProofSubmission {
@@ -86,12 +98,14 @@ fn qubitum_identity_commitments_are_blocked_in_safe_mode() {
         miner_id: 1,
         shielded_identity_commitment: Some(commitment(1)),
         endpoint_commitment: Some(commitment(2)),
+        signature_bundle: classical_signature_bundle(),
     });
     let validator =
         RuntimeCall::Qubitum(pallet_qubitum::Call::set_validator_identity_commitments {
             validator_id: 1,
             shielded_identity_commitment: Some(commitment(3)),
             endpoint_commitment: Some(commitment(4)),
+            signature_bundle: classical_signature_bundle(),
         });
 
     assert!(!SafeModeWhitelistedCalls::contains(&miner));

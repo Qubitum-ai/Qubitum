@@ -3,12 +3,12 @@
 use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, CancelledInferenceRequestCount,
     ChainInferenceRequest, ChainRequestStatusCounts, Error, HoldReason, InferenceRequestParams,
-    InferenceRequestStatus, InferenceRequests, MinerCount, MinerIdentityCommitments, Miners,
-    PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests, ProofRecords,
-    RejectedInferenceRequestCount, RequestCount, SettledInferenceRequestCount, SubnetCount,
-    Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
-    TotalTreasuryFees, TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
-    Validators,
+    InferenceRequestStatus, InferenceRequests, MinerCount, MinerIdentityCommitments,
+    MinerIdentitySignatureBundles, Miners, PendingInferenceRequestCount, PendingMinerRequests,
+    PendingValidatorRequests, ProofRecords, RejectedInferenceRequestCount, RequestCount,
+    SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned, TotalInferenceEscrowed,
+    TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees, TotalValidatorFees,
+    ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles, Validators,
     mock::{
         Balances, Qubitum, RuntimeOrigin, System, Test, new_test_ext, set_verification_outcome,
     },
@@ -21,9 +21,9 @@ use frame_support::{
 use qubitum_protocol::{
     InferenceProofSubmission, MAX_INVALID_PROOF_SLASH_BPS, MAX_MINER_BOND,
     MIN_INVALID_PROOF_SLASH_BPS, MIN_MINER_BOND, MINER_REGISTRATION_BURN, ProofEnvelope,
-    ProofSystem, ProofVerifierVersion, RegistryStatus, SignatureMode, SubnetDomain,
-    TARGET_PROOF_SIZE_MAX_BYTES, TARGET_PROOF_SIZE_MIN_BYTES, TARGET_VERIFICATION_MS,
-    VerificationOutcome,
+    ProofSystem, ProofVerifierVersion, RegistryStatus, SignatureAlgorithm, SignatureBundle,
+    SignatureCommitment, SignatureMode, SubnetDomain, TARGET_PROOF_SIZE_MAX_BYTES,
+    TARGET_PROOF_SIZE_MIN_BYTES, TARGET_VERIFICATION_MS, VerificationOutcome,
 };
 
 fn commitment(seed: u8) -> [u8; 32] {
@@ -32,6 +32,39 @@ fn commitment(seed: u8) -> [u8; 32] {
 
 fn proof(seed: u8) -> ProofEnvelope {
     ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
+}
+
+fn signature(algorithm: SignatureAlgorithm, seed: u8) -> SignatureCommitment {
+    SignatureCommitment {
+        algorithm,
+        public_key_commitment: commitment(seed),
+        signature_commitment: commitment(seed.saturating_add(1)),
+    }
+}
+
+fn classical_signature_bundle() -> SignatureBundle {
+    SignatureBundle {
+        classical: Some(signature(SignatureAlgorithm::Ecdsa, 30)),
+        post_quantum: None,
+    }
+}
+
+fn post_quantum_signature_bundle() -> SignatureBundle {
+    SignatureBundle {
+        classical: None,
+        post_quantum: Some(signature(SignatureAlgorithm::Dilithium3, 40)),
+    }
+}
+
+fn zero_signature_bundle() -> SignatureBundle {
+    SignatureBundle {
+        classical: Some(SignatureCommitment {
+            algorithm: SignatureAlgorithm::Ecdsa,
+            public_key_commitment: [0; 32],
+            signature_commitment: commitment(31),
+        }),
+        post_quantum: None,
+    }
 }
 
 fn contains_subsequence(haystack: &[u8], needle: &[u8]) -> bool {
@@ -399,6 +432,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
                 0,
                 Some(commitment(20)),
                 Some(commitment(21)),
+                classical_signature_bundle(),
             ),
             Error::<Test>::NotOperator
         );
@@ -408,6 +442,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
                 0,
                 Some(commitment(22)),
                 Some(commitment(23)),
+                classical_signature_bundle(),
             ),
             Error::<Test>::NotOperator
         );
@@ -417,8 +452,49 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
                 0,
                 Some([0; 32]),
                 None,
+                classical_signature_bundle(),
             ),
             Error::<Test>::MissingCommitment
+        );
+        assert_noop!(
+            Qubitum::set_miner_identity_commitments(
+                RuntimeOrigin::signed(2),
+                0,
+                Some(commitment(20)),
+                Some([0; 32]),
+                classical_signature_bundle(),
+            ),
+            Error::<Test>::MissingCommitment
+        );
+        assert_noop!(
+            Qubitum::set_validator_identity_commitments(
+                RuntimeOrigin::signed(3),
+                0,
+                Some(commitment(22)),
+                Some([0; 32]),
+                classical_signature_bundle(),
+            ),
+            Error::<Test>::MissingCommitment
+        );
+        assert_noop!(
+            Qubitum::set_miner_identity_commitments(
+                RuntimeOrigin::signed(2),
+                0,
+                Some(commitment(20)),
+                Some(commitment(21)),
+                post_quantum_signature_bundle(),
+            ),
+            Error::<Test>::InvalidSignatureBundle
+        );
+        assert_noop!(
+            Qubitum::set_validator_identity_commitments(
+                RuntimeOrigin::signed(3),
+                0,
+                Some(commitment(22)),
+                Some(commitment(23)),
+                zero_signature_bundle(),
+            ),
+            Error::<Test>::InvalidSignatureBundle
         );
 
         assert_ok!(Qubitum::set_miner_identity_commitments(
@@ -426,12 +502,14 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
             0,
             Some(commitment(20)),
             Some(commitment(21)),
+            classical_signature_bundle(),
         ));
         assert_ok!(Qubitum::set_validator_identity_commitments(
             RuntimeOrigin::signed(3),
             0,
             Some(commitment(22)),
             Some(commitment(23)),
+            classical_signature_bundle(),
         ));
 
         let miner_commitments = MinerIdentityCommitments::<Test>::get(0).unwrap();
@@ -440,6 +518,10 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
             Some(commitment(20))
         );
         assert_eq!(miner_commitments.endpoint_commitment, Some(commitment(21)));
+        assert_eq!(
+            MinerIdentitySignatureBundles::<Test>::get(0),
+            Some(classical_signature_bundle())
+        );
         let validator_commitments = ValidatorIdentityCommitments::<Test>::get(0).unwrap();
         assert_eq!(
             validator_commitments.shielded_identity_commitment,
@@ -449,8 +531,21 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
             validator_commitments.endpoint_commitment,
             Some(commitment(23))
         );
+        assert_eq!(
+            ValidatorIdentitySignatureBundles::<Test>::get(0),
+            Some(classical_signature_bundle())
+        );
 
-        for encoded in [miner_commitments.encode(), validator_commitments.encode()] {
+        for encoded in [
+            miner_commitments.encode(),
+            MinerIdentitySignatureBundles::<Test>::get(0)
+                .unwrap()
+                .encode(),
+            validator_commitments.encode(),
+            ValidatorIdentitySignatureBundles::<Test>::get(0)
+                .unwrap()
+                .encode(),
+        ] {
             assert!(!contains_subsequence(&encoded, raw_miner_identity));
             assert!(!contains_subsequence(&encoded, raw_validator_identity));
         }
@@ -460,8 +555,19 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
             0,
             None,
             None,
+            post_quantum_signature_bundle(),
         ));
         assert!(MinerIdentityCommitments::<Test>::get(0).is_none());
+        assert!(MinerIdentitySignatureBundles::<Test>::get(0).is_none());
+        assert_ok!(Qubitum::set_validator_identity_commitments(
+            RuntimeOrigin::signed(3),
+            0,
+            None,
+            None,
+            zero_signature_bundle(),
+        ));
+        assert!(ValidatorIdentityCommitments::<Test>::get(0).is_none());
+        assert!(ValidatorIdentitySignatureBundles::<Test>::get(0).is_none());
     });
 }
 
@@ -637,7 +743,7 @@ fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
         assert_eq!(record.accepted_at, 55);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(6)
+            StorageVersion::new(7)
         );
     });
 }
@@ -1086,7 +1192,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(6)
+            StorageVersion::new(7)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);

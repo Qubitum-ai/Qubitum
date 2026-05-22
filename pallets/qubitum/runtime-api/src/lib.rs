@@ -4,7 +4,7 @@ use pallet_qubitum::{
     ChainAccounting, ChainAssignment, ChainIdentityCommitments, ChainInferenceRequest, ChainMiner,
     ChainProofRecord, ChainProtocolParams, ChainRequestStatusCounts, ChainSubnet, ChainValidator,
 };
-use qubitum_protocol::{MinerId, RequestId, SubnetId, ValidatorId};
+use qubitum_protocol::{MinerId, RequestId, SignatureBundle, SubnetId, ValidatorId};
 use sp_runtime::AccountId32;
 use subtensor_runtime_common::TaoBalance;
 
@@ -14,7 +14,9 @@ sp_api::decl_runtime_apis! {
         fn qubitum_miner(miner_id: MinerId) -> Option<ChainMiner<AccountId32, TaoBalance>>;
         fn qubitum_validator(validator_id: ValidatorId) -> Option<ChainValidator<AccountId32, TaoBalance>>;
         fn qubitum_miner_identity_commitments(miner_id: MinerId) -> Option<ChainIdentityCommitments>;
+        fn qubitum_miner_identity_signature_bundle(miner_id: MinerId) -> Option<SignatureBundle>;
         fn qubitum_validator_identity_commitments(validator_id: ValidatorId) -> Option<ChainIdentityCommitments>;
+        fn qubitum_validator_identity_signature_bundle(validator_id: ValidatorId) -> Option<SignatureBundle>;
         fn qubitum_inference_request(request_id: RequestId) -> Option<ChainInferenceRequest<AccountId32, TaoBalance>>;
         fn qubitum_proof_record(request_id: RequestId) -> Option<ChainProofRecord>;
         fn qubitum_route_assignment(subnet_id: SubnetId, request_id: RequestId) -> Option<ChainAssignment>;
