@@ -845,6 +845,8 @@ pub mod pallet {
         UnknownValidator,
         /// The requested proof system does not match subnet policy.
         ProofSystemMismatch,
+        /// Proof system is not enabled for production Qubitum subnets.
+        UnsupportedProofSystem,
         /// Bond amount is outside subnet bounds.
         InvalidBond,
         /// Validator stake is below subnet minimum.
@@ -935,6 +937,7 @@ pub mod pallet {
             proof_system: ProofSystem,
         ) -> DispatchResult {
             let owner = ensure_signed(origin)?;
+            Self::ensure_supported_proof_system(proof_system)?;
             Self::burn_free(&owner, T::SubnetCreationBurn::get())?;
 
             let subnet_id = Self::next_subnet_id()?;
@@ -966,6 +969,7 @@ pub mod pallet {
         ) -> DispatchResult {
             let operator = ensure_signed(origin)?;
             ensure_commitment::<T>(model_commitment)?;
+            Self::ensure_supported_proof_system(proof_system)?;
             let subnet = Subnets::<T>::get(subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
             ensure!(
                 subnet.proof_system == proof_system,
@@ -1989,6 +1993,17 @@ pub mod pallet {
             if let Some(commitment) = commitment {
                 ensure_commitment::<T>(commitment)?;
             }
+            Ok(())
+        }
+
+        fn ensure_supported_proof_system(proof_system: ProofSystem) -> DispatchResult {
+            ensure!(
+                matches!(
+                    proof_system,
+                    ProofSystem::RiscZeroStark | ProofSystem::Stark
+                ),
+                Error::<T>::UnsupportedProofSystem
+            );
             Ok(())
         }
 

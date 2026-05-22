@@ -208,6 +208,32 @@ fn create_subnet_burns_qbt_and_stores_policy() {
 }
 
 #[test]
+fn create_subnet_rejects_mock_or_external_proof_systems_without_burn() {
+    new_test_ext().execute_with(|| {
+        assert_noop!(
+            Qubitum::create_subnet(
+                RuntimeOrigin::signed(1),
+                SubnetDomain::Code,
+                ProofSystem::Mock
+            ),
+            Error::<Test>::UnsupportedProofSystem
+        );
+        assert_noop!(
+            Qubitum::create_subnet(
+                RuntimeOrigin::signed(1),
+                SubnetDomain::Code,
+                ProofSystem::External(7)
+            ),
+            Error::<Test>::UnsupportedProofSystem
+        );
+
+        assert_eq!(SubnetCount::<Test>::get(), 0);
+        assert_eq!(TotalBurned::<Test>::get(), 0);
+        assert_eq!(Balances::free_balance(1), 1_000_000_000_000_000);
+    });
+}
+
+#[test]
 fn public_subnet_view_redacts_owner_and_economic_policy() {
     new_test_ext().execute_with(|| {
         assert_ok!(Qubitum::create_subnet(
