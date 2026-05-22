@@ -350,7 +350,8 @@ mod benchmarks {
         assert_eq!(record.proof_system, ProofSystem::RiscZeroStark);
         assert_eq!(record.proof_size_bytes, TARGET_PROOF_SIZE_MIN_BYTES);
         assert_eq!(record.verification_latency_ms, 10);
-        assert!(record.submitted_at >= submitted_at);
+        assert_eq!(record.submitted_at, submitted_at);
+        assert!(record.accepted_at >= submitted_at);
     }
 
     #[benchmark]

@@ -12,6 +12,7 @@ use crate::{
         Balances, Qubitum, RuntimeOrigin, System, Test, new_test_ext, set_verification_outcome,
     },
 };
+use codec::Encode;
 use frame_support::{
     assert_noop, assert_ok,
     traits::{Hooks, StorageVersion, fungible::InspectHold},
@@ -28,6 +29,22 @@ fn commitment(seed: u8) -> [u8; 32] {
 
 fn proof(seed: u8) -> ProofEnvelope {
     ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
+}
+
+#[derive(Encode)]
+struct LegacyChainProofRecordV4 {
+    request_id: u64,
+    subnet_id: u16,
+    miner_id: u64,
+    validator_id: u64,
+    input_commitment: [u8; 32],
+    output_commitment: [u8; 32],
+    model_commitment: [u8; 32],
+    proof: ProofEnvelope,
+    proof_system: ProofSystem,
+    proof_size_bytes: u32,
+    verification_latency_ms: u32,
+    submitted_at: u64,
 }
 
 fn register_active_miner_and_validator() {
@@ -395,11 +412,10 @@ fn submit_proof_records_commitments_for_active_participants() {
         register_active_miner_and_validator();
         request_inference(42);
         System::set_block_number(123);
+        let mut submission = valid_submission(42);
+        submission.submitted_at = 120;
 
-        assert_ok!(Qubitum::submit_proof(
-            RuntimeOrigin::signed(3),
-            valid_submission(42)
-        ));
+        assert_ok!(Qubitum::submit_proof(RuntimeOrigin::signed(3), submission));
 
         let record = ProofRecords::<Test>::get(42).unwrap();
         assert_eq!(record.request_id, 42);
@@ -410,7 +426,8 @@ fn submit_proof_records_commitments_for_active_participants() {
         assert_eq!(record.proof_system, ProofSystem::RiscZeroStark);
         assert_eq!(record.proof_size_bytes, TARGET_PROOF_SIZE_MIN_BYTES);
         assert_eq!(record.verification_latency_ms, 10);
-        assert_eq!(record.submitted_at, 123);
+        assert_eq!(record.submitted_at, 120);
+        assert_eq!(record.accepted_at, 123);
         assert_eq!(
             InferenceRequests::<Test>::get(42).unwrap().status,
             InferenceRequestStatus::Settled
@@ -442,6 +459,38 @@ fn submit_proof_records_commitments_for_active_participants() {
             1_000_000_000_000_000 - MIN_MINER_BOND + 25
         );
         assert_eq!(Balances::free_balance(99), 5);
+    });
+}
+
+#[test]
+fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
+    new_test_ext().execute_with(|| {
+        let legacy = LegacyChainProofRecordV4 {
+            request_id: 77,
+            subnet_id: 0,
+            miner_id: 0,
+            validator_id: 0,
+            input_commitment: commitment(1),
+            output_commitment: commitment(2),
+            model_commitment: commitment(10),
+            proof: proof(11),
+            proof_system: ProofSystem::RiscZeroStark,
+            proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
+            verification_latency_ms: 10,
+            submitted_at: 55,
+        };
+        sp_io::storage::set(&ProofRecords::<Test>::hashed_key_for(77), &legacy.encode());
+        StorageVersion::new(4).put::<crate::Pallet<Test>>();
+
+        <Qubitum as Hooks<u64>>::on_runtime_upgrade();
+
+        let record = ProofRecords::<Test>::get(77).unwrap();
+        assert_eq!(record.submitted_at, 55);
+        assert_eq!(record.accepted_at, 55);
+        assert_eq!(
+            StorageVersion::get::<crate::Pallet<Test>>(),
+            StorageVersion::new(5)
+        );
     });
 }
 
@@ -888,7 +937,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(4)
+            StorageVersion::new(5)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);

@@ -139,7 +139,7 @@ pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
 
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(4);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(5);
     const MAX_VALIDATOR_ROUTING_ATTEMPTS: usize = 16;
 
     #[pallet::pallet]
@@ -303,6 +303,23 @@ pub mod pallet {
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
     pub struct ChainProofRecord {
+        pub request_id: RequestId,
+        pub subnet_id: SubnetId,
+        pub miner_id: MinerId,
+        pub validator_id: ValidatorId,
+        pub input_commitment: Commitment,
+        pub output_commitment: Commitment,
+        pub model_commitment: Commitment,
+        pub proof: ProofEnvelope,
+        pub proof_system: ProofSystem,
+        pub proof_size_bytes: u32,
+        pub verification_latency_ms: u32,
+        pub submitted_at: BlockNumber,
+        pub accepted_at: BlockNumber,
+    }
+
+    #[derive(Decode)]
+    struct ChainProofRecordV4 {
         pub request_id: RequestId,
         pub subnet_id: SubnetId,
         pub miner_id: MinerId,
@@ -505,7 +522,8 @@ pub mod pallet {
             let weight = Self::rebuild_active_routing_indexes()
                 .saturating_add(Self::rebuild_pending_assignment_counters())
                 .saturating_add(Self::rebuild_inference_accounting())
-                .saturating_add(Self::rebuild_request_status_counts());
+                .saturating_add(Self::rebuild_request_status_counts())
+                .saturating_add(Self::migrate_proof_record_timestamps(on_chain));
             STORAGE_VERSION.put::<Pallet<T>>();
             weight.saturating_add(T::DbWeight::get().reads_writes(1, 1))
         }
@@ -909,7 +927,8 @@ pub mod pallet {
                     proof_system: submission.proof_system,
                     proof_size_bytes: submission.proof_size_bytes,
                     verification_latency_ms: submission.verification_latency_ms,
-                    submitted_at: Self::current_block(),
+                    submitted_at: submission.submitted_at,
+                    accepted_at: Self::current_block(),
                 },
             );
             let (miner_payment, validator_fee, treasury_fee) =
@@ -1805,6 +1824,34 @@ pub mod pallet {
             RejectedInferenceRequestCount::<T>::put(counts.rejected);
 
             T::DbWeight::get().reads_writes(request_reads, 4)
+        }
+
+        fn migrate_proof_record_timestamps(on_chain: StorageVersion) -> Weight {
+            if on_chain >= StorageVersion::new(5) {
+                return Weight::zero();
+            }
+
+            let mut migrated = 0_u64;
+            ProofRecords::<T>::translate::<ChainProofRecordV4, _>(|_, old| {
+                migrated = migrated.saturating_add(1);
+                Some(ChainProofRecord {
+                    request_id: old.request_id,
+                    subnet_id: old.subnet_id,
+                    miner_id: old.miner_id,
+                    validator_id: old.validator_id,
+                    input_commitment: old.input_commitment,
+                    output_commitment: old.output_commitment,
+                    model_commitment: old.model_commitment,
+                    proof: old.proof,
+                    proof_system: old.proof_system,
+                    proof_size_bytes: old.proof_size_bytes,
+                    verification_latency_ms: old.verification_latency_ms,
+                    submitted_at: old.submitted_at,
+                    accepted_at: old.submitted_at,
+                })
+            });
+
+            T::DbWeight::get().reads_writes(migrated, migrated)
         }
 
         #[cfg(feature = "try-runtime")]
