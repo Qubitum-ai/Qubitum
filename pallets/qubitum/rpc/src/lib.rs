@@ -79,6 +79,9 @@ pub trait QubitumRpcApi<BlockHash> {
     #[method(name = "qubitum_getAccounting")]
     fn get_accounting(&self, at: Option<BlockHash>) -> RpcResult<Vec<u8>>;
 
+    #[method(name = "qubitum_getProtocolParams")]
+    fn get_protocol_params(&self, at: Option<BlockHash>) -> RpcResult<Vec<u8>>;
+
     #[method(name = "qubitum_getRequestStatusCounts")]
     fn get_request_status_counts(&self, at: Option<BlockHash>) -> RpcResult<Vec<u8>>;
 }
@@ -302,6 +305,17 @@ where
             .map(|result| result.encode())
             .map_err(|e| {
                 Error::RuntimeError(format!("Unable to get Qubitum accounting: {e:?}")).into()
+            })
+    }
+
+    fn get_protocol_params(&self, at: Option<<Block as BlockT>::Hash>) -> RpcResult<Vec<u8>> {
+        let api = self.client.runtime_api();
+        let at = self.at_or_best(at);
+
+        api.qubitum_protocol_params(at)
+            .map(|result| result.encode())
+            .map_err(|e| {
+                Error::RuntimeError(format!("Unable to get Qubitum protocol params: {e:?}")).into()
             })
     }
 

@@ -383,6 +383,26 @@ pub mod pallet {
     }
 
     #[derive(
+        Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
+    )]
+    pub struct ChainProtocolParams<Balance> {
+        pub subnet_creation_burn: Balance,
+        pub miner_registration_burn: Balance,
+        pub min_miner_bond: Balance,
+        pub max_miner_bond: Balance,
+        pub min_validator_stake: Balance,
+        pub min_invalid_proof_slash_bps: u16,
+        pub max_invalid_proof_slash_bps: u16,
+        pub min_proof_size_bytes: u32,
+        pub max_proof_size_bytes: u32,
+        pub max_verification_latency_ms: u32,
+        pub max_proof_submission_age_blocks: BlockNumber,
+        pub miner_exit_cooldown_blocks: BlockNumber,
+        pub validator_exit_cooldown_blocks: BlockNumber,
+        pub request_cancel_delay_blocks: BlockNumber,
+    }
+
+    #[derive(
         Encode,
         Decode,
         DecodeWithMemTracking,
@@ -1348,6 +1368,25 @@ pub mod pallet {
                 total_validator_fees: TotalValidatorFees::<T>::get(),
                 total_treasury_fees: TotalTreasuryFees::<T>::get(),
                 total_inference_refunded: TotalInferenceRefunded::<T>::get(),
+            }
+        }
+
+        pub fn protocol_params() -> ChainProtocolParams<BalanceOf<T>> {
+            ChainProtocolParams {
+                subnet_creation_burn: T::SubnetCreationBurn::get(),
+                miner_registration_burn: T::MinerRegistrationBurn::get(),
+                min_miner_bond: T::MinMinerBond::get(),
+                max_miner_bond: T::MaxMinerBond::get(),
+                min_validator_stake: T::MinValidatorStake::get(),
+                min_invalid_proof_slash_bps: T::MinInvalidProofSlashBps::get(),
+                max_invalid_proof_slash_bps: T::MaxInvalidProofSlashBps::get(),
+                min_proof_size_bytes: T::MinProofSizeBytes::get(),
+                max_proof_size_bytes: T::MaxProofSizeBytes::get(),
+                max_verification_latency_ms: T::MaxVerificationLatencyMs::get(),
+                max_proof_submission_age_blocks: T::MaxProofSubmissionAgeBlocks::get(),
+                miner_exit_cooldown_blocks: T::MinerExitCooldownBlocks::get(),
+                validator_exit_cooldown_blocks: T::ValidatorExitCooldownBlocks::get(),
+                request_cancel_delay_blocks: T::RequestCancelDelayBlocks::get(),
             }
         }
 

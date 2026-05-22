@@ -18,9 +18,10 @@ use frame_support::{
     traits::{Hooks, StorageVersion, fungible::InspectHold},
 };
 use qubitum_protocol::{
-    InferenceProofSubmission, MAX_MINER_BOND, MIN_MINER_BOND, MINER_REGISTRATION_BURN,
-    ProofEnvelope, ProofSystem, ProofVerifierVersion, RegistryStatus, SubnetDomain,
-    TARGET_PROOF_SIZE_MIN_BYTES, VerificationOutcome,
+    InferenceProofSubmission, MAX_INVALID_PROOF_SLASH_BPS, MAX_MINER_BOND,
+    MIN_INVALID_PROOF_SLASH_BPS, MIN_MINER_BOND, MINER_REGISTRATION_BURN, ProofEnvelope,
+    ProofSystem, ProofVerifierVersion, RegistryStatus, SubnetDomain, TARGET_PROOF_SIZE_MAX_BYTES,
+    TARGET_PROOF_SIZE_MIN_BYTES, TARGET_VERIFICATION_MS, VerificationOutcome,
 };
 
 fn commitment(seed: u8) -> [u8; 32] {
@@ -124,6 +125,34 @@ fn create_subnet_burns_qbt_and_stores_policy() {
             Balances::free_balance(1),
             1_000_000_000_000_000 - MINER_REGISTRATION_BURN
         );
+    });
+}
+
+#[test]
+fn protocol_params_expose_runtime_policy() {
+    new_test_ext().execute_with(|| {
+        let params = Qubitum::protocol_params();
+
+        assert_eq!(params.subnet_creation_burn, MINER_REGISTRATION_BURN);
+        assert_eq!(params.miner_registration_burn, MINER_REGISTRATION_BURN);
+        assert_eq!(params.min_miner_bond, MIN_MINER_BOND);
+        assert_eq!(params.max_miner_bond, MAX_MINER_BOND);
+        assert_eq!(params.min_validator_stake, MIN_MINER_BOND);
+        assert_eq!(
+            params.min_invalid_proof_slash_bps,
+            MIN_INVALID_PROOF_SLASH_BPS
+        );
+        assert_eq!(
+            params.max_invalid_proof_slash_bps,
+            MAX_INVALID_PROOF_SLASH_BPS
+        );
+        assert_eq!(params.min_proof_size_bytes, TARGET_PROOF_SIZE_MIN_BYTES);
+        assert_eq!(params.max_proof_size_bytes, TARGET_PROOF_SIZE_MAX_BYTES);
+        assert_eq!(params.max_verification_latency_ms, TARGET_VERIFICATION_MS);
+        assert_eq!(params.max_proof_submission_age_blocks, 10);
+        assert_eq!(params.miner_exit_cooldown_blocks, 20);
+        assert_eq!(params.validator_exit_cooldown_blocks, 20);
+        assert_eq!(params.request_cancel_delay_blocks, 10);
     });
 }
 

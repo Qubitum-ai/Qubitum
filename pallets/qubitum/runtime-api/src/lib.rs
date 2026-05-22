@@ -2,7 +2,7 @@
 
 use pallet_qubitum::{
     ChainAccounting, ChainAssignment, ChainInferenceRequest, ChainMiner, ChainProofRecord,
-    ChainRequestStatusCounts, ChainSubnet, ChainValidator,
+    ChainProtocolParams, ChainRequestStatusCounts, ChainSubnet, ChainValidator,
 };
 use qubitum_protocol::{MinerId, RequestId, SubnetId, ValidatorId};
 use sp_runtime::AccountId32;
@@ -23,6 +23,7 @@ sp_api::decl_runtime_apis! {
         fn qubitum_counts() -> (SubnetId, MinerId, ValidatorId);
         fn qubitum_total_burned() -> TaoBalance;
         fn qubitum_accounting() -> ChainAccounting<TaoBalance>;
+        fn qubitum_protocol_params() -> ChainProtocolParams<TaoBalance>;
         fn qubitum_request_status_counts() -> ChainRequestStatusCounts;
     }
 }
