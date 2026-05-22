@@ -487,6 +487,30 @@ fn pending_assignment_blocks_participant_exit_until_request_closes() {
 }
 
 #[test]
+fn root_slash_rejects_pending_assigned_participants() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(7);
+
+        assert_noop!(
+            Qubitum::slash_miner(RuntimeOrigin::root(), 0, 1_000),
+            Error::<Test>::PendingAssignedRequests
+        );
+        assert_noop!(
+            Qubitum::slash_validator(RuntimeOrigin::root(), 0, 1_000),
+            Error::<Test>::PendingAssignedRequests
+        );
+
+        assert_ok!(Qubitum::submit_proof(
+            RuntimeOrigin::signed(3),
+            valid_submission(7)
+        ));
+        assert_ok!(Qubitum::slash_miner(RuntimeOrigin::root(), 0, 1_000));
+        assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 1_000));
+    });
+}
+
+#[test]
 fn request_inference_rejects_non_next_request_id() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();

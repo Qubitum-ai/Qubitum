@@ -895,6 +895,10 @@ pub mod pallet {
                     && slash_bps <= T::MaxInvalidProofSlashBps::get(),
                 Error::<T>::InvalidSlashPercent
             );
+            ensure!(
+                PendingMinerRequests::<T>::get(miner_id) == 0,
+                Error::<T>::PendingAssignedRequests
+            );
 
             let amount = Self::slash_miner_bond(miner_id, slash_bps)?;
             Self::deposit_event(Event::MinerSlashed { miner_id, amount });
@@ -1188,6 +1192,10 @@ pub mod pallet {
                 slash_bps >= T::MinInvalidProofSlashBps::get()
                     && slash_bps <= T::MaxInvalidProofSlashBps::get(),
                 Error::<T>::InvalidSlashPercent
+            );
+            ensure!(
+                PendingValidatorRequests::<T>::get(validator_id) == 0,
+                Error::<T>::PendingAssignedRequests
             );
 
             let amount = Self::slash_validator_stake(validator_id, slash_bps)?;
