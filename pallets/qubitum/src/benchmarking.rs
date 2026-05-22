@@ -327,8 +327,10 @@ mod benchmarks {
         let record = ProofRecords::<T>::get(42).unwrap();
         assert_eq!(record.request_id, 42);
         assert_eq!(record.subnet_id, 0);
-        assert_eq!(record.miner_id, 0);
-        assert_eq!(record.validator_id, 0);
+        assert_eq!(
+            record.assignment_commitment,
+            Pallet::<T>::request_assignment_commitment(42, 0, 0, 0)
+        );
         assert_eq!(record.input_commitment, commitment(1));
         assert_eq!(record.output_commitment, commitment(2));
         assert_eq!(record.model_commitment, commitment(10));

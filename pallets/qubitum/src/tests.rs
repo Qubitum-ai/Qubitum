@@ -94,6 +94,23 @@ struct LegacyChainProofRecordV4 {
 }
 
 #[derive(Encode)]
+struct LegacyChainProofRecordV11 {
+    request_id: u64,
+    subnet_id: u16,
+    miner_id: u64,
+    validator_id: u64,
+    input_commitment: [u8; 32],
+    output_commitment: [u8; 32],
+    model_commitment: [u8; 32],
+    proof: ProofEnvelope,
+    proof_system: ProofSystem,
+    proof_size_bytes: u32,
+    verification_latency_ms: u32,
+    submitted_at: u64,
+    accepted_at: u64,
+}
+
+#[derive(Encode)]
 struct LegacyChainMinerV7 {
     id: u64,
     operator: u64,
@@ -879,6 +896,10 @@ fn submit_proof_records_commitments_for_active_participants() {
 
         let record = ProofRecords::<Test>::get(42).unwrap();
         assert_eq!(record.request_id, 42);
+        assert_eq!(
+            record.assignment_commitment,
+            Qubitum::request_assignment_commitment(42, 0, 0, 0)
+        );
         assert_eq!(record.input_commitment, commitment(1));
         assert_eq!(record.proof.proof_commitment, commitment(11));
         assert_eq!(record.proof.journal_commitment, commitment(12));
@@ -1296,11 +1317,54 @@ fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
 
         let record = ProofRecords::<Test>::get(77).unwrap();
+        assert_eq!(
+            record.assignment_commitment,
+            Qubitum::request_assignment_commitment(77, 0, 0, 0)
+        );
         assert_eq!(record.submitted_at, 55);
         assert_eq!(record.accepted_at, 55);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(11)
+            StorageVersion::new(12)
+        );
+    });
+}
+
+#[test]
+fn runtime_upgrade_migrates_proof_record_routes_to_commitments() {
+    new_test_ext().execute_with(|| {
+        let legacy = LegacyChainProofRecordV11 {
+            request_id: 77,
+            subnet_id: 3,
+            miner_id: 7,
+            validator_id: 9,
+            input_commitment: commitment(1),
+            output_commitment: commitment(2),
+            model_commitment: commitment(10),
+            proof: proof(11),
+            proof_system: ProofSystem::RiscZeroStark,
+            proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
+            verification_latency_ms: 10,
+            submitted_at: 55,
+            accepted_at: 58,
+        };
+        sp_io::storage::set(&ProofRecords::<Test>::hashed_key_for(77), &legacy.encode());
+        StorageVersion::new(11).put::<crate::Pallet<Test>>();
+
+        <Qubitum as Hooks<u64>>::on_runtime_upgrade();
+
+        let record = ProofRecords::<Test>::get(77).unwrap();
+        assert_eq!(
+            record.assignment_commitment,
+            Qubitum::request_assignment_commitment(77, 3, 7, 9)
+        );
+        assert_eq!(record.submitted_at, 55);
+        assert_eq!(record.accepted_at, 58);
+        assert!(!contains_subsequence(&record.encode(), &7_u64.encode()));
+        assert!(!contains_subsequence(&record.encode(), &9_u64.encode()));
+        assert_eq!(
+            StorageVersion::get::<crate::Pallet<Test>>(),
+            StorageVersion::new(12)
         );
     });
 }
@@ -1364,7 +1428,7 @@ fn runtime_upgrade_migrates_registry_operators_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(11)
+            StorageVersion::new(12)
         );
     });
 }
@@ -1425,7 +1489,7 @@ fn runtime_upgrade_migrates_participant_capital_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(11)
+            StorageVersion::new(12)
         );
     });
 }
@@ -1470,7 +1534,7 @@ fn runtime_upgrade_migrates_request_users_to_commitments() {
         assert_eq!(PendingValidatorRequests::<Test>::get(9), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(11)
+            StorageVersion::new(12)
         );
     });
 }
@@ -2075,7 +2139,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(11)
+            StorageVersion::new(12)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
