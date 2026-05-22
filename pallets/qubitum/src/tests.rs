@@ -2046,6 +2046,56 @@ fn expire_inference_releases_stale_request_for_any_signed_caller() {
 }
 
 #[test]
+fn request_user_witness_gates_settlement_challenge_and_expiry() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+
+        request_inference(70);
+        assert_noop!(
+            Qubitum::submit_proof(RuntimeOrigin::signed(3), valid_submission(70), 5, 2),
+            Error::<Test>::NotRequestOwner
+        );
+        assert_eq!(
+            InferenceRequests::<Test>::get(70).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            1_000
+        );
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(70)));
+
+        request_inference(71);
+        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
+        assert_noop!(
+            Qubitum::challenge_proof(RuntimeOrigin::signed(5), valid_submission(71), 5, 2),
+            Error::<Test>::NotRequestOwner
+        );
+        assert_eq!(
+            InferenceRequests::<Test>::get(71).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+
+        request_inference(72);
+        System::set_block_number(10);
+        assert_noop!(
+            Qubitum::expire_inference(RuntimeOrigin::signed(5), 72, 5),
+            Error::<Test>::NotRequestOwner
+        );
+        assert_eq!(
+            InferenceRequests::<Test>::get(72).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_ok!(Qubitum::expire_inference(RuntimeOrigin::signed(5), 72, 4));
+        assert_eq!(
+            InferenceRequests::<Test>::get(72).unwrap().status,
+            InferenceRequestStatus::Expired
+        );
+    });
+}
+
+#[test]
 fn cancel_inference_rejects_non_owner_or_settled_request() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
