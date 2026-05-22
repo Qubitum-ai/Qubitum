@@ -1,6 +1,6 @@
 use qubitum_protocol::{
     AccountId, Commitment, InferenceProofSubmission, MIN_MINER_BOND, MINER_REGISTRATION_BURN,
-    MockVerifier, ProofSystem, ProtocolError, ProtocolState, SubnetDomain,
+    MockVerifier, ProofEnvelope, ProofSystem, ProtocolError, ProtocolState, SubnetDomain,
     TARGET_PROOF_SIZE_MIN_BYTES,
 };
 
@@ -19,6 +19,7 @@ fn main() -> Result<(), ProtocolError> {
     let validator_operator = account(3);
     let user = account(4);
     let proof_commitment = commitment(44);
+    let proof = ProofEnvelope::risc_zero_v1(proof_commitment, commitment(45), commitment(46));
 
     let mut state = ProtocolState::with_genesis(
         treasury,
@@ -51,7 +52,7 @@ fn main() -> Result<(), ProtocolError> {
             input_commitment: commitment(11),
             output_commitment: commitment(12),
             model_commitment: commitment(10),
-            proof_commitment,
+            proof,
             proof_system: ProofSystem::RiscZeroStark,
             proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
             verification_latency_ms: 17,

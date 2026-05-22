@@ -7,12 +7,17 @@ use crate::{
 };
 use frame_support::{assert_noop, assert_ok, traits::fungible::InspectHold};
 use qubitum_protocol::{
-    InferenceProofSubmission, MAX_MINER_BOND, MIN_MINER_BOND, MINER_REGISTRATION_BURN, ProofSystem,
-    RegistryStatus, SubnetDomain, TARGET_PROOF_SIZE_MIN_BYTES, VerificationOutcome,
+    InferenceProofSubmission, MAX_MINER_BOND, MIN_MINER_BOND, MINER_REGISTRATION_BURN,
+    ProofEnvelope, ProofSystem, ProofVerifierVersion, RegistryStatus, SubnetDomain,
+    TARGET_PROOF_SIZE_MIN_BYTES, VerificationOutcome,
 };
 
 fn commitment(seed: u8) -> [u8; 32] {
     [seed; 32]
+}
+
+fn proof(seed: u8) -> ProofEnvelope {
+    ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
 }
 
 fn register_active_miner_and_validator() {
@@ -48,7 +53,7 @@ fn valid_submission(request_id: u64) -> InferenceProofSubmission {
         input_commitment: commitment(1),
         output_commitment: commitment(2),
         model_commitment: commitment(10),
-        proof_commitment: commitment(11),
+        proof: proof(11),
         proof_system: ProofSystem::RiscZeroStark,
         proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
         verification_latency_ms: 10,
@@ -177,7 +182,9 @@ fn submit_proof_records_commitments_for_active_participants() {
         let record = ProofRecords::<Test>::get(42).unwrap();
         assert_eq!(record.request_id, 42);
         assert_eq!(record.input_commitment, commitment(1));
-        assert_eq!(record.proof_commitment, commitment(11));
+        assert_eq!(record.proof.proof_commitment, commitment(11));
+        assert_eq!(record.proof.journal_commitment, commitment(12));
+        assert_eq!(record.proof.image_id, commitment(13));
     });
 }
 
@@ -197,7 +204,7 @@ fn submit_proof_rejects_latency_or_missing_commitment() {
                     input_commitment: [0; 32],
                     output_commitment: commitment(2),
                     model_commitment: commitment(10),
-                    proof_commitment: commitment(11),
+                    proof: proof(11),
                     proof_system: ProofSystem::RiscZeroStark,
                     proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
                     verification_latency_ms: 10,
@@ -218,7 +225,7 @@ fn submit_proof_rejects_latency_or_missing_commitment() {
                     input_commitment: commitment(1),
                     output_commitment: commitment(2),
                     model_commitment: commitment(10),
-                    proof_commitment: commitment(11),
+                    proof: proof(11),
                     proof_system: ProofSystem::RiscZeroStark,
                     proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
                     verification_latency_ms: 101,
@@ -226,6 +233,20 @@ fn submit_proof_rejects_latency_or_missing_commitment() {
                 }
             ),
             Error::<Test>::LatencyExceeded
+        );
+
+        let mut missing_journal = valid_submission(49);
+        missing_journal.proof.journal_commitment = [0; 32];
+        assert_noop!(
+            Qubitum::submit_proof(RuntimeOrigin::signed(3), missing_journal),
+            Error::<Test>::MissingCommitment
+        );
+
+        let mut wrong_verifier = valid_submission(50);
+        wrong_verifier.proof.verifier_version = ProofVerifierVersion::Mock;
+        assert_noop!(
+            Qubitum::submit_proof(RuntimeOrigin::signed(3), wrong_verifier),
+            Error::<Test>::ProofSystemMismatch
         );
     });
 }

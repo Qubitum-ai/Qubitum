@@ -11,7 +11,7 @@ use frame_benchmarking::{account, v2::*};
 use frame_support::traits::{Get, fungible::Mutate};
 use frame_system::RawOrigin;
 use qubitum_protocol::{
-    Commitment, InferenceProofSubmission, ProofSystem, RegistryStatus, SubnetDomain,
+    Commitment, InferenceProofSubmission, ProofEnvelope, ProofSystem, RegistryStatus, SubnetDomain,
     TARGET_PROOF_SIZE_MIN_BYTES,
 };
 use sp_runtime::Saturating;
@@ -20,6 +20,10 @@ const SEED: u32 = 0;
 
 fn commitment(seed: u8) -> Commitment {
     [seed; 32]
+}
+
+fn proof(seed: u8) -> ProofEnvelope {
+    ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
 }
 
 fn assert_last_event<T: Config>(generic_event: <T as frame_system::Config>::RuntimeEvent) {
@@ -94,7 +98,7 @@ fn proof_submission() -> InferenceProofSubmission {
         input_commitment: commitment(1),
         output_commitment: commitment(2),
         model_commitment: commitment(10),
-        proof_commitment: commitment(11),
+        proof: proof(11),
         proof_system: ProofSystem::RiscZeroStark,
         proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
         verification_latency_ms: 10,
@@ -225,7 +229,7 @@ mod benchmarks {
                 input_commitment: commitment(1),
                 output_commitment: commitment(2),
                 model_commitment: commitment(10),
-                proof_commitment: commitment(11),
+                proof: proof(11),
             })
         );
     }

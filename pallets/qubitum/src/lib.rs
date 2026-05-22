@@ -22,8 +22,8 @@ use frame_support::{
     },
 };
 use qubitum_protocol::{
-    Commitment, InferenceProofSubmission, MinerId, ProofSystem, RegistryStatus, RequestId,
-    SubnetDomain, SubnetId, ValidatorId, VerificationOutcome,
+    Commitment, InferenceProofSubmission, MinerId, ProofEnvelope, ProofSystem, RegistryStatus,
+    RequestId, SubnetDomain, SubnetId, ValidatorId, VerificationOutcome,
 };
 use scale_info::TypeInfo;
 use sp_runtime::{DispatchError, Saturating, traits::SaturatedConversion};
@@ -70,8 +70,23 @@ impl VerifyProof for ShapeProofVerifier {
             ShapeVerifierError::MissingCommitment
         );
         ensure!(
-            submission.proof_commitment != [0; 32],
+            submission.proof.proof_commitment != [0; 32],
             ShapeVerifierError::MissingCommitment
+        );
+        ensure!(
+            submission.proof.journal_commitment != [0; 32],
+            ShapeVerifierError::MissingCommitment
+        );
+        ensure!(
+            submission.proof.image_id != [0; 32],
+            ShapeVerifierError::MissingCommitment
+        );
+        ensure!(
+            submission
+                .proof
+                .verifier_version
+                .supports(submission.proof_system),
+            ShapeVerifierError::ProofSystemMismatch
         );
         ensure!(
             submission.proof_system == policy.proof_system,
@@ -118,7 +133,7 @@ impl From<ShapeVerifierError> for DispatchError {
 }
 
 #[frame_support::pallet]
-#[allow(clippy::expect_used)]
+#[allow(clippy::expect_used, clippy::large_enum_variant)]
 pub mod pallet {
     use super::*;
     use frame_support::pallet_prelude::*;
@@ -243,7 +258,7 @@ pub mod pallet {
         pub input_commitment: Commitment,
         pub output_commitment: Commitment,
         pub model_commitment: Commitment,
-        pub proof_commitment: Commitment,
+        pub proof: ProofEnvelope,
     }
 
     #[pallet::storage]
@@ -362,6 +377,7 @@ pub mod pallet {
         VerifierError,
     }
 
+    #[allow(clippy::large_enum_variant)]
     #[pallet::call]
     impl<T: Config> Pallet<T> {
         /// Create a permissionless Qubitum subnet by burning QBT.
@@ -528,7 +544,7 @@ pub mod pallet {
                     input_commitment: submission.input_commitment,
                     output_commitment: submission.output_commitment,
                     model_commitment: submission.model_commitment,
-                    proof_commitment: submission.proof_commitment,
+                    proof: submission.proof,
                 },
             );
 
@@ -604,7 +620,7 @@ pub mod pallet {
             ensure_commitment::<T>(submission.input_commitment)?;
             ensure_commitment::<T>(submission.output_commitment)?;
             ensure_commitment::<T>(submission.model_commitment)?;
-            ensure_commitment::<T>(submission.proof_commitment)?;
+            ensure_proof_envelope::<T>(&submission.proof, submission.proof_system)?;
             ensure!(
                 !ProofRecords::<T>::contains_key(submission.request_id),
                 Error::<T>::DuplicateProof
@@ -696,6 +712,20 @@ pub mod pallet {
 
 fn ensure_commitment<T: Config>(commitment: Commitment) -> DispatchResult {
     ensure!(commitment != [0; 32], pallet::Error::<T>::MissingCommitment);
+    Ok(())
+}
+
+fn ensure_proof_envelope<T: Config>(
+    proof: &ProofEnvelope,
+    proof_system: ProofSystem,
+) -> DispatchResult {
+    ensure_commitment::<T>(proof.proof_commitment)?;
+    ensure_commitment::<T>(proof.journal_commitment)?;
+    ensure_commitment::<T>(proof.image_id)?;
+    ensure!(
+        proof.verifier_version.supports(proof_system),
+        pallet::Error::<T>::ProofSystemMismatch
+    );
     Ok(())
 }
 

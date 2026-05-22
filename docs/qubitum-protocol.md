@@ -35,7 +35,16 @@ The core protocol structs and enums derive SCALE `Encode`/`Decode` plus `scale-i
 
 The pallet is wired into `node-subtensor-runtime` as `Qubitum`, with runtime-provided weights and a FRAME benchmarking suite for all dispatchables. Placeholder weights are isolated behind `pallet_qubitum::weights::WeightInfo` so generated benchmark output can replace them without changing call logic.
 
-Proof submission is constrained to the registered validator operator for the submitted validator ID. The pallet rejects duplicate request IDs, requires the submitted model commitment to match the registered miner commitment, and routes every submission through `pallet_qubitum::VerifyProof` before storing a proof record. The current runtime uses a shape-only verifier adapter; a concrete Risc Zero verifier can replace that associated type without changing dispatchable semantics.
+Proof submission is constrained to the registered validator operator for the submitted validator ID. The pallet rejects duplicate request IDs, requires the submitted model commitment to match the registered miner commitment, validates the proof envelope, and routes every submission through `pallet_qubitum::VerifyProof` before storing a proof record. The current runtime uses a shape-only verifier adapter; a concrete Risc Zero verifier can replace that associated type without changing dispatchable semantics.
+
+The proof envelope commits to the off-chain proof artifact without storing raw proof bytes on-chain:
+
+- `proof_commitment`: receipt, seal, or external proof commitment
+- `journal_commitment`: verifier-authenticated public journal commitment
+- `image_id`: zkVM image id, verification key, or circuit id
+- `verifier_version`: concrete verifier family and version, such as `RiscZeroV1`
+
+This keeps block execution bounded while preserving enough metadata for validators, indexers, and future Risc Zero adapters to audit what was verified.
 
 `pallet-qubitum-runtime-api` exposes typed runtime queries for subnet, miner, validator, proof-record, registry-count, and total-burned state. `pallet-qubitum-rpc` wires those queries into node JSON-RPC methods under the `qubitum_*` namespace, returning SCALE-encoded bytes for complex structs and a direct balance for total burned state.
 
@@ -70,7 +79,7 @@ cargo test -p node-subtensor-runtime --test safe_mode
 
 ## Privacy Contract
 
-Model weights and inference inputs are private. The chain stores commitments and proof metadata, not raw inputs or model weights. Inference outputs are public or user-visible, and miner identity may be shielded through optional identity commitments.
+Model weights and inference inputs are private. The chain stores commitments, proof-envelope metadata, and verifier version data, not raw inputs, proof bytes, journals, or model weights. Inference outputs are public or user-visible, and miner identity may be shielded through optional identity commitments.
 
 Validators verify that inference executed correctly, that the committed model version was used, and that latency bounds were met. Validators do not learn model weights, raw inference input, or model internals.
 

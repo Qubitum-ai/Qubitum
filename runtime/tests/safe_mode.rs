@@ -1,11 +1,15 @@
 use frame_support::traits::Contains;
 use node_subtensor_runtime::{RuntimeCall, SafeModeWhitelistedCalls};
 use qubitum_protocol::{
-    InferenceProofSubmission, ProofSystem, SubnetDomain, TARGET_PROOF_SIZE_MIN_BYTES,
+    InferenceProofSubmission, ProofEnvelope, ProofSystem, SubnetDomain, TARGET_PROOF_SIZE_MIN_BYTES,
 };
 
 fn commitment(seed: u8) -> [u8; 32] {
     [seed; 32]
+}
+
+fn proof(seed: u8) -> ProofEnvelope {
+    ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
 }
 
 fn valid_submission() -> InferenceProofSubmission {
@@ -17,7 +21,7 @@ fn valid_submission() -> InferenceProofSubmission {
         input_commitment: commitment(1),
         output_commitment: commitment(2),
         model_commitment: commitment(3),
-        proof_commitment: commitment(4),
+        proof: proof(4),
         proof_system: ProofSystem::RiscZeroStark,
         proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
         verification_latency_ms: 10,

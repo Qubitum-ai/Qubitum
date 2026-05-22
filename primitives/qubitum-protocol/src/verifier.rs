@@ -72,7 +72,7 @@ impl ProofVerifier for MockVerifier {
         }
 
         if let Some(expected) = self.expected_proof_commitment
-            && expected != submission.proof_commitment
+            && expected != submission.proof.proof_commitment
         {
             return Ok(VerificationOutcome::Invalid {
                 slash_bps: policy.miner_bond.min_invalid_proof_slash_bps,

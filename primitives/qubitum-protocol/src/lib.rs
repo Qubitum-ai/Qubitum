@@ -113,6 +113,40 @@ pub enum ProofSystem {
     External(u16),
 }
 
+/// Versioned verifier implementation expected for a submitted proof.
+#[derive(
+    codec::Decode,
+    codec::DecodeWithMemTracking,
+    codec::Encode,
+    codec::MaxEncodedLen,
+    scale_info::TypeInfo,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+pub enum ProofVerifierVersion {
+    Mock,
+    RiscZeroV1,
+    RiscZeroV2,
+    StarkV1,
+    External(u16),
+}
+
+impl ProofVerifierVersion {
+    pub const fn supports(self, proof_system: ProofSystem) -> bool {
+        match (self, proof_system) {
+            (Self::Mock, ProofSystem::Mock)
+            | (Self::RiscZeroV1, ProofSystem::RiscZeroStark)
+            | (Self::RiscZeroV2, ProofSystem::RiscZeroStark)
+            | (Self::StarkV1, ProofSystem::Stark) => true,
+            (Self::External(version), ProofSystem::External(system)) => version == system,
+            _ => false,
+        }
+    }
+}
+
 /// Planned account-signature mode for post-quantum migration.
 #[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SignatureMode {
@@ -421,11 +455,62 @@ pub struct InferenceProofSubmission {
     pub input_commitment: Commitment,
     pub output_commitment: Commitment,
     pub model_commitment: Commitment,
-    pub proof_commitment: Commitment,
+    pub proof: ProofEnvelope,
     pub proof_system: ProofSystem,
     pub proof_size_bytes: u32,
     pub verification_latency_ms: u32,
     pub submitted_at: BlockNumber,
+}
+
+/// Commitments and verifier metadata for an off-chain proof artifact.
+#[derive(
+    codec::Decode,
+    codec::DecodeWithMemTracking,
+    codec::Encode,
+    codec::MaxEncodedLen,
+    scale_info::TypeInfo,
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    PartialEq,
+)]
+pub struct ProofEnvelope {
+    /// Hash/commitment of the receipt, seal, or external proof bytes.
+    pub proof_commitment: Commitment,
+    /// Hash/commitment of the verifier-authenticated public journal.
+    pub journal_commitment: Commitment,
+    /// zkVM image id, verification key, or circuit id used for verification.
+    pub image_id: Commitment,
+    /// Concrete verifier family/version expected for the artifact.
+    pub verifier_version: ProofVerifierVersion,
+}
+
+impl ProofEnvelope {
+    pub const fn risc_zero_v1(
+        proof_commitment: Commitment,
+        journal_commitment: Commitment,
+        image_id: Commitment,
+    ) -> Self {
+        Self {
+            proof_commitment,
+            journal_commitment,
+            image_id,
+            verifier_version: ProofVerifierVersion::RiscZeroV1,
+        }
+    }
+
+    pub fn validate(self, proof_system: ProofSystem) -> Result<Self, ProtocolError> {
+        ensure_commitment(self.proof_commitment)?;
+        ensure_commitment(self.journal_commitment)?;
+        ensure_commitment(self.image_id)?;
+
+        if !self.verifier_version.supports(proof_system) {
+            return Err(ProtocolError::ProofSystemMismatch);
+        }
+
+        Ok(self)
+    }
 }
 
 impl InferenceProofSubmission {
@@ -433,7 +518,7 @@ impl InferenceProofSubmission {
         ensure_commitment(self.input_commitment)?;
         ensure_commitment(self.output_commitment)?;
         ensure_commitment(self.model_commitment)?;
-        ensure_commitment(self.proof_commitment)?;
+        self.proof.validate(self.proof_system)?;
 
         if self.proof_system != policy.proof_system {
             return Err(ProtocolError::ProofSystemMismatch);
@@ -601,6 +686,10 @@ mod tests {
         [seed; 32]
     }
 
+    fn proof(seed: u8) -> ProofEnvelope {
+        ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
+    }
+
     fn account(seed: u8) -> AccountId {
         [seed; 32]
     }
@@ -673,7 +762,7 @@ mod tests {
             input_commitment: commitment(1),
             output_commitment: commitment(2),
             model_commitment: commitment(3),
-            proof_commitment: commitment(4),
+            proof: proof(4),
             proof_system: ProofSystem::RiscZeroStark,
             proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
             verification_latency_ms: TARGET_VERIFICATION_MS,
@@ -687,6 +776,20 @@ mod tests {
         assert_eq!(
             too_slow.validate_shape(policy),
             Err(ProtocolError::LatencyExceeded)
+        );
+
+        let mut missing_journal = submission.clone();
+        missing_journal.proof.journal_commitment = [0; 32];
+        assert_eq!(
+            missing_journal.validate_shape(policy),
+            Err(ProtocolError::MissingCommitment)
+        );
+
+        let mut wrong_verifier = submission.clone();
+        wrong_verifier.proof.verifier_version = ProofVerifierVersion::Mock;
+        assert_eq!(
+            wrong_verifier.validate_shape(policy),
+            Err(ProtocolError::ProofSystemMismatch)
         );
 
         let mut wrong_backend = submission;
@@ -740,7 +843,7 @@ mod tests {
             input_commitment: commitment(7),
             output_commitment: commitment(8),
             model_commitment: commitment(9),
-            proof_commitment: commitment(10),
+            proof: proof(10),
             proof_system: ProofSystem::RiscZeroStark,
             proof_size_bytes: TARGET_PROOF_SIZE_MAX_BYTES,
             verification_latency_ms: 1,

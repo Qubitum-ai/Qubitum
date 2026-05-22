@@ -492,7 +492,7 @@ mod tests {
     use super::*;
     use crate::{
         BOND_EXIT_COOLDOWN_BLOCKS, INITIAL_SUPPLY, MAX_MINER_BOND, MIN_INVALID_PROOF_SLASH_BPS,
-        MIN_MINER_BOND, MINER_REGISTRATION_BURN, MockVerifier, ProofSystem,
+        MIN_MINER_BOND, MINER_REGISTRATION_BURN, MockVerifier, ProofEnvelope, ProofSystem,
         TARGET_PROOF_SIZE_MIN_BYTES,
     };
 
@@ -502,6 +502,10 @@ mod tests {
 
     fn commitment(seed: u8) -> Commitment {
         [seed; 32]
+    }
+
+    fn proof(seed: u8) -> ProofEnvelope {
+        ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
     }
 
     fn seeded_state() -> ProtocolState {
@@ -639,7 +643,7 @@ mod tests {
                     input_commitment: commitment(1),
                     output_commitment: commitment(2),
                     model_commitment: commitment(10),
-                    proof_commitment: commitment(11),
+                    proof: proof(11),
                     proof_system: ProofSystem::RiscZeroStark,
                     proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
                     verification_latency_ms: 10,
@@ -698,7 +702,7 @@ mod tests {
                     input_commitment: commitment(1),
                     output_commitment: commitment(2),
                     model_commitment: commitment(10),
-                    proof_commitment: commitment(11),
+                    proof: proof(11),
                     proof_system: ProofSystem::RiscZeroStark,
                     proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
                     verification_latency_ms: 10,
