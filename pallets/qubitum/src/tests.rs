@@ -699,6 +699,13 @@ fn verifier_rejection_slashes_miner_without_recording_proof() {
             Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
             90_000_000_000
         );
+        let validator = Validators::<Test>::get(0).unwrap();
+        assert_eq!(validator.stake, 90_000_000_000);
+        assert_eq!(validator.status, RegistryStatus::Slashed);
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            90_000_000_000
+        );
     });
 }
 

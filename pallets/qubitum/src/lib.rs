@@ -679,11 +679,17 @@ pub mod pallet {
                 VerificationOutcome::Valid => {}
                 VerificationOutcome::Invalid { slash_bps } => {
                     let amount = Self::slash_miner_bond(submission.miner_id, slash_bps)?;
+                    let validator_amount =
+                        Self::slash_validator_stake(submission.validator_id, slash_bps)?;
                     Self::deposit_event(Event::ProofRejected {
                         request_id: submission.request_id,
                         miner_id: submission.miner_id,
                         slash_bps,
                         amount,
+                    });
+                    Self::deposit_event(Event::ValidatorSlashed {
+                        validator_id: submission.validator_id,
+                        amount: validator_amount,
                     });
                     return Ok(());
                 }
