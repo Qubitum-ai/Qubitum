@@ -35,7 +35,7 @@ The core protocol structs and enums derive SCALE `Encode`/`Decode` plus `scale-i
 
 The pallet is wired into `node-subtensor-runtime` as `Qubitum`, with runtime-provided weights and a FRAME benchmarking suite for all dispatchables. Placeholder weights are isolated behind `pallet_qubitum::weights::WeightInfo` so generated benchmark output can replace them without changing call logic.
 
-Users open inference requests by escrowing QBT against a request ID, subnet, input commitment, and fee split. Valid proof submission settles that held payment atomically: miner payment, validator fee, and protocol treasury fee are transferred from escrow, and the request status moves from pending to settled. Invalid verifier outcomes slash the miner bond without settling the user escrow. Pending requests can be cancelled by the request owner to release escrow.
+Users open inference requests by escrowing QBT against a request ID, subnet, input commitment, and fee split. Valid proof submission settles that held payment atomically: miner payment, validator fee, and protocol treasury fee are transferred from escrow, and the request status moves from pending to settled. Invalid verifier outcomes slash the miner bond without settling the user escrow. Pending requests can be cancelled by the request owner after the configured cancellation delay to release escrow.
 
 Proof submission is constrained to the registered validator operator for the submitted validator ID. The pallet rejects duplicate request IDs, requires an existing pending inference request, requires the submitted model commitment to match the registered miner commitment, validates the proof envelope, and routes every submission through `pallet_qubitum::VerifyProof` before storing a proof record. The current runtime uses a shape-only verifier adapter; a concrete Risc Zero verifier can replace that associated type without changing dispatchable semantics.
 
@@ -76,6 +76,7 @@ cargo test -p node-subtensor-runtime --test safe_mode
 - Miner activation bond: 100-10,000 QBT
 - Invalid proof slash: 10-100%
 - Bond exit cooldown: 7 days
+- Inference request cancellation delay: 50 blocks in the current runtime
 - Proof size target: 50-200 KB
 - Verification target: under 100 ms on commodity CPU
 

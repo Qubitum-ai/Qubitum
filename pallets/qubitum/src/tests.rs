@@ -3,7 +3,9 @@
 use crate::{
     Error, HoldReason, InferenceRequestStatus, InferenceRequests, MinerCount, Miners, ProofRecords,
     SubnetCount, Subnets, TotalBurned, ValidatorCount, Validators,
-    mock::{Balances, Qubitum, RuntimeOrigin, Test, new_test_ext, set_verification_outcome},
+    mock::{
+        Balances, Qubitum, RuntimeOrigin, System, Test, new_test_ext, set_verification_outcome,
+    },
 };
 use frame_support::{assert_noop, assert_ok, traits::fungible::InspectHold};
 use qubitum_protocol::{
@@ -236,6 +238,7 @@ fn request_inference_escrows_payment() {
         let request = InferenceRequests::<Test>::get(7).unwrap();
         assert_eq!(request.user, 4);
         assert_eq!(request.payment, 1_000);
+        assert_eq!(request.created_at, 0);
         assert_eq!(request.status, InferenceRequestStatus::Pending);
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
@@ -250,6 +253,12 @@ fn cancel_inference_releases_pending_escrow() {
         register_active_miner_and_validator();
         request_inference(8);
 
+        assert_noop!(
+            Qubitum::cancel_inference(RuntimeOrigin::signed(4), 8),
+            Error::<Test>::RequestCancelUnavailable
+        );
+
+        System::set_block_number(10);
         assert_ok!(Qubitum::cancel_inference(RuntimeOrigin::signed(4), 8));
 
         let request = InferenceRequests::<Test>::get(8).unwrap();

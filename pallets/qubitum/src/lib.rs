@@ -201,6 +201,10 @@ pub mod pallet {
 
         /// Account receiving protocol treasury fees from inference settlement.
         type ProtocolTreasury: Get<Self::AccountId>;
+
+        /// Minimum age of a pending inference request before user cancellation.
+        #[pallet::constant]
+        type RequestCancelDelayBlocks: Get<BlockNumber>;
     }
 
     #[pallet::composite_enum]
@@ -299,6 +303,7 @@ pub mod pallet {
         pub payment: Balance,
         pub validator_fee_bps: u16,
         pub treasury_fee_bps: u16,
+        pub created_at: BlockNumber,
         pub status: InferenceRequestStatus,
     }
 
@@ -443,6 +448,8 @@ pub mod pallet {
         UnknownRequest,
         /// Inference request has already been settled.
         RequestAlreadySettled,
+        /// Inference request is still inside the cancellation delay.
+        RequestCancelUnavailable,
         /// Caller does not own the inference request.
         NotRequestOwner,
         /// Proof submission does not match the escrowed request.
@@ -711,6 +718,7 @@ pub mod pallet {
                     payment,
                     validator_fee_bps,
                     treasury_fee_bps,
+                    created_at: Self::current_block(),
                     status: InferenceRequestStatus::Pending,
                 },
             );
@@ -738,6 +746,14 @@ pub mod pallet {
                     ensure!(
                         request.status == InferenceRequestStatus::Pending,
                         Error::<T>::RequestAlreadySettled
+                    );
+                    let cancel_available_at = request
+                        .created_at
+                        .checked_add(T::RequestCancelDelayBlocks::get())
+                        .ok_or(Error::<T>::ArithmeticOverflow)?;
+                    ensure!(
+                        Self::current_block() >= cancel_available_at,
+                        Error::<T>::RequestCancelUnavailable
                     );
                     T::Currency::release(
                         &HoldReason::InferencePayment.into(),
@@ -779,6 +795,10 @@ pub mod pallet {
             let next = id.checked_add(1).ok_or(Error::<T>::ArithmeticOverflow)?;
             ValidatorCount::<T>::put(next);
             Ok(id)
+        }
+
+        fn current_block() -> BlockNumber {
+            frame_system::Pallet::<T>::block_number().saturated_into()
         }
 
         fn burn_free(who: &T::AccountId, amount: BalanceOf<T>) -> DispatchResult {

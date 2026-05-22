@@ -14,7 +14,7 @@ use qubitum_protocol::{
     Commitment, InferenceProofSubmission, ProofEnvelope, ProofSystem, RegistryStatus, SubnetDomain,
     TARGET_PROOF_SIZE_MIN_BYTES,
 };
-use sp_runtime::Saturating;
+use sp_runtime::{Saturating, traits::SaturatedConversion};
 
 const SEED: u32 = 0;
 
@@ -303,6 +303,9 @@ mod benchmarks {
     fn cancel_inference() {
         let _owner = create_bench_subnet::<T>();
         let user = request_bench_inference::<T>(42);
+        frame_system::Pallet::<T>::set_block_number(
+            T::RequestCancelDelayBlocks::get().saturated_into(),
+        );
 
         #[extrinsic_call]
         _(RawOrigin::Signed(user.clone()), 42);
