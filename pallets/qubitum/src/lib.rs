@@ -1084,6 +1084,8 @@ pub mod pallet {
         InvalidPayment,
         /// Validator and treasury fee split is invalid.
         InvalidFeeSplit,
+        /// Public request calldata must not include miner or validator assignment IDs.
+        RouteAssignmentMustBeHidden,
         /// Proof size metadata is outside accepted bounds.
         InvalidProofSize,
         /// Verification latency exceeds policy.
@@ -1429,6 +1431,10 @@ pub mod pallet {
             params: InferenceRequestParams<BalanceOf<T>>,
         ) -> DispatchResult {
             let user = ensure_signed(origin)?;
+            ensure!(
+                params.miner_id == 0 && params.validator_id == 0,
+                Error::<T>::RouteAssignmentMustBeHidden
+            );
             Self::ensure_inference_request_openable(
                 request_id,
                 params.subnet_id,
@@ -1442,17 +1448,12 @@ pub mod pallet {
             )?;
             let assignment = Self::route_assignment(params.subnet_id, request_id)
                 .ok_or(Error::<T>::NoRouteAvailable)?;
-            ensure!(
-                assignment.miner_id == params.miner_id
-                    && assignment.validator_id == params.validator_id,
-                Error::<T>::AssignmentMismatch
-            );
             Self::open_inference_request(
                 user,
                 request_id,
                 params.subnet_id,
-                params.miner_id,
-                params.validator_id,
+                assignment.miner_id,
+                assignment.validator_id,
                 params.input_commitment,
                 params.assignment_blinding,
                 params.timing_blinding,

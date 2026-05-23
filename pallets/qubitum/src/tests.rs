@@ -907,8 +907,8 @@ fn request_id_overflow_does_not_escrow_or_increment_pending() {
                 u64::MAX,
                 InferenceRequestParams {
                     subnet_id: 0,
-                    miner_id: assignment.miner_id,
-                    validator_id: assignment.validator_id,
+                    miner_id: 0,
+                    validator_id: 0,
                     input_commitment: commitment(1),
                     assignment_blinding: assignment_blinding(),
                     timing_blinding: timing_blinding(),
@@ -2520,8 +2520,8 @@ fn request_storage_commits_route_assignment_without_raw_participant_ids() {
             3,
             InferenceRequestParams {
                 subnet_id: 0,
-                miner_id: assignment.miner_id,
-                validator_id: assignment.validator_id,
+                miner_id: 0,
+                validator_id: 0,
                 input_commitment: commitment(1),
                 assignment_blinding: assignment_blinding(),
                 timing_blinding: timing_blinding(),
@@ -2919,7 +2919,6 @@ fn root_slash_rejects_pending_assigned_participants() {
 fn request_inference_rejects_non_next_request_id() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
-        let assignment = Qubitum::route_assignment(0, 1).unwrap();
 
         assert_noop!(
             Qubitum::request_inference(
@@ -2927,8 +2926,8 @@ fn request_inference_rejects_non_next_request_id() {
                 1,
                 InferenceRequestParams {
                     subnet_id: 0,
-                    miner_id: assignment.miner_id,
-                    validator_id: assignment.validator_id,
+                    miner_id: 0,
+                    validator_id: 0,
                     input_commitment: commitment(1),
                     assignment_blinding: assignment_blinding(),
                     timing_blinding: timing_blinding(),
@@ -3048,8 +3047,8 @@ fn next_route_assignment_uses_chain_next_request_id() {
             assignment.request_id,
             InferenceRequestParams {
                 subnet_id: assignment.subnet_id,
-                miner_id: assignment.miner_id,
-                validator_id: assignment.validator_id,
+                miner_id: 0,
+                validator_id: 0,
                 input_commitment: commitment(1),
                 assignment_blinding: assignment_blinding(),
                 timing_blinding: timing_blinding(),
@@ -3201,8 +3200,8 @@ fn route_assignment_skips_self_validation_validator_when_alternative_exists() {
             42,
             InferenceRequestParams {
                 subnet_id: 0,
-                miner_id: assignment.miner_id,
-                validator_id: assignment.validator_id,
+                miner_id: 0,
+                validator_id: 0,
                 input_commitment: commitment(1),
                 assignment_blinding: assignment_blinding(),
                 timing_blinding: timing_blinding(),
@@ -3258,8 +3257,8 @@ fn route_assignment_scans_past_sixteen_self_validation_conflicts() {
             0,
             InferenceRequestParams {
                 subnet_id: 0,
-                miner_id: assignment.miner_id,
-                validator_id: assignment.validator_id,
+                miner_id: 0,
+                validator_id: 0,
                 input_commitment: commitment(1),
                 assignment_blinding: assignment_blinding(),
                 timing_blinding: timing_blinding(),
@@ -3440,7 +3439,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
 }
 
 #[test]
-fn request_inference_rejects_non_canonical_assignment() {
+fn request_inference_rejects_public_participant_ids() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         assert_ok!(Qubitum::register_miner(
@@ -3481,7 +3480,7 @@ fn request_inference_rejects_non_canonical_assignment() {
                     treasury_fee_bps: 50,
                 },
             ),
-            Error::<Test>::AssignmentMismatch
+            Error::<Test>::RouteAssignmentMustBeHidden
         );
     });
 }
