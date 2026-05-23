@@ -2792,6 +2792,7 @@ fn runtime_upgrade_records_legacy_accounting_failures_without_saturated_totals()
         assert_eq!(TotalValidatorFees::<Test>::get(), 0);
         assert_eq!(TotalTreasuryFees::<Test>::get(), 0);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
+        assert_eq!(Qubitum::accounting().legacy_migration_failures, 1);
         assert_eq!(
             InferenceRequests::<Test>::get(91).unwrap().status,
             InferenceRequestStatus::Settled
@@ -2833,6 +2834,7 @@ fn runtime_upgrade_records_legacy_accounting_failures_without_saturated_totals()
         assert_eq!(TotalValidatorFees::<Test>::get(), 0);
         assert_eq!(TotalTreasuryFees::<Test>::get(), 0);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
+        assert_eq!(Qubitum::accounting().legacy_migration_failures, 1);
         assert_eq!(
             InferenceRequests::<Test>::get(93).unwrap().status,
             InferenceRequestStatus::Settled

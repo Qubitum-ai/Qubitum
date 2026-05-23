@@ -712,6 +712,7 @@ pub mod pallet {
         pub total_validator_fees: Balance,
         pub total_treasury_fees: Balance,
         pub total_inference_refunded: Balance,
+        pub legacy_migration_failures: u32,
     }
 
     #[derive(
@@ -1942,6 +1943,7 @@ pub mod pallet {
                 total_validator_fees: TotalValidatorFees::<T>::get(),
                 total_treasury_fees: TotalTreasuryFees::<T>::get(),
                 total_inference_refunded: TotalInferenceRefunded::<T>::get(),
+                legacy_migration_failures: LegacyAccountingMigrationFailures::<T>::get(),
             }
         }
 
@@ -3089,6 +3091,7 @@ pub mod pallet {
                 total_validator_fees: BalanceOf::<T>::default(),
                 total_treasury_fees: BalanceOf::<T>::default(),
                 total_inference_refunded: BalanceOf::<T>::default(),
+                legacy_migration_failures: 0,
             }
         }
 
@@ -3135,11 +3138,12 @@ pub mod pallet {
         }
 
         fn put_inference_accounting(accounting: ChainAccounting<BalanceOf<T>>, failures: u32) {
-            let accounting = if failures == 0 {
+            let mut accounting = if failures == 0 {
                 accounting
             } else {
                 Self::zero_accounting()
             };
+            accounting.legacy_migration_failures = failures;
             TotalInferenceEscrowed::<T>::put(accounting.total_inference_escrowed);
             TotalMinerPayouts::<T>::put(accounting.total_miner_payouts);
             TotalValidatorFees::<T>::put(accounting.total_validator_fees);
