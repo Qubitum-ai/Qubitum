@@ -91,7 +91,7 @@ fn register_bench_validator<T: Config>() -> T::AccountId {
 }
 
 fn proof_submission<T: Config>() -> InferenceProofSubmission {
-    InferenceProofSubmission {
+    let mut submission = InferenceProofSubmission {
         request_id: 42,
         subnet_id: 0,
         miner_id: 0,
@@ -104,7 +104,9 @@ fn proof_submission<T: Config>() -> InferenceProofSubmission {
         proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
         verification_latency_ms: 10,
         submitted_at: frame_system::Pallet::<T>::block_number().saturated_into(),
-    }
+    };
+    submission.proof.journal_commitment = Pallet::<T>::proof_transcript_commitment(&submission);
+    submission
 }
 
 fn request_bench_inference<T: Config>(request_id: u64) -> T::AccountId {

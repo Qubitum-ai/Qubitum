@@ -249,7 +249,7 @@ fn register_active_miner_and_validator() {
 }
 
 fn valid_submission(request_id: u64) -> InferenceProofSubmission {
-    InferenceProofSubmission {
+    bind_proof_transcript(InferenceProofSubmission {
         request_id,
         subnet_id: 0,
         miner_id: 0,
@@ -262,7 +262,12 @@ fn valid_submission(request_id: u64) -> InferenceProofSubmission {
         proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
         verification_latency_ms: 10,
         submitted_at: System::block_number(),
-    }
+    })
+}
+
+fn bind_proof_transcript(mut submission: InferenceProofSubmission) -> InferenceProofSubmission {
+    submission.proof.journal_commitment = Qubitum::proof_transcript_commitment(&submission);
+    submission
 }
 
 fn request_inference(request_id: u64) {
@@ -951,6 +956,7 @@ fn submit_proof_records_commitments_for_active_participants() {
         System::set_block_number(123);
         let mut submission = valid_submission(42);
         submission.submitted_at = 120;
+        submission = bind_proof_transcript(submission);
         let expected_audit_commitment = Qubitum::proof_audit_commitment(&submission, 123);
 
         assert_ok!(Qubitum::submit_proof(
@@ -1109,6 +1115,7 @@ fn public_request_and_proof_views_redact_private_route_payment_and_timing() {
         submission.proof_size_bytes = 65_432;
         submission.verification_latency_ms = 77;
         submission.submitted_at = 100;
+        submission = bind_proof_transcript(submission);
         assert_ok!(Qubitum::submit_proof(
             RuntimeOrigin::signed(3),
             submission,
@@ -1327,6 +1334,7 @@ fn public_lifecycle_events_redact_route_payment_and_proof_metadata() {
         submission.proof_size_bytes = 65_432;
         submission.verification_latency_ms = 77;
         submission.submitted_at = 2;
+        submission = bind_proof_transcript(submission);
         assert_ok!(Qubitum::submit_proof(
             RuntimeOrigin::signed(3),
             submission,
@@ -2915,6 +2923,29 @@ fn submit_proof_rejects_latency_or_missing_commitment() {
 }
 
 #[test]
+fn submit_proof_rejects_unbound_transcript_commitment() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(44);
+
+        let mut submission = valid_submission(44);
+        submission.proof.journal_commitment = commitment(99);
+        assert_noop!(
+            submit_proof(RuntimeOrigin::signed(3), submission),
+            Error::<Test>::ProofTranscriptMismatch
+        );
+
+        let mut tampered_output = valid_submission(44);
+        tampered_output.output_commitment = commitment(99);
+        assert_noop!(
+            submit_proof(RuntimeOrigin::signed(3), tampered_output),
+            Error::<Test>::ProofTranscriptMismatch
+        );
+        assert!(!ProofRecords::<Test>::contains_key(44));
+    });
+}
+
+#[test]
 fn submit_proof_rejects_future_or_expired_timestamp() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
@@ -2959,6 +2990,7 @@ fn submit_proof_rejects_duplicate_wrong_validator_or_model() {
         request_inference(47);
         let mut wrong_model = valid_submission(47);
         wrong_model.model_commitment = commitment(99);
+        wrong_model = bind_proof_transcript(wrong_model);
         assert_noop!(
             submit_proof(RuntimeOrigin::signed(3), wrong_model),
             Error::<Test>::ModelCommitmentMismatch

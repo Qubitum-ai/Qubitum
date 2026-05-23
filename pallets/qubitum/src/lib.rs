@@ -1023,6 +1023,8 @@ pub mod pallet {
         ProofSubmittedFromFuture,
         /// Proof submission timestamp is older than the accepted age window.
         ProofSubmissionExpired,
+        /// Proof journal commitment does not bind the submitted transcript.
+        ProofTranscriptMismatch,
         /// Challenge evidence verified as valid, so it cannot slash the miner.
         ChallengeProofValid,
         /// Slash percentage is outside accepted bounds.
@@ -2160,6 +2162,28 @@ pub mod pallet {
                 .using_encoded(blake2_256)
         }
 
+        pub(crate) fn proof_transcript_commitment(
+            submission: &InferenceProofSubmission,
+        ) -> Commitment {
+            (
+                submission.request_id,
+                submission.subnet_id,
+                submission.miner_id,
+                submission.validator_id,
+                submission.input_commitment,
+                submission.output_commitment,
+                submission.model_commitment,
+                submission.proof_system,
+                submission.proof.proof_commitment,
+                submission.proof.image_id,
+                submission.proof.verifier_version,
+                submission.proof_size_bytes,
+                submission.verification_latency_ms,
+                submission.submitted_at,
+            )
+                .using_encoded(blake2_256)
+        }
+
         #[allow(clippy::too_many_arguments)]
         fn legacy_proof_audit_commitment(
             request_id: RequestId,
@@ -2289,6 +2313,17 @@ pub mod pallet {
                         terms.treasury_fee_bps,
                     ),
                 Error::<T>::RequestMismatch
+            );
+            Ok(())
+        }
+
+        fn ensure_proof_transcript_witness(
+            submission: &InferenceProofSubmission,
+        ) -> DispatchResult {
+            ensure!(
+                submission.proof.journal_commitment
+                    == Self::proof_transcript_commitment(submission),
+                Error::<T>::ProofTranscriptMismatch
             );
             Ok(())
         }
@@ -3184,6 +3219,7 @@ pub mod pallet {
                 Error::<T>::LatencyExceeded
             );
             Self::ensure_submission_fresh(submission.submitted_at)?;
+            Self::ensure_proof_transcript_witness(submission)?;
 
             let miner = Miners::<T>::get(submission.miner_id).ok_or(Error::<T>::UnknownMiner)?;
             ensure!(
