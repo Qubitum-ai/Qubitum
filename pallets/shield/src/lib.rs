@@ -67,6 +67,17 @@ pub trait ExtrinsicDecryptor<RuntimeCall> {
     fn decrypt(data: &[u8]) -> Result<RuntimeCall, DispatchError>;
 }
 
+/// Decode a decrypted runtime call using the same depth limit as shielded extrinsics.
+pub fn decode_runtime_call_with_depth_limit<RuntimeCall: Decode>(
+    data: &[u8],
+) -> Result<RuntimeCall, DispatchError> {
+    <RuntimeCall as codec::DecodeLimit>::decode_all_with_depth_limit(
+        MAX_EXTRINSIC_DEPTH,
+        &mut &data[..],
+    )
+    .map_err(|_| DispatchError::Other("decode failed"))
+}
+
 /// Default implementation that always returns an error.
 impl<RuntimeCall> ExtrinsicDecryptor<RuntimeCall> for () {
     fn decrypt(_data: &[u8]) -> Result<RuntimeCall, DispatchError> {

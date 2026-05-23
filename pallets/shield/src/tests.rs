@@ -580,6 +580,30 @@ mod encrypted_extrinsics_tests {
     }
 
     #[test]
+    fn on_initialize_rejects_over_depth_encoded_call() {
+        new_test_ext().execute_with(|| {
+            System::set_block_number(1);
+
+            let inner_call = RuntimeCall::System(frame_system::Call::remark {
+                remark: vec![1, 2, 3],
+            });
+            let over_depth_call = nest_call(inner_call, 16);
+
+            assert_ok!(MevShield::store_encrypted(
+                RuntimeOrigin::signed(1),
+                BoundedVec::truncate_from(over_depth_call.encode()),
+            ));
+
+            MevShield::on_initialize(2);
+
+            assert!(PendingExtrinsics::<Test>::get(0).is_none());
+            System::assert_has_event(
+                crate::Event::<Test>::ExtrinsicDecodeFailed { index: 0 }.into(),
+            );
+        });
+    }
+
+    #[test]
     fn on_initialize_handles_dispatch_failure() {
         new_test_ext().execute_with(|| {
             System::set_block_number(1);

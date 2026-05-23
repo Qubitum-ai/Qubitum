@@ -1,7 +1,6 @@
 use crate as pallet_shield;
 use stp_shield::MLKEM768_ENC_KEY_LEN;
 
-use codec::Decode;
 use frame_support::pallet_prelude::DispatchError;
 use frame_support::traits::{ConstBool, ConstU64};
 use frame_support::{BoundedVec, construct_runtime, derive_impl, parameter_types};
@@ -92,7 +91,7 @@ pub struct MockDecryptor;
 
 impl pallet_shield::ExtrinsicDecryptor<RuntimeCall> for MockDecryptor {
     fn decrypt(data: &[u8]) -> Result<RuntimeCall, DispatchError> {
-        RuntimeCall::decode(&mut &data[..]).map_err(|_| DispatchError::Other("decode failed"))
+        pallet_shield::decode_runtime_call_with_depth_limit::<RuntimeCall>(data)
     }
 }
 
