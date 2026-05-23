@@ -1359,6 +1359,9 @@ fn accounting_overflows_fail_without_state_changes() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         request_inference(80);
+        let miner_free_before = Balances::free_balance(2);
+        let validator_free_before = Balances::free_balance(3);
+        let treasury_free_before = Balances::free_balance(99);
         TotalMinerPayouts::<Test>::put(u128::MAX);
 
         assert_noop!(
@@ -1377,7 +1380,74 @@ fn accounting_overflows_fail_without_state_changes() {
         );
         assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(Balances::free_balance(2), miner_free_before);
+        assert_eq!(Balances::free_balance(3), validator_free_before);
+        assert_eq!(Balances::free_balance(99), treasury_free_before);
         assert_eq!(TotalMinerPayouts::<Test>::get(), u128::MAX);
+    });
+
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(83);
+        let miner_free_before = Balances::free_balance(2);
+        let validator_free_before = Balances::free_balance(3);
+        let treasury_free_before = Balances::free_balance(99);
+        TotalValidatorFees::<Test>::put(u128::MAX);
+
+        assert_noop!(
+            submit_proof(RuntimeOrigin::signed(3), valid_submission(83)),
+            Error::<Test>::ArithmeticOverflow
+        );
+
+        assert!(ProofRecords::<Test>::get(83).is_none());
+        assert_eq!(
+            InferenceRequests::<Test>::get(83).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            1_000
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(Balances::free_balance(2), miner_free_before);
+        assert_eq!(Balances::free_balance(3), validator_free_before);
+        assert_eq!(Balances::free_balance(99), treasury_free_before);
+        assert_eq!(TotalMinerPayouts::<Test>::get(), 0);
+        assert_eq!(TotalValidatorFees::<Test>::get(), u128::MAX);
+        assert_eq!(TotalTreasuryFees::<Test>::get(), 0);
+    });
+
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(84);
+        let miner_free_before = Balances::free_balance(2);
+        let validator_free_before = Balances::free_balance(3);
+        let treasury_free_before = Balances::free_balance(99);
+        TotalTreasuryFees::<Test>::put(u128::MAX);
+
+        assert_noop!(
+            submit_proof(RuntimeOrigin::signed(3), valid_submission(84)),
+            Error::<Test>::ArithmeticOverflow
+        );
+
+        assert!(ProofRecords::<Test>::get(84).is_none());
+        assert_eq!(
+            InferenceRequests::<Test>::get(84).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            1_000
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(Balances::free_balance(2), miner_free_before);
+        assert_eq!(Balances::free_balance(3), validator_free_before);
+        assert_eq!(Balances::free_balance(99), treasury_free_before);
+        assert_eq!(TotalMinerPayouts::<Test>::get(), 0);
+        assert_eq!(TotalValidatorFees::<Test>::get(), 0);
+        assert_eq!(TotalTreasuryFees::<Test>::get(), u128::MAX);
     });
 
     new_test_ext().execute_with(|| {
@@ -1498,6 +1568,87 @@ fn accounting_overflows_fail_without_state_changes() {
         );
         assert_eq!(TotalBurned::<Test>::get(), u128::MAX);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
+    });
+
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(85);
+        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
+        let burned_before = TotalBurned::<Test>::get();
+        TotalInferenceRefunded::<Test>::put(u128::MAX);
+
+        assert_noop!(
+            submit_proof(RuntimeOrigin::signed(3), valid_submission(85)),
+            Error::<Test>::ArithmeticOverflow
+        );
+
+        assert!(ProofRecords::<Test>::get(85).is_none());
+        assert_eq!(
+            InferenceRequests::<Test>::get(85).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(MinerLockedBond::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            MIN_MINER_BOND
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            MIN_MINER_BOND
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            1_000
+        );
+        assert_eq!(TotalBurned::<Test>::get(), burned_before);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), u128::MAX);
+    });
+
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(86);
+        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
+        let burned_before = TotalBurned::<Test>::get();
+        TotalInferenceRefunded::<Test>::put(u128::MAX);
+
+        assert_noop!(
+            challenge_proof(RuntimeOrigin::signed(4), valid_submission(86)),
+            Error::<Test>::ArithmeticOverflow
+        );
+
+        assert!(ProofRecords::<Test>::get(86).is_none());
+        assert_eq!(
+            InferenceRequests::<Test>::get(86).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(MinerLockedBond::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            MIN_MINER_BOND
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            1_000
+        );
+        assert_eq!(TotalBurned::<Test>::get(), burned_before);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), u128::MAX);
     });
 }
 

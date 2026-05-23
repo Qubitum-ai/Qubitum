@@ -1375,19 +1375,10 @@ pub mod pallet {
 
             let assignment_commitment =
                 Self::submission_assignment_commitment(&submission, assignment_blinding)?;
-            ProofRecords::<T>::insert(
-                submission.request_id,
-                ChainProofRecord {
-                    request_id: submission.request_id,
-                    subnet_id: submission.subnet_id,
-                    assignment_commitment,
-                    audit_commitment: Self::proof_audit_commitment_for_assignment(
-                        &submission,
-                        Self::current_block(),
-                        assignment_commitment,
-                    ),
-                    proof_system: submission.proof_system,
-                },
+            let audit_commitment = Self::proof_audit_commitment_for_assignment(
+                &submission,
+                Self::current_block(),
+                assignment_commitment,
             );
             Self::settle_request_payment(
                 &submission,
@@ -1397,6 +1388,16 @@ pub mod pallet {
                 assignment_blinding,
                 &terms_witness,
             )?;
+            ProofRecords::<T>::insert(
+                submission.request_id,
+                ChainProofRecord {
+                    request_id: submission.request_id,
+                    subnet_id: submission.subnet_id,
+                    assignment_commitment,
+                    audit_commitment,
+                    proof_system: submission.proof_system,
+                },
+            );
 
             Self::deposit_event(Event::ProofAccepted {
                 request_id: submission.request_id,
@@ -1604,6 +1605,7 @@ pub mod pallet {
                         Self::current_block() >= cancel_available_at,
                         Error::<T>::RequestCancelUnavailable
                     );
+                    Self::ensure_inference_refund_can_record(terms_witness.terms.payment)?;
                     T::Currency::release(
                         &HoldReason::InferencePayment.into(),
                         &user,
@@ -1850,6 +1852,7 @@ pub mod pallet {
                         Self::current_block() >= cancel_available_at,
                         Error::<T>::RequestCancelUnavailable
                     );
+                    Self::ensure_inference_refund_can_record(terms_witness.terms.payment)?;
                     T::Currency::release(
                         &HoldReason::InferencePayment.into(),
                         &request_user,
@@ -2200,6 +2203,7 @@ pub mod pallet {
         ) -> DispatchResult {
             Self::ensure_request_assignment(subnet_id, miner_id, validator_id)?;
             Self::ensure_next_request_id(request_id)?;
+            Self::ensure_inference_escrow_can_record(payment)?;
 
             T::Currency::hold(&HoldReason::InferencePayment.into(), &user, payment)?;
             Self::increment_pending_assignment(miner_id, validator_id)?;
@@ -2391,6 +2395,32 @@ pub mod pallet {
                 .checked_sub(1)
                 .ok_or(Error::<T>::RequestStatusCounterUnderflow)?;
             Ok(())
+        }
+
+        fn ensure_accounting_can_add(total: BalanceOf<T>, amount: BalanceOf<T>) -> DispatchResult {
+            ensure!(
+                total.checked_add(&amount).is_some(),
+                Error::<T>::ArithmeticOverflow
+            );
+            Ok(())
+        }
+
+        fn ensure_inference_escrow_can_record(payment: BalanceOf<T>) -> DispatchResult {
+            Self::ensure_accounting_can_add(TotalInferenceEscrowed::<T>::get(), payment)
+        }
+
+        fn ensure_inference_settlement_can_record(
+            miner_payment: BalanceOf<T>,
+            validator_fee: BalanceOf<T>,
+            treasury_fee: BalanceOf<T>,
+        ) -> DispatchResult {
+            Self::ensure_accounting_can_add(TotalMinerPayouts::<T>::get(), miner_payment)?;
+            Self::ensure_accounting_can_add(TotalValidatorFees::<T>::get(), validator_fee)?;
+            Self::ensure_accounting_can_add(TotalTreasuryFees::<T>::get(), treasury_fee)
+        }
+
+        fn ensure_inference_refund_can_record(payment: BalanceOf<T>) -> DispatchResult {
+            Self::ensure_accounting_can_add(TotalInferenceRefunded::<T>::get(), payment)
         }
 
         fn record_inference_settlement(
@@ -4199,6 +4229,11 @@ pub mod pallet {
                         terms.validator_fee_bps,
                         terms.treasury_fee_bps,
                     )?;
+                    Self::ensure_inference_settlement_can_record(
+                        miner_payment,
+                        validator_fee,
+                        treasury_fee,
+                    )?;
 
                     Self::transfer_held_payment(request_user, miner_operator, miner_payment)?;
                     Self::transfer_held_payment(request_user, validator_operator, validator_fee)?;
@@ -4242,6 +4277,7 @@ pub mod pallet {
                         terms_witness,
                     )?;
                     let terms = &terms_witness.terms;
+                    Self::ensure_inference_refund_can_record(terms.payment)?;
 
                     T::Currency::release(
                         &HoldReason::InferencePayment.into(),
@@ -4279,7 +4315,8 @@ pub mod pallet {
                 request_user,
                 assignment_blinding,
                 terms_witness,
-            )
+            )?;
+            Self::ensure_inference_refund_can_record(terms_witness.terms.payment)
         }
 
         fn ensure_rejected_request_witnesses(
