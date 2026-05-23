@@ -23,7 +23,11 @@ fn terms_blinding() -> [u8; 32] {
 }
 
 fn proof(seed: u8) -> ProofEnvelope {
-    ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
+    ProofEnvelope::risc_zero_v1(
+        commitment(seed),
+        commitment(seed.saturating_add(1)),
+        commitment(seed.saturating_add(2)),
+    )
 }
 
 fn account(seed: u8) -> AccountId32 {

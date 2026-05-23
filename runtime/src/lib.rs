@@ -13,6 +13,7 @@ use core::num::NonZeroU64;
 pub mod check_mortality;
 pub mod check_nonce;
 mod migrations;
+pub mod qubitum_privacy;
 pub mod sudo_wrapper;
 pub mod transaction_payment_wrapper;
 
@@ -206,6 +207,7 @@ impl frame_system::offchain::CreateSignedTransaction<pallet_drand::Call<Runtime>
                 ChargeTransactionPaymentWrapper::new(TaoBalance::new(0)),
                 SudoTransactionExtension::<Runtime>::new(),
                 pallet_shield::CheckShieldedTxValidity::<Runtime>::new(),
+                qubitum_privacy::CheckQubitumShielding::new(),
                 pallet_subtensor::SubtensorTransactionExtension::<Runtime>::new(),
                 pallet_drand::drand_priority::DrandPriority::<Runtime>::new(),
             ),
@@ -1757,6 +1759,7 @@ pub type CustomTxExtension = (
     ChargeTransactionPaymentWrapper<Runtime>,
     SudoTransactionExtension<Runtime>,
     pallet_shield::CheckShieldedTxValidity<Runtime>,
+    qubitum_privacy::CheckQubitumShielding,
     pallet_subtensor::SubtensorTransactionExtension<Runtime>,
     pallet_drand::drand_priority::DrandPriority<Runtime>,
 );
