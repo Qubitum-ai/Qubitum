@@ -23,6 +23,10 @@ fn commitment(seed: u8) -> Commitment {
     [seed; 32]
 }
 
+fn assignment_blinding() -> Commitment {
+    commitment(90)
+}
+
 fn proof(seed: u8) -> ProofEnvelope {
     ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
 }
@@ -122,6 +126,7 @@ fn request_bench_inference<T: Config>(request_id: u64) -> T::AccountId {
             miner_id: 0,
             validator_id: 0,
             input_commitment: commitment(1),
+            assignment_blinding: assignment_blinding(),
             payment: T::MinMinerBond::get(),
             validator_fee_bps: 250,
             treasury_fee_bps: 50,
@@ -353,18 +358,22 @@ mod benchmarks {
             submission,
             user,
             miner,
+            assignment_blinding(),
             bench_request_terms::<T>(),
         );
 
         let accepted_at = frame_system::Pallet::<T>::block_number().saturated_into();
-        let expected_audit_commitment =
-            Pallet::<T>::proof_audit_commitment(&submission_for_audit, accepted_at);
+        let expected_audit_commitment = Pallet::<T>::proof_audit_commitment(
+            &submission_for_audit,
+            accepted_at,
+            assignment_blinding(),
+        );
         let record = ProofRecords::<T>::get(42).unwrap();
         assert_eq!(record.request_id, 42);
         assert_eq!(record.subnet_id, 0);
         assert_eq!(
             record.assignment_commitment,
-            Pallet::<T>::request_assignment_commitment(42, 0, 0, 0)
+            Pallet::<T>::request_assignment_commitment(42, 0, 0, 0, assignment_blinding())
         );
         assert_eq!(record.audit_commitment, expected_audit_commitment);
         assert_eq!(record.proof_system, ProofSystem::RiscZeroStark);
@@ -416,6 +425,7 @@ mod benchmarks {
                 miner_id: 0,
                 validator_id: 0,
                 input_commitment: commitment(1),
+                assignment_blinding: assignment_blinding(),
                 payment,
                 validator_fee_bps: 250,
                 treasury_fee_bps: 50,
@@ -452,6 +462,7 @@ mod benchmarks {
             42,
             0,
             0,
+            assignment_blinding(),
             0,
             bench_request_terms::<T>(),
         );
@@ -482,6 +493,7 @@ mod benchmarks {
             user.clone(),
             0,
             0,
+            assignment_blinding(),
             0,
             bench_request_terms::<T>(),
         );

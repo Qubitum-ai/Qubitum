@@ -10,6 +10,10 @@ fn commitment(seed: u8) -> [u8; 32] {
     [seed; 32]
 }
 
+fn assignment_blinding() -> [u8; 32] {
+    commitment(90)
+}
+
 fn proof(seed: u8) -> ProofEnvelope {
     ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
 }
@@ -60,6 +64,7 @@ fn qubitum_submit_proof_is_allowed_in_safe_mode() {
         submission: valid_submission(),
         request_user: account(4),
         miner_operator: account(2),
+        assignment_blinding: assignment_blinding(),
         terms: request_terms(),
     });
 
@@ -72,6 +77,7 @@ fn qubitum_challenge_proof_is_allowed_in_safe_mode() {
         submission: valid_submission(),
         request_user: account(4),
         miner_operator: account(2),
+        assignment_blinding: assignment_blinding(),
         terms: request_terms(),
     });
 
@@ -97,6 +103,7 @@ fn qubitum_request_inference_is_blocked_in_safe_mode() {
             miner_id: 0,
             validator_id: 0,
             input_commitment: commitment(1),
+            assignment_blinding: assignment_blinding(),
             payment: 1_000u64.into(),
             validator_fee_bps: 250,
             treasury_fee_bps: 50,
@@ -110,6 +117,7 @@ fn qubitum_request_inference_is_blocked_in_safe_mode() {
         params: pallet_qubitum::AutoRouteInferenceRequestParams {
             subnet_id: 0,
             input_commitment: commitment(1),
+            assignment_blinding: assignment_blinding(),
             payment: 1_000u64.into(),
             validator_fee_bps: 250,
             treasury_fee_bps: 50,
@@ -125,6 +133,7 @@ fn qubitum_cancel_inference_is_blocked_in_safe_mode() {
         request_id: 1,
         miner_id: 0,
         validator_id: 0,
+        assignment_blinding: assignment_blinding(),
         created_at: 0,
         terms: request_terms(),
     });
@@ -139,6 +148,7 @@ fn qubitum_expire_inference_is_blocked_in_safe_mode() {
         request_user: account(4),
         miner_id: 0,
         validator_id: 0,
+        assignment_blinding: assignment_blinding(),
         created_at: 0,
         terms: request_terms(),
     });

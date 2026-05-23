@@ -141,6 +141,7 @@ pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
 
+    const LEGACY_ASSIGNMENT_BLINDING: Commitment = [0; 32];
     const STORAGE_VERSION: StorageVersion = StorageVersion::new(16);
     #[pallet::pallet]
     #[pallet::without_storage_info]
@@ -730,6 +731,7 @@ pub mod pallet {
         pub miner_id: MinerId,
         pub validator_id: ValidatorId,
         pub input_commitment: Commitment,
+        pub assignment_blinding: Commitment,
         pub payment: Balance,
         pub validator_fee_bps: u16,
         pub treasury_fee_bps: u16,
@@ -741,6 +743,7 @@ pub mod pallet {
     pub struct AutoRouteInferenceRequestParams<Balance> {
         pub subnet_id: SubnetId,
         pub input_commitment: Commitment,
+        pub assignment_blinding: Commitment,
         pub payment: Balance,
         pub validator_fee_bps: u16,
         pub treasury_fee_bps: u16,
@@ -1210,11 +1213,16 @@ pub mod pallet {
             submission: InferenceProofSubmission,
             request_user: T::AccountId,
             miner_operator: T::AccountId,
+            assignment_blinding: Commitment,
             terms: InferenceRequestTerms<BalanceOf<T>>,
         ) -> DispatchResult {
             let validator_operator = ensure_signed(origin)?;
-            let policy =
-                Self::validate_submission(&submission, &validator_operator, &miner_operator)?;
+            let policy = Self::validate_submission(
+                &submission,
+                &validator_operator,
+                &miner_operator,
+                assignment_blinding,
+            )?;
 
             match T::ProofVerifier::verify(&submission, policy)? {
                 VerificationOutcome::Valid => {}
@@ -1225,7 +1233,12 @@ pub mod pallet {
                         &validator_operator,
                         slash_bps,
                     )?;
-                    Self::refund_rejected_request(&submission, &request_user, &terms)?;
+                    Self::refund_rejected_request(
+                        &submission,
+                        &request_user,
+                        assignment_blinding,
+                        &terms,
+                    )?;
                     Self::deposit_event(Event::ProofRejected {
                         request_id: submission.request_id,
                     });
@@ -1237,20 +1250,18 @@ pub mod pallet {
                 VerificationOutcome::Error => return Err(Error::<T>::VerifierError.into()),
             }
 
+            let assignment_commitment =
+                Self::submission_assignment_commitment(&submission, assignment_blinding)?;
             ProofRecords::<T>::insert(
                 submission.request_id,
                 ChainProofRecord {
                     request_id: submission.request_id,
                     subnet_id: submission.subnet_id,
-                    assignment_commitment: Self::request_assignment_commitment(
-                        submission.request_id,
-                        submission.subnet_id,
-                        submission.miner_id,
-                        submission.validator_id,
-                    ),
-                    audit_commitment: Self::proof_audit_commitment(
+                    assignment_commitment,
+                    audit_commitment: Self::proof_audit_commitment_for_assignment(
                         &submission,
                         Self::current_block(),
+                        assignment_commitment,
                     ),
                     proof_system: submission.proof_system,
                 },
@@ -1260,6 +1271,7 @@ pub mod pallet {
                 &request_user,
                 &miner_operator,
                 &validator_operator,
+                assignment_blinding,
                 &terms,
             )?;
 
@@ -1281,15 +1293,25 @@ pub mod pallet {
             submission: InferenceProofSubmission,
             request_user: T::AccountId,
             miner_operator: T::AccountId,
+            assignment_blinding: Commitment,
             terms: InferenceRequestTerms<BalanceOf<T>>,
         ) -> DispatchResult {
             ensure_signed(origin)?;
-            let policy = Self::validate_challenge_submission(&submission, &miner_operator)?;
+            let policy = Self::validate_challenge_submission(
+                &submission,
+                &miner_operator,
+                assignment_blinding,
+            )?;
 
             match T::ProofVerifier::verify(&submission, policy)? {
                 VerificationOutcome::Invalid { slash_bps } => {
                     Self::slash_miner_bond(submission.miner_id, &miner_operator, slash_bps)?;
-                    Self::refund_rejected_request(&submission, &request_user, &terms)?;
+                    Self::refund_rejected_request(
+                        &submission,
+                        &request_user,
+                        assignment_blinding,
+                        &terms,
+                    )?;
                     Self::deposit_event(Event::ProofRejected {
                         request_id: submission.request_id,
                     });
@@ -1345,6 +1367,7 @@ pub mod pallet {
                 request_id,
                 params.subnet_id,
                 params.input_commitment,
+                params.assignment_blinding,
                 params.payment,
                 params.validator_fee_bps,
                 params.treasury_fee_bps,
@@ -1363,6 +1386,7 @@ pub mod pallet {
                 params.miner_id,
                 params.validator_id,
                 params.input_commitment,
+                params.assignment_blinding,
                 params.payment,
                 params.validator_fee_bps,
                 params.treasury_fee_bps,
@@ -1383,6 +1407,7 @@ pub mod pallet {
                 request_id,
                 params.subnet_id,
                 params.input_commitment,
+                params.assignment_blinding,
                 params.payment,
                 params.validator_fee_bps,
                 params.treasury_fee_bps,
@@ -1396,6 +1421,7 @@ pub mod pallet {
                 assignment.miner_id,
                 assignment.validator_id,
                 params.input_commitment,
+                params.assignment_blinding,
                 params.payment,
                 params.validator_fee_bps,
                 params.treasury_fee_bps,
@@ -1411,6 +1437,7 @@ pub mod pallet {
             request_id: RequestId,
             miner_id: MinerId,
             validator_id: ValidatorId,
+            assignment_blinding: Commitment,
             created_at: BlockNumber,
             terms: InferenceRequestTerms<BalanceOf<T>>,
         ) -> DispatchResult {
@@ -1420,7 +1447,12 @@ pub mod pallet {
                 |maybe_request| -> Result<BalanceOf<T>, DispatchError> {
                     let request = maybe_request.as_mut().ok_or(Error::<T>::UnknownRequest)?;
                     Self::ensure_request_user(request, &user)?;
-                    Self::ensure_request_assignment_witness(request, miner_id, validator_id)?;
+                    Self::ensure_request_assignment_witness(
+                        request,
+                        miner_id,
+                        validator_id,
+                        assignment_blinding,
+                    )?;
                     Self::ensure_request_timing_witness(request, created_at)?;
                     Self::ensure_request_terms_witness(request, &terms)?;
                     ensure!(
@@ -1639,6 +1671,7 @@ pub mod pallet {
         /// Expire a stale pending inference request and release escrow back to the user.
         #[pallet::call_index(13)]
         #[pallet::weight(T::WeightInfo::expire_inference())]
+        #[allow(clippy::too_many_arguments)]
         #[frame_support::transactional]
         pub fn expire_inference(
             origin: OriginFor<T>,
@@ -1646,6 +1679,7 @@ pub mod pallet {
             request_user: T::AccountId,
             miner_id: MinerId,
             validator_id: ValidatorId,
+            assignment_blinding: Commitment,
             created_at: BlockNumber,
             terms: InferenceRequestTerms<BalanceOf<T>>,
         ) -> DispatchResult {
@@ -1655,7 +1689,12 @@ pub mod pallet {
                 |maybe_request| -> Result<BalanceOf<T>, DispatchError> {
                     let request = maybe_request.as_mut().ok_or(Error::<T>::UnknownRequest)?;
                     Self::ensure_request_user(request, &request_user)?;
-                    Self::ensure_request_assignment_witness(request, miner_id, validator_id)?;
+                    Self::ensure_request_assignment_witness(
+                        request,
+                        miner_id,
+                        validator_id,
+                        assignment_blinding,
+                    )?;
                     Self::ensure_request_timing_witness(request, created_at)?;
                     Self::ensure_request_terms_witness(request, &terms)?;
                     ensure!(
@@ -1898,11 +1937,13 @@ pub mod pallet {
             request_id: RequestId,
             subnet_id: SubnetId,
             input_commitment: Commitment,
+            assignment_blinding: Commitment,
             payment: BalanceOf<T>,
             validator_fee_bps: u16,
             treasury_fee_bps: u16,
         ) -> DispatchResult {
             ensure_commitment::<T>(input_commitment)?;
+            ensure_commitment::<T>(assignment_blinding)?;
             ensure!(
                 !InferenceRequests::<T>::contains_key(request_id),
                 Error::<T>::DuplicateRequest
@@ -1925,6 +1966,7 @@ pub mod pallet {
             miner_id: MinerId,
             validator_id: ValidatorId,
             input_commitment: Commitment,
+            assignment_blinding: Commitment,
             payment: BalanceOf<T>,
             validator_fee_bps: u16,
             treasury_fee_bps: u16,
@@ -1948,6 +1990,7 @@ pub mod pallet {
                         subnet_id,
                         miner_id,
                         validator_id,
+                        assignment_blinding,
                     ),
                     input_commitment,
                     terms_commitment: Self::request_terms_commitment(
@@ -2226,6 +2269,24 @@ pub mod pallet {
             subnet_id: SubnetId,
             miner_id: MinerId,
             validator_id: ValidatorId,
+            assignment_blinding: Commitment,
+        ) -> Commitment {
+            (
+                b"qubitum.request.assignment.v1",
+                request_id,
+                subnet_id,
+                miner_id,
+                validator_id,
+                assignment_blinding,
+            )
+                .using_encoded(blake2_256)
+        }
+
+        pub(crate) fn legacy_request_assignment_commitment(
+            request_id: RequestId,
+            subnet_id: SubnetId,
+            miner_id: MinerId,
+            validator_id: ValidatorId,
         ) -> Commitment {
             (request_id, subnet_id, miner_id, validator_id).using_encoded(blake2_256)
         }
@@ -2246,19 +2307,34 @@ pub mod pallet {
             (request_id, payment, validator_fee_bps, treasury_fee_bps).using_encoded(blake2_256)
         }
 
+        #[cfg(any(test, feature = "runtime-benchmarks"))]
         pub(crate) fn proof_audit_commitment(
             submission: &InferenceProofSubmission,
             accepted_at: BlockNumber,
+            assignment_blinding: Commitment,
         ) -> Commitment {
-            (
-                submission.request_id,
-                submission.subnet_id,
+            Self::proof_audit_commitment_for_assignment(
+                submission,
+                accepted_at,
                 Self::request_assignment_commitment(
                     submission.request_id,
                     submission.subnet_id,
                     submission.miner_id,
                     submission.validator_id,
+                    assignment_blinding,
                 ),
+            )
+        }
+
+        pub(crate) fn proof_audit_commitment_for_assignment(
+            submission: &InferenceProofSubmission,
+            accepted_at: BlockNumber,
+            assignment_commitment: Commitment,
+        ) -> Commitment {
+            (
+                submission.request_id,
+                submission.subnet_id,
+                assignment_commitment,
                 submission.input_commitment,
                 submission.output_commitment,
                 submission.model_commitment,
@@ -2295,7 +2371,7 @@ pub mod pallet {
         }
 
         #[allow(clippy::too_many_arguments)]
-        fn legacy_proof_audit_commitment(
+        pub(crate) fn legacy_proof_audit_commitment(
             request_id: RequestId,
             subnet_id: SubnetId,
             assignment_commitment: Commitment,
@@ -2395,18 +2471,60 @@ pub mod pallet {
             request: &ChainInferenceRequest,
             miner_id: MinerId,
             validator_id: ValidatorId,
+            assignment_blinding: Commitment,
         ) -> DispatchResult {
-            ensure!(
-                request.assignment_commitment
-                    == Self::request_assignment_commitment(
-                        request.request_id,
-                        request.subnet_id,
-                        miner_id,
-                        validator_id,
-                    ),
-                Error::<T>::AssignmentMismatch
-            );
+            Self::resolve_request_assignment_commitment(
+                request,
+                miner_id,
+                validator_id,
+                assignment_blinding,
+            )?;
             Ok(())
+        }
+
+        fn resolve_request_assignment_commitment(
+            request: &ChainInferenceRequest,
+            miner_id: MinerId,
+            validator_id: ValidatorId,
+            assignment_blinding: Commitment,
+        ) -> Result<Commitment, DispatchError> {
+            let blinded = Self::request_assignment_commitment(
+                request.request_id,
+                request.subnet_id,
+                miner_id,
+                validator_id,
+                assignment_blinding,
+            );
+            let legacy = Self::legacy_request_assignment_commitment(
+                request.request_id,
+                request.subnet_id,
+                miner_id,
+                validator_id,
+            );
+            let assignment_matches = request.assignment_commitment == blinded
+                || (assignment_blinding == LEGACY_ASSIGNMENT_BLINDING
+                    && request.assignment_commitment == legacy);
+            ensure!(assignment_matches, Error::<T>::AssignmentMismatch);
+            ensure!(
+                assignment_blinding != LEGACY_ASSIGNMENT_BLINDING
+                    || request.assignment_commitment == legacy,
+                Error::<T>::MissingCommitment
+            );
+            Ok(request.assignment_commitment)
+        }
+
+        fn submission_assignment_commitment(
+            submission: &InferenceProofSubmission,
+            assignment_blinding: Commitment,
+        ) -> Result<Commitment, DispatchError> {
+            let request = InferenceRequests::<T>::get(submission.request_id)
+                .ok_or(Error::<T>::UnknownRequest)?;
+            Self::resolve_request_assignment_commitment(
+                &request,
+                submission.miner_id,
+                submission.validator_id,
+                assignment_blinding,
+            )
         }
 
         fn ensure_request_timing_witness(
@@ -2759,7 +2877,7 @@ pub mod pallet {
             let mut migrated = 0_u64;
             ProofRecords::<T>::translate::<ChainProofRecordV4, _>(|_, old| {
                 migrated = migrated.saturating_add(1);
-                let assignment_commitment = Self::request_assignment_commitment(
+                let assignment_commitment = Self::legacy_request_assignment_commitment(
                     old.request_id,
                     old.subnet_id,
                     old.miner_id,
@@ -2798,7 +2916,7 @@ pub mod pallet {
             let mut migrated = 0_u64;
             ProofRecords::<T>::translate::<ChainProofRecordV11, _>(|_, old| {
                 migrated = migrated.saturating_add(1);
-                let assignment_commitment = Self::request_assignment_commitment(
+                let assignment_commitment = Self::legacy_request_assignment_commitment(
                     old.request_id,
                     old.subnet_id,
                     old.miner_id,
@@ -3012,7 +3130,7 @@ pub mod pallet {
                     request_id: old.request_id,
                     user_commitment: Self::request_user_commitment(&old.user),
                     subnet_id: old.subnet_id,
-                    assignment_commitment: Self::request_assignment_commitment(
+                    assignment_commitment: Self::legacy_request_assignment_commitment(
                         old.request_id,
                         old.subnet_id,
                         old.miner_id,
@@ -3064,7 +3182,7 @@ pub mod pallet {
                         request_id: old.request_id,
                         user_commitment: old.user_commitment,
                         subnet_id: old.subnet_id,
-                        assignment_commitment: Self::request_assignment_commitment(
+                        assignment_commitment: Self::legacy_request_assignment_commitment(
                             old.request_id,
                             old.subnet_id,
                             old.miner_id,
@@ -3336,8 +3454,10 @@ pub mod pallet {
             submission: &InferenceProofSubmission,
             validator_operator: &T::AccountId,
             miner_operator: &T::AccountId,
+            assignment_blinding: Commitment,
         ) -> Result<ProofVerificationPolicy, DispatchError> {
-            let (policy, miner, validator) = Self::validate_submission_for_request(submission)?;
+            let (policy, miner, validator) =
+                Self::validate_submission_for_request(submission, assignment_blinding)?;
             Self::ensure_miner_operator(&miner, miner_operator)?;
             Self::ensure_validator_submission_operator(&validator, validator_operator)?;
             Ok(policy)
@@ -3346,14 +3466,17 @@ pub mod pallet {
         fn validate_challenge_submission(
             submission: &InferenceProofSubmission,
             miner_operator: &T::AccountId,
+            assignment_blinding: Commitment,
         ) -> Result<ProofVerificationPolicy, DispatchError> {
-            let (policy, miner, _) = Self::validate_submission_for_request(submission)?;
+            let (policy, miner, _) =
+                Self::validate_submission_for_request(submission, assignment_blinding)?;
             Self::ensure_miner_operator(&miner, miner_operator)?;
             Ok(policy)
         }
 
         fn validate_submission_for_request(
             submission: &InferenceProofSubmission,
+            assignment_blinding: Commitment,
         ) -> Result<(ProofVerificationPolicy, ChainMiner, ChainValidator), DispatchError> {
             ensure_commitment::<T>(submission.input_commitment)?;
             ensure_commitment::<T>(submission.output_commitment)?;
@@ -3378,6 +3501,7 @@ pub mod pallet {
                 &request,
                 submission.miner_id,
                 submission.validator_id,
+                assignment_blinding,
             )?;
 
             let subnet =
@@ -3447,6 +3571,7 @@ pub mod pallet {
             request_user: &T::AccountId,
             miner_operator: &T::AccountId,
             validator_operator: &T::AccountId,
+            assignment_blinding: Commitment,
             terms: &InferenceRequestTerms<BalanceOf<T>>,
         ) -> Result<(BalanceOf<T>, BalanceOf<T>, BalanceOf<T>), DispatchError> {
             InferenceRequests::<T>::try_mutate(
@@ -3466,6 +3591,7 @@ pub mod pallet {
                         request,
                         submission.miner_id,
                         submission.validator_id,
+                        assignment_blinding,
                     )?;
                     Self::ensure_request_user(request, request_user)?;
                     Self::ensure_request_terms_witness(request, terms)?;
@@ -3509,6 +3635,7 @@ pub mod pallet {
         fn refund_rejected_request(
             submission: &InferenceProofSubmission,
             request_user: &T::AccountId,
+            assignment_blinding: Commitment,
             terms: &InferenceRequestTerms<BalanceOf<T>>,
         ) -> Result<BalanceOf<T>, DispatchError> {
             InferenceRequests::<T>::try_mutate(
@@ -3528,6 +3655,7 @@ pub mod pallet {
                         request,
                         submission.miner_id,
                         submission.validator_id,
+                        assignment_blinding,
                     )?;
                     Self::ensure_request_user(request, request_user)?;
                     Self::ensure_request_terms_witness(request, terms)?;

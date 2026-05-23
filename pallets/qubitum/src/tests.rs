@@ -34,6 +34,10 @@ fn commitment(seed: u8) -> [u8; 32] {
     [seed; 32]
 }
 
+fn assignment_blinding() -> [u8; 32] {
+    commitment(90)
+}
+
 fn proof(seed: u8) -> ProofEnvelope {
     ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
 }
@@ -293,6 +297,7 @@ fn request_inference(request_id: u64) {
             miner_id: 0,
             validator_id: 0,
             input_commitment: commitment(1),
+            assignment_blinding: assignment_blinding(),
             payment: 1_000,
             validator_fee_bps: 250,
             treasury_fee_bps: 50,
@@ -340,14 +345,28 @@ fn submit_proof(
     origin: RuntimeOrigin,
     submission: InferenceProofSubmission,
 ) -> Result<(), sp_runtime::DispatchError> {
-    Qubitum::submit_proof(origin, submission, 4, 2, request_terms())
+    Qubitum::submit_proof(
+        origin,
+        submission,
+        4,
+        2,
+        assignment_blinding(),
+        request_terms(),
+    )
 }
 
 fn challenge_proof(
     origin: RuntimeOrigin,
     submission: InferenceProofSubmission,
 ) -> Result<(), sp_runtime::DispatchError> {
-    Qubitum::challenge_proof(origin, submission, 4, 2, request_terms())
+    Qubitum::challenge_proof(
+        origin,
+        submission,
+        4,
+        2,
+        assignment_blinding(),
+        request_terms(),
+    )
 }
 
 #[test]
@@ -832,6 +851,7 @@ fn role_commitments_are_domain_separated_with_legacy_authorization() {
             12,
             0,
             0,
+            assignment_blinding(),
             0,
             request_terms()
         ));
@@ -1143,13 +1163,15 @@ fn submit_proof_records_commitments_for_active_participants() {
         let mut submission = valid_submission(42);
         submission.submitted_at = 120;
         submission = bind_proof_transcript(submission);
-        let expected_audit_commitment = Qubitum::proof_audit_commitment(&submission, 123);
+        let expected_audit_commitment =
+            Qubitum::proof_audit_commitment(&submission, 123, assignment_blinding());
 
         assert_ok!(Qubitum::submit_proof(
             RuntimeOrigin::signed(3),
             submission,
             4,
             2,
+            assignment_blinding(),
             request_terms()
         ));
 
@@ -1157,7 +1179,7 @@ fn submit_proof_records_commitments_for_active_participants() {
         assert_eq!(record.request_id, 42);
         assert_eq!(
             record.assignment_commitment,
-            Qubitum::request_assignment_commitment(42, 0, 0, 0)
+            Qubitum::request_assignment_commitment(42, 0, 0, 0, assignment_blinding())
         );
         assert_eq!(record.audit_commitment, expected_audit_commitment);
         assert_eq!(record.proof_system, ProofSystem::RiscZeroStark);
@@ -1269,6 +1291,7 @@ fn public_request_and_proof_views_redact_private_route_payment_and_timing() {
                 miner_id: 0,
                 validator_id: 0,
                 input_commitment: commitment(1),
+                assignment_blinding: assignment_blinding(),
                 payment: 123_456_789,
                 validator_fee_bps: 777,
                 treasury_fee_bps: 888,
@@ -1307,6 +1330,7 @@ fn public_request_and_proof_views_redact_private_route_payment_and_timing() {
             submission,
             4,
             2,
+            assignment_blinding(),
             inference_terms(123_456_789, 777, 888)
         ));
 
@@ -1506,6 +1530,7 @@ fn public_lifecycle_events_redact_route_payment_and_proof_metadata() {
             AutoRouteInferenceRequestParams {
                 subnet_id: 0,
                 input_commitment: commitment(31),
+                assignment_blinding: assignment_blinding(),
                 payment: 123_456_789,
                 validator_fee_bps: 777,
                 treasury_fee_bps: 888,
@@ -1526,6 +1551,7 @@ fn public_lifecycle_events_redact_route_payment_and_proof_metadata() {
             submission,
             4,
             2,
+            assignment_blinding(),
             inference_terms(123_456_789, 777, 888)
         ));
 
@@ -1654,11 +1680,24 @@ fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
         };
         assert_eq!(
             record.assignment_commitment,
-            Qubitum::request_assignment_commitment(77, 0, 0, 0)
+            Qubitum::legacy_request_assignment_commitment(77, 0, 0, 0)
         );
         assert_eq!(
             record.audit_commitment,
-            Qubitum::proof_audit_commitment(&expected_submission, 55)
+            Qubitum::legacy_proof_audit_commitment(
+                expected_submission.request_id,
+                expected_submission.subnet_id,
+                Qubitum::legacy_request_assignment_commitment(77, 0, 0, 0),
+                expected_submission.input_commitment,
+                expected_submission.output_commitment,
+                expected_submission.model_commitment,
+                &expected_submission.proof,
+                expected_submission.proof_system,
+                expected_submission.proof_size_bytes,
+                expected_submission.verification_latency_ms,
+                expected_submission.submitted_at,
+                55,
+            )
         );
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
@@ -1708,11 +1747,24 @@ fn runtime_upgrade_migrates_proof_record_routes_to_commitments() {
         };
         assert_eq!(
             record.assignment_commitment,
-            Qubitum::request_assignment_commitment(77, 3, 7, 9)
+            Qubitum::legacy_request_assignment_commitment(77, 3, 7, 9)
         );
         assert_eq!(
             record.audit_commitment,
-            Qubitum::proof_audit_commitment(&expected_submission, 58)
+            Qubitum::legacy_proof_audit_commitment(
+                expected_submission.request_id,
+                expected_submission.subnet_id,
+                Qubitum::legacy_request_assignment_commitment(77, 3, 7, 9),
+                expected_submission.input_commitment,
+                expected_submission.output_commitment,
+                expected_submission.model_commitment,
+                &expected_submission.proof,
+                expected_submission.proof_system,
+                expected_submission.proof_size_bytes,
+                expected_submission.verification_latency_ms,
+                expected_submission.submitted_at,
+                58,
+            )
         );
         assert!(!contains_subsequence(&record.encode(), &7_u64.encode()));
         assert!(!contains_subsequence(&record.encode(), &9_u64.encode()));
@@ -1730,7 +1782,7 @@ fn runtime_upgrade_migrates_proof_record_details_to_audit_commitments() {
         let legacy = LegacyChainProofRecordV14 {
             request_id: 77,
             subnet_id: 3,
-            assignment_commitment: Qubitum::request_assignment_commitment(77, 3, 7, 9),
+            assignment_commitment: Qubitum::legacy_request_assignment_commitment(77, 3, 7, 9),
             input_commitment: commitment(1),
             output_commitment: commitment(2),
             model_commitment: commitment(10),
@@ -1763,7 +1815,20 @@ fn runtime_upgrade_migrates_proof_record_details_to_audit_commitments() {
         let record = ProofRecords::<Test>::get(77).unwrap();
         assert_eq!(
             record.audit_commitment,
-            Qubitum::proof_audit_commitment(&expected_submission, 58)
+            Qubitum::legacy_proof_audit_commitment(
+                expected_submission.request_id,
+                expected_submission.subnet_id,
+                Qubitum::legacy_request_assignment_commitment(77, 3, 7, 9),
+                expected_submission.input_commitment,
+                expected_submission.output_commitment,
+                expected_submission.model_commitment,
+                &expected_submission.proof,
+                expected_submission.proof_system,
+                expected_submission.proof_size_bytes,
+                expected_submission.verification_latency_ms,
+                expected_submission.submitted_at,
+                58,
+            )
         );
         for hidden in [
             commitment(1).encode(),
@@ -1949,7 +2014,7 @@ fn runtime_upgrade_migrates_request_users_to_commitments() {
         );
         assert_eq!(
             request.assignment_commitment,
-            Qubitum::request_assignment_commitment(91, 3, 7, 9)
+            Qubitum::legacy_request_assignment_commitment(91, 3, 7, 9)
         );
         assert_eq!(
             request.terms_commitment,
@@ -1979,7 +2044,7 @@ fn runtime_upgrade_migrates_request_timing_to_commitments() {
             request_id: 91,
             user_commitment: Qubitum::account_commitment(&44),
             subnet_id: 3,
-            assignment_commitment: Qubitum::request_assignment_commitment(91, 3, 7, 9),
+            assignment_commitment: Qubitum::legacy_request_assignment_commitment(91, 3, 7, 9),
             input_commitment: commitment(55),
             payment: 123_456,
             validator_fee_bps: 250,
@@ -2019,7 +2084,7 @@ fn runtime_upgrade_migrates_request_terms_to_commitments() {
             request_id: 91,
             user_commitment: Qubitum::account_commitment(&44),
             subnet_id: 3,
-            assignment_commitment: Qubitum::request_assignment_commitment(91, 3, 7, 9),
+            assignment_commitment: Qubitum::legacy_request_assignment_commitment(91, 3, 7, 9),
             input_commitment: commitment(55),
             payment: 123_456,
             validator_fee_bps: 250,
@@ -2069,7 +2134,7 @@ fn request_inference_escrows_payment() {
         );
         assert_eq!(
             request.assignment_commitment,
-            Qubitum::request_assignment_commitment(7, 0, 0, 0)
+            Qubitum::request_assignment_commitment(7, 0, 0, 0, assignment_blinding())
         );
         assert_eq!(
             request.terms_commitment,
@@ -2135,6 +2200,7 @@ fn request_storage_commits_route_assignment_without_raw_participant_ids() {
                 miner_id: assignment.miner_id,
                 validator_id: assignment.validator_id,
                 input_commitment: commitment(1),
+                assignment_blinding: assignment_blinding(),
                 payment: 1_000,
                 validator_fee_bps: 250,
                 treasury_fee_bps: 50,
@@ -2148,7 +2214,8 @@ fn request_storage_commits_route_assignment_without_raw_participant_ids() {
                 3,
                 0,
                 assignment.miner_id,
-                assignment.validator_id
+                assignment.validator_id,
+                assignment_blinding()
             )
         );
         assert!(!contains_subsequence(
@@ -2160,6 +2227,116 @@ fn request_storage_commits_route_assignment_without_raw_participant_ids() {
             PendingValidatorRequests::<Test>::get(assignment.validator_id),
             1
         );
+    });
+}
+
+#[test]
+fn request_inference_requires_nonzero_assignment_blinding() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        RequestCount::<Test>::put(11);
+
+        assert_noop!(
+            Qubitum::request_inference(
+                RuntimeOrigin::signed(4),
+                11,
+                InferenceRequestParams {
+                    subnet_id: 0,
+                    miner_id: 0,
+                    validator_id: 0,
+                    input_commitment: commitment(1),
+                    assignment_blinding: [0; 32],
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::MissingCommitment
+        );
+    });
+}
+
+#[test]
+fn assignment_blinding_prevents_route_dictionary_witness() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(7);
+
+        let request = InferenceRequests::<Test>::get(7).unwrap();
+        assert_eq!(
+            request.assignment_commitment,
+            Qubitum::request_assignment_commitment(7, 0, 0, 0, assignment_blinding())
+        );
+        assert_ne!(
+            request.assignment_commitment,
+            Qubitum::legacy_request_assignment_commitment(7, 0, 0, 0)
+        );
+
+        assert_noop!(
+            Qubitum::submit_proof(
+                RuntimeOrigin::signed(3),
+                valid_submission(7),
+                4,
+                2,
+                [0; 32],
+                request_terms()
+            ),
+            Error::<Test>::AssignmentMismatch
+        );
+        assert_noop!(
+            Qubitum::submit_proof(
+                RuntimeOrigin::signed(3),
+                valid_submission(7),
+                4,
+                2,
+                commitment(91),
+                request_terms()
+            ),
+            Error::<Test>::AssignmentMismatch
+        );
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(7)));
+    });
+}
+
+#[test]
+fn legacy_assignment_witness_preserves_legacy_proof_record_binding() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(7);
+        let legacy_assignment = Qubitum::legacy_request_assignment_commitment(7, 0, 0, 0);
+        InferenceRequests::<Test>::mutate(7, |maybe_request| {
+            maybe_request.as_mut().unwrap().assignment_commitment = legacy_assignment;
+        });
+
+        let submission = valid_submission(7);
+        let accepted_at = System::block_number();
+        let expected_audit = Qubitum::legacy_proof_audit_commitment(
+            submission.request_id,
+            submission.subnet_id,
+            legacy_assignment,
+            submission.input_commitment,
+            submission.output_commitment,
+            submission.model_commitment,
+            &submission.proof,
+            submission.proof_system,
+            submission.proof_size_bytes,
+            submission.verification_latency_ms,
+            submission.submitted_at,
+            accepted_at,
+        );
+
+        assert_ok!(Qubitum::submit_proof(
+            RuntimeOrigin::signed(3),
+            submission,
+            4,
+            2,
+            [0; 32],
+            request_terms()
+        ));
+
+        let record = ProofRecords::<Test>::get(7).unwrap();
+        assert_eq!(record.assignment_commitment, legacy_assignment);
+        assert_eq!(record.audit_commitment, expected_audit);
     });
 }
 
@@ -2223,6 +2400,7 @@ fn request_inference_rejects_non_next_request_id() {
                     miner_id: assignment.miner_id,
                     validator_id: assignment.validator_id,
                     input_commitment: commitment(1),
+                    assignment_blinding: assignment_blinding(),
                     payment: 1_000,
                     validator_fee_bps: 250,
                     treasury_fee_bps: 50,
@@ -2252,6 +2430,7 @@ fn request_inference_requires_active_assigned_participants() {
                     miner_id: 0,
                     validator_id: 0,
                     input_commitment: commitment(1),
+                    assignment_blinding: assignment_blinding(),
                     payment: 1_000,
                     validator_fee_bps: 250,
                     treasury_fee_bps: 50,
@@ -2281,6 +2460,7 @@ fn request_inference_requires_active_assigned_participants() {
                     miner_id: 0,
                     validator_id: 0,
                     input_commitment: commitment(1),
+                    assignment_blinding: assignment_blinding(),
                     payment: 1_000,
                     validator_fee_bps: 250,
                     treasury_fee_bps: 50,
@@ -2335,6 +2515,7 @@ fn next_route_assignment_uses_chain_next_request_id() {
                 miner_id: assignment.miner_id,
                 validator_id: assignment.validator_id,
                 input_commitment: commitment(1),
+                assignment_blinding: assignment_blinding(),
                 payment: 1_000,
                 validator_fee_bps: 250,
                 treasury_fee_bps: 50,
@@ -2430,6 +2611,7 @@ fn route_assignment_rejects_self_validation_operator() {
                     miner_id: 0,
                     validator_id: 0,
                     input_commitment: commitment(1),
+                    assignment_blinding: assignment_blinding(),
                     payment: 1_000,
                     validator_fee_bps: 250,
                     treasury_fee_bps: 50,
@@ -2482,6 +2664,7 @@ fn route_assignment_skips_self_validation_validator_when_alternative_exists() {
                 miner_id: assignment.miner_id,
                 validator_id: assignment.validator_id,
                 input_commitment: commitment(1),
+                assignment_blinding: assignment_blinding(),
                 payment: 1_000,
                 validator_fee_bps: 250,
                 treasury_fee_bps: 50,
@@ -2536,6 +2719,7 @@ fn route_assignment_scans_past_sixteen_self_validation_conflicts() {
                 miner_id: assignment.miner_id,
                 validator_id: assignment.validator_id,
                 input_commitment: commitment(1),
+                assignment_blinding: assignment_blinding(),
                 payment: 1_000,
                 validator_fee_bps: 250,
                 treasury_fee_bps: 50,
@@ -2610,7 +2794,13 @@ fn submit_proof_rejects_self_validation_assignment() {
                 request_id: 88,
                 user_commitment: Qubitum::request_user_commitment(&4),
                 subnet_id: 0,
-                assignment_commitment: Qubitum::request_assignment_commitment(88, 0, 0, 0),
+                assignment_commitment: Qubitum::request_assignment_commitment(
+                    88,
+                    0,
+                    0,
+                    0,
+                    assignment_blinding(),
+                ),
                 input_commitment: commitment(1),
                 terms_commitment: Qubitum::request_terms_commitment(88, 1_000, 250, 50),
                 timing_commitment: Qubitum::request_timing_commitment(88, 0),
@@ -2733,6 +2923,7 @@ fn request_inference_rejects_non_canonical_assignment() {
                     miner_id: 1,
                     validator_id: assignment.validator_id,
                     input_commitment: commitment(1),
+                    assignment_blinding: assignment_blinding(),
                     payment: 1_000,
                     validator_fee_bps: 250,
                     treasury_fee_bps: 50,
@@ -2757,6 +2948,7 @@ fn auto_route_request_computes_assignment_without_caller_supplied_participants()
             AutoRouteInferenceRequestParams {
                 subnet_id: 0,
                 input_commitment: commitment(1),
+                assignment_blinding: assignment_blinding(),
                 payment: 1_000,
                 validator_fee_bps: 250,
                 treasury_fee_bps: 50,
@@ -2770,7 +2962,7 @@ fn auto_route_request_computes_assignment_without_caller_supplied_participants()
         );
         assert_eq!(
             request.assignment_commitment,
-            Qubitum::request_assignment_commitment(54, 0, 0, 0)
+            Qubitum::request_assignment_commitment(54, 0, 0, 0, assignment_blinding())
         );
         assert_eq!(request.status, InferenceRequestStatus::Pending);
         assert_eq!(RequestCount::<Test>::get(), 55);
@@ -2797,17 +2989,41 @@ fn cancel_inference_releases_pending_escrow() {
         request_inference(8);
 
         assert_noop!(
-            Qubitum::cancel_inference(RuntimeOrigin::signed(4), 8, 0, 0, 0, request_terms()),
+            Qubitum::cancel_inference(
+                RuntimeOrigin::signed(4),
+                8,
+                0,
+                0,
+                assignment_blinding(),
+                0,
+                request_terms()
+            ),
             Error::<Test>::RequestCancelUnavailable
         );
 
         System::set_block_number(10);
         assert_noop!(
-            Qubitum::cancel_inference(RuntimeOrigin::signed(4), 8, 1, 0, 0, request_terms()),
+            Qubitum::cancel_inference(
+                RuntimeOrigin::signed(4),
+                8,
+                1,
+                0,
+                assignment_blinding(),
+                0,
+                request_terms()
+            ),
             Error::<Test>::AssignmentMismatch
         );
         assert_noop!(
-            Qubitum::cancel_inference(RuntimeOrigin::signed(4), 8, 0, 0, 1, request_terms()),
+            Qubitum::cancel_inference(
+                RuntimeOrigin::signed(4),
+                8,
+                0,
+                0,
+                assignment_blinding(),
+                1,
+                request_terms()
+            ),
             Error::<Test>::RequestMismatch
         );
         assert_ok!(Qubitum::cancel_inference(
@@ -2815,6 +3031,7 @@ fn cancel_inference_releases_pending_escrow() {
             8,
             0,
             0,
+            assignment_blinding(),
             0,
             request_terms()
         ));
@@ -2848,17 +3065,44 @@ fn expire_inference_releases_stale_request_for_any_signed_caller() {
         request_inference(10);
 
         assert_noop!(
-            Qubitum::expire_inference(RuntimeOrigin::signed(5), 10, 4, 0, 0, 0, request_terms()),
+            Qubitum::expire_inference(
+                RuntimeOrigin::signed(5),
+                10,
+                4,
+                0,
+                0,
+                assignment_blinding(),
+                0,
+                request_terms()
+            ),
             Error::<Test>::RequestCancelUnavailable
         );
 
         System::set_block_number(10);
         assert_noop!(
-            Qubitum::expire_inference(RuntimeOrigin::signed(5), 10, 4, 0, 1, 0, request_terms()),
+            Qubitum::expire_inference(
+                RuntimeOrigin::signed(5),
+                10,
+                4,
+                0,
+                1,
+                assignment_blinding(),
+                0,
+                request_terms()
+            ),
             Error::<Test>::AssignmentMismatch
         );
         assert_noop!(
-            Qubitum::expire_inference(RuntimeOrigin::signed(5), 10, 4, 0, 0, 1, request_terms()),
+            Qubitum::expire_inference(
+                RuntimeOrigin::signed(5),
+                10,
+                4,
+                0,
+                0,
+                assignment_blinding(),
+                1,
+                request_terms()
+            ),
             Error::<Test>::RequestMismatch
         );
         assert_ok!(Qubitum::expire_inference(
@@ -2867,6 +3111,7 @@ fn expire_inference_releases_stale_request_for_any_signed_caller() {
             4,
             0,
             0,
+            assignment_blinding(),
             0,
             request_terms()
         ));
@@ -2905,6 +3150,7 @@ fn request_terms_witness_gates_payment_transitions() {
                 valid_submission(60),
                 4,
                 2,
+                assignment_blinding(),
                 inference_terms(999, 250, 50)
             ),
             Error::<Test>::RequestMismatch
@@ -2925,6 +3171,7 @@ fn request_terms_witness_gates_payment_transitions() {
                 valid_submission(60),
                 4,
                 2,
+                assignment_blinding(),
                 inference_terms(0, 250, 50)
             ),
             Error::<Test>::InvalidPayment
@@ -2939,6 +3186,7 @@ fn request_terms_witness_gates_payment_transitions() {
                 61,
                 0,
                 0,
+                assignment_blinding(),
                 0,
                 inference_terms(1_000, 251, 50)
             ),
@@ -2950,6 +3198,7 @@ fn request_terms_witness_gates_payment_transitions() {
                 61,
                 0,
                 0,
+                assignment_blinding(),
                 0,
                 inference_terms(1_000, 9_000, 2_000)
             ),
@@ -2960,6 +3209,7 @@ fn request_terms_witness_gates_payment_transitions() {
             61,
             0,
             0,
+            assignment_blinding(),
             0,
             request_terms()
         ));
@@ -2973,6 +3223,7 @@ fn request_terms_witness_gates_payment_transitions() {
                 4,
                 0,
                 0,
+                assignment_blinding(),
                 10,
                 inference_terms(1_001, 250, 50)
             ),
@@ -2984,6 +3235,7 @@ fn request_terms_witness_gates_payment_transitions() {
             4,
             0,
             0,
+            assignment_blinding(),
             10,
             request_terms()
         ));
@@ -3003,6 +3255,7 @@ fn rejected_proof_refund_requires_terms_witness() {
                 valid_submission(63),
                 4,
                 2,
+                assignment_blinding(),
                 inference_terms(999, 250, 50)
             ),
             Error::<Test>::RequestMismatch
@@ -3038,6 +3291,7 @@ fn request_user_witness_gates_settlement_challenge_and_expiry() {
                 valid_submission(70),
                 5,
                 2,
+                assignment_blinding(),
                 request_terms()
             ),
             Error::<Test>::NotRequestOwner
@@ -3060,6 +3314,7 @@ fn request_user_witness_gates_settlement_challenge_and_expiry() {
                 valid_submission(71),
                 5,
                 2,
+                assignment_blinding(),
                 request_terms()
             ),
             Error::<Test>::NotRequestOwner
@@ -3073,7 +3328,16 @@ fn request_user_witness_gates_settlement_challenge_and_expiry() {
         request_inference(72);
         System::set_block_number(10);
         assert_noop!(
-            Qubitum::expire_inference(RuntimeOrigin::signed(5), 72, 5, 0, 0, 0, request_terms()),
+            Qubitum::expire_inference(
+                RuntimeOrigin::signed(5),
+                72,
+                5,
+                0,
+                0,
+                assignment_blinding(),
+                0,
+                request_terms()
+            ),
             Error::<Test>::NotRequestOwner
         );
         assert_eq!(
@@ -3086,6 +3350,7 @@ fn request_user_witness_gates_settlement_challenge_and_expiry() {
             4,
             0,
             0,
+            assignment_blinding(),
             0,
             request_terms()
         ));
@@ -3103,13 +3368,29 @@ fn cancel_inference_rejects_non_owner_or_settled_request() {
         request_inference(9);
 
         assert_noop!(
-            Qubitum::cancel_inference(RuntimeOrigin::signed(3), 9, 0, 0, 0, request_terms()),
+            Qubitum::cancel_inference(
+                RuntimeOrigin::signed(3),
+                9,
+                0,
+                0,
+                assignment_blinding(),
+                0,
+                request_terms()
+            ),
             Error::<Test>::NotRequestOwner
         );
 
         assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(9)));
         assert_noop!(
-            Qubitum::cancel_inference(RuntimeOrigin::signed(4), 9, 0, 0, 0, request_terms()),
+            Qubitum::cancel_inference(
+                RuntimeOrigin::signed(4),
+                9,
+                0,
+                0,
+                assignment_blinding(),
+                0,
+                request_terms()
+            ),
             Error::<Test>::RequestAlreadySettled
         );
     });
