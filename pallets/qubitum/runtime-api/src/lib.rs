@@ -17,8 +17,8 @@ sp_api::decl_runtime_apis! {
         fn qubitum_validator_identity(validator_id: ValidatorId) -> Option<ChainPublicIdentity>;
         fn qubitum_inference_request(request_id: RequestId) -> Option<ChainPublicInferenceRequest>;
         fn qubitum_proof_record(request_id: RequestId) -> Option<ChainPublicProofRecord>;
-        fn qubitum_route_assignment(subnet_id: SubnetId, request_id: RequestId) -> ChainRouteAvailability;
-        fn qubitum_next_route_assignment(subnet_id: SubnetId) -> ChainRouteAvailability;
+        fn qubitum_route_availability(subnet_id: SubnetId, request_id: RequestId) -> ChainRouteAvailability;
+        fn qubitum_next_route_availability(subnet_id: SubnetId) -> ChainRouteAvailability;
         fn qubitum_next_request_id() -> RequestId;
         fn qubitum_counts() -> (SubnetId, MinerId, ValidatorId);
         fn qubitum_total_burned() -> TaoBalance;

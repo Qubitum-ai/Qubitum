@@ -48,16 +48,16 @@ pub trait QubitumRpcApi<BlockHash> {
     #[method(name = "qubitum_getProofRecord")]
     fn get_proof_record(&self, request_id: RequestId, at: Option<BlockHash>) -> RpcResult<Vec<u8>>;
 
-    #[method(name = "qubitum_routeAssignment")]
-    fn route_assignment(
+    #[method(name = "qubitum_routeAvailability")]
+    fn route_availability(
         &self,
         subnet_id: SubnetId,
         request_id: RequestId,
         at: Option<BlockHash>,
     ) -> RpcResult<Vec<u8>>;
 
-    #[method(name = "qubitum_nextRouteAssignment")]
-    fn next_route_assignment(
+    #[method(name = "qubitum_nextRouteAvailability")]
+    fn next_route_availability(
         &self,
         subnet_id: SubnetId,
         at: Option<BlockHash>,
@@ -231,7 +231,7 @@ where
             })
     }
 
-    fn route_assignment(
+    fn route_availability(
         &self,
         subnet_id: SubnetId,
         request_id: RequestId,
@@ -240,14 +240,15 @@ where
         let api = self.client.runtime_api();
         let at = self.at_or_best(at);
 
-        api.qubitum_route_assignment(at, subnet_id, request_id)
+        api.qubitum_route_availability(at, subnet_id, request_id)
             .map(|result| result.encode())
             .map_err(|e| {
-                Error::RuntimeError(format!("Unable to route Qubitum assignment: {e:?}")).into()
+                Error::RuntimeError(format!("Unable to get Qubitum route availability: {e:?}"))
+                    .into()
             })
     }
 
-    fn next_route_assignment(
+    fn next_route_availability(
         &self,
         subnet_id: SubnetId,
         at: Option<<Block as BlockT>::Hash>,
@@ -255,11 +256,13 @@ where
         let api = self.client.runtime_api();
         let at = self.at_or_best(at);
 
-        api.qubitum_next_route_assignment(at, subnet_id)
+        api.qubitum_next_route_availability(at, subnet_id)
             .map(|result| result.encode())
             .map_err(|e| {
-                Error::RuntimeError(format!("Unable to route next Qubitum assignment: {e:?}"))
-                    .into()
+                Error::RuntimeError(format!(
+                    "Unable to get next Qubitum route availability: {e:?}"
+                ))
+                .into()
             })
     }
 

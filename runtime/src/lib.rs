@@ -272,7 +272,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     //   `spec_version`, and `authoring_version` are the same between Wasm and native.
     // This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
     //   the compatible custom types.
-    spec_version: 459,
+    spec_version: 460,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 6,
@@ -2635,14 +2635,14 @@ impl_runtime_apis! {
             pallet_qubitum::Pallet::<Runtime>::public_proof_record(request_id)
         }
 
-        fn qubitum_route_assignment(
+        fn qubitum_route_availability(
             subnet_id: qubitum_protocol::SubnetId,
             request_id: qubitum_protocol::RequestId,
         ) -> pallet_qubitum::ChainRouteAvailability {
             pallet_qubitum::Pallet::<Runtime>::route_availability(subnet_id, request_id)
         }
 
-        fn qubitum_next_route_assignment(
+        fn qubitum_next_route_availability(
             subnet_id: qubitum_protocol::SubnetId,
         ) -> pallet_qubitum::ChainRouteAvailability {
             pallet_qubitum::Pallet::<Runtime>::next_route_availability(subnet_id)
