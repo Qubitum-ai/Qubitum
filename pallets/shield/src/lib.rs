@@ -631,9 +631,14 @@ impl<T: Config> Pallet<T> {
             return None;
         }
 
-        ExtrinsicOf::<Block>::decode(&mut &plaintext[..]).inspect_err(
+        <ExtrinsicOf<Block> as codec::DecodeLimit>::decode_all_with_depth_limit(
+            MAX_EXTRINSIC_DEPTH,
+            &mut &plaintext[..],
+        )
+        .inspect_err(
             |e| log::debug!(target: LOG_TARGET, "Failed to decode shielded transaction: {:?}", e),
-        ).ok()
+        )
+        .ok()
     }
 }
 

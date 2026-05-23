@@ -334,8 +334,7 @@ fn try_decode_shielded_tx_returns_none_when_depth_exceeded() {
     });
 }
 
-#[test]
-fn try_unshield_tx_decrypts_extrinsic() {
+fn shield_plaintext_for_current_key(plaintext: &[u8]) -> (Vec<u8>, ShieldedTransaction) {
     let mut rng = ChaChaRng::from_seed([42u8; 32]);
     let keystore = MemoryShieldKeystore::new();
 
@@ -345,13 +344,6 @@ fn try_unshield_tx_decrypts_extrinsic() {
         EncapsulationKey::<MlKem768Params>::from_bytes(pk_bytes.as_slice().try_into().unwrap());
     let (kem_ct, shared_secret) = enc_key.encapsulate(&mut rng).unwrap();
 
-    // Build the inner extrinsic that we'll encrypt.
-    let inner_call = RuntimeCall::System(frame_system::Call::remark {
-        remark: vec![1, 2, 3],
-    });
-    let inner_uxt = <Block as BlockT>::Extrinsic::new_bare(inner_call);
-    let plaintext = inner_uxt.encode();
-
     // AEAD encrypt the extrinsic bytes.
     let nonce = [42u8; 24];
     let cipher = XChaCha20Poly1305::new(shared_secret.as_slice().into());
@@ -359,7 +351,7 @@ fn try_unshield_tx_decrypts_extrinsic() {
         .encrypt(
             XNonce::from_slice(&nonce),
             Payload {
-                msg: &plaintext,
+                msg: plaintext,
                 aad: &[],
             },
         )
@@ -376,11 +368,36 @@ fn try_unshield_tx_decrypts_extrinsic() {
         aead_ct,
     };
 
+    (dec_key_bytes, shielded_tx)
+}
+
+#[test]
+fn try_unshield_tx_decrypts_extrinsic() {
+    // Build the inner extrinsic that we'll encrypt.
+    let inner_call = RuntimeCall::System(frame_system::Call::remark {
+        remark: vec![1, 2, 3],
+    });
+    let inner_uxt = <Block as BlockT>::Extrinsic::new_bare(inner_call);
+    let (dec_key_bytes, shielded_tx) = shield_plaintext_for_current_key(&inner_uxt.encode());
+
     let result = crate::Pallet::<Test>::try_unshield_tx::<Block>(dec_key_bytes, shielded_tx);
     assert!(result.is_some());
 
     let decoded = result.unwrap();
     assert_eq!(decoded.encode(), inner_uxt.encode());
+}
+
+#[test]
+fn try_unshield_tx_returns_none_when_plaintext_depth_exceeded() {
+    let inner_call = RuntimeCall::System(frame_system::Call::remark {
+        remark: vec![1, 2, 3],
+    });
+    let nested_call = nest_call(inner_call, 16);
+    let inner_uxt = <Block as BlockT>::Extrinsic::new_bare(nested_call);
+    let (dec_key_bytes, shielded_tx) = shield_plaintext_for_current_key(&inner_uxt.encode());
+
+    let result = crate::Pallet::<Test>::try_unshield_tx::<Block>(dec_key_bytes, shielded_tx);
+    assert!(result.is_none());
 }
 
 // ---------------------------------------------------------------------------
