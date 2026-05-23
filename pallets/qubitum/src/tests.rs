@@ -7,12 +7,13 @@ use crate::{
     ChainRequestStatusCounts, ChainRouteAvailability, Error, FailClosedProofVerifier, HoldReason,
     InferenceRequestParams, InferenceRequestStatus, InferenceRequestTerms,
     InferenceRequestTermsWitness, InferenceRequestTimingWitness, InferenceRequests, MinerCount,
-    MinerIdentityCommitments, MinerIdentitySignatureBundles, Miners, PendingInferenceRequestCount,
-    PendingMinerRequests, PendingValidatorRequests, ProofRecords, ProofVerificationPolicy,
-    PublicRegistryStatus, RejectedInferenceRequestCount, RequestCount,
-    SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned, TotalInferenceEscrowed,
-    TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees, TotalValidatorFees,
-    ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles, Validators,
+    MinerIdentityCommitments, MinerIdentitySignatureBundles, MinerIdentitySignatureChallenges,
+    Miners, PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests,
+    ProofRecords, ProofVerificationPolicy, PublicRegistryStatus, RejectedInferenceRequestCount,
+    RequestCount, SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned,
+    TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees,
+    TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
+    ValidatorIdentitySignatureBundles, ValidatorIdentitySignatureChallenges, Validators,
     VerifyProof,
     mock::{
         Balances, Qubitum, RuntimeEvent, RuntimeOrigin, System, Test, new_test_ext,
@@ -999,6 +1000,17 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
             MinerIdentitySignatureBundles::<Test>::get(0),
             Some(post_quantum_signature_bundle())
         );
+        let miner_signature_challenge = MinerIdentitySignatureChallenges::<Test>::get(0).unwrap();
+        let miner = Miners::<Test>::get(0).unwrap();
+        assert_eq!(
+            miner_signature_challenge,
+            Qubitum::miner_identity_signature_challenge(
+                0,
+                miner.operator_commitment,
+                Some(commitment(20)),
+                Some(commitment(21)),
+            )
+        );
         let validator_commitments = ValidatorIdentityCommitments::<Test>::get(0).unwrap();
         assert_eq!(
             validator_commitments.shielded_identity_commitment,
@@ -1012,16 +1024,31 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
             ValidatorIdentitySignatureBundles::<Test>::get(0),
             Some(post_quantum_signature_bundle())
         );
+        let validator_signature_challenge =
+            ValidatorIdentitySignatureChallenges::<Test>::get(0).unwrap();
+        let validator = Validators::<Test>::get(0).unwrap();
+        assert_eq!(
+            validator_signature_challenge,
+            Qubitum::validator_identity_signature_challenge(
+                0,
+                validator.operator_commitment,
+                Some(commitment(22)),
+                Some(commitment(23)),
+            )
+        );
+        assert_ne!(miner_signature_challenge, validator_signature_challenge);
 
         for encoded in [
             miner_commitments.encode(),
             MinerIdentitySignatureBundles::<Test>::get(0)
                 .unwrap()
                 .encode(),
+            miner_signature_challenge.encode(),
             validator_commitments.encode(),
             ValidatorIdentitySignatureBundles::<Test>::get(0)
                 .unwrap()
                 .encode(),
+            validator_signature_challenge.encode(),
         ] {
             assert!(!contains_subsequence(&encoded, raw_miner_identity));
             assert!(!contains_subsequence(&encoded, raw_validator_identity));
@@ -1036,6 +1063,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         ));
         assert!(MinerIdentityCommitments::<Test>::get(0).is_none());
         assert!(MinerIdentitySignatureBundles::<Test>::get(0).is_none());
+        assert!(MinerIdentitySignatureChallenges::<Test>::get(0).is_none());
         assert_ok!(Qubitum::set_validator_identity_commitments(
             RuntimeOrigin::signed(3),
             0,
@@ -1045,6 +1073,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         ));
         assert!(ValidatorIdentityCommitments::<Test>::get(0).is_none());
         assert!(ValidatorIdentitySignatureBundles::<Test>::get(0).is_none());
+        assert!(ValidatorIdentitySignatureChallenges::<Test>::get(0).is_none());
     });
 }
 
@@ -1070,8 +1099,10 @@ fn failed_identity_commitment_updates_do_not_clobber_existing_state() {
 
         let miner_commitments = MinerIdentityCommitments::<Test>::get(0);
         let miner_signature = MinerIdentitySignatureBundles::<Test>::get(0);
+        let miner_challenge = MinerIdentitySignatureChallenges::<Test>::get(0);
         let validator_commitments = ValidatorIdentityCommitments::<Test>::get(0);
         let validator_signature = ValidatorIdentitySignatureBundles::<Test>::get(0);
+        let validator_challenge = ValidatorIdentitySignatureChallenges::<Test>::get(0);
 
         assert_noop!(
             Qubitum::set_miner_identity_commitments(
@@ -1120,12 +1151,81 @@ fn failed_identity_commitment_updates_do_not_clobber_existing_state() {
             miner_signature
         );
         assert_eq!(
+            MinerIdentitySignatureChallenges::<Test>::get(0),
+            miner_challenge
+        );
+        assert_eq!(
             ValidatorIdentityCommitments::<Test>::get(0),
             validator_commitments
         );
         assert_eq!(
             ValidatorIdentitySignatureBundles::<Test>::get(0),
             validator_signature
+        );
+        assert_eq!(
+            ValidatorIdentitySignatureChallenges::<Test>::get(0),
+            validator_challenge
+        );
+    });
+}
+
+#[test]
+fn identity_signature_challenges_are_role_separated_and_mutable() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+
+        let shared_operator_commitment = Qubitum::operator_commitment(&2);
+        assert_ne!(
+            Qubitum::miner_identity_signature_challenge(
+                0,
+                shared_operator_commitment,
+                Some(commitment(50)),
+                Some(commitment(51)),
+            ),
+            Qubitum::validator_identity_signature_challenge(
+                0,
+                shared_operator_commitment,
+                Some(commitment(50)),
+                Some(commitment(51)),
+            )
+        );
+
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(2),
+            0,
+            Some(commitment(50)),
+            Some(commitment(51)),
+            post_quantum_signature_bundle(),
+        ));
+        let miner = Miners::<Test>::get(0).unwrap();
+        let first_challenge = MinerIdentitySignatureChallenges::<Test>::get(0).unwrap();
+        assert_eq!(
+            first_challenge,
+            Qubitum::miner_identity_signature_challenge(
+                0,
+                miner.operator_commitment,
+                Some(commitment(50)),
+                Some(commitment(51)),
+            )
+        );
+
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(2),
+            0,
+            Some(commitment(50)),
+            Some(commitment(52)),
+            post_quantum_signature_bundle(),
+        ));
+        let updated_challenge = MinerIdentitySignatureChallenges::<Test>::get(0).unwrap();
+        assert_ne!(first_challenge, updated_challenge);
+        assert_eq!(
+            updated_challenge,
+            Qubitum::miner_identity_signature_challenge(
+                0,
+                miner.operator_commitment,
+                Some(commitment(50)),
+                Some(commitment(52)),
+            )
         );
     });
 }

@@ -829,12 +829,20 @@ pub mod pallet {
         StorageMap<_, Twox64Concat, MinerId, SignatureBundle, OptionQuery>;
 
     #[pallet::storage]
+    pub type MinerIdentitySignatureChallenges<T: Config> =
+        StorageMap<_, Twox64Concat, MinerId, Commitment, OptionQuery>;
+
+    #[pallet::storage]
     pub type ValidatorIdentityCommitments<T: Config> =
         StorageMap<_, Twox64Concat, ValidatorId, ChainIdentityCommitments, OptionQuery>;
 
     #[pallet::storage]
     pub type ValidatorIdentitySignatureBundles<T: Config> =
         StorageMap<_, Twox64Concat, ValidatorId, SignatureBundle, OptionQuery>;
+
+    #[pallet::storage]
+    pub type ValidatorIdentitySignatureChallenges<T: Config> =
+        StorageMap<_, Twox64Concat, ValidatorId, Commitment, OptionQuery>;
 
     #[pallet::storage]
     pub type ProofRecords<T: Config> =
@@ -1800,6 +1808,12 @@ pub mod pallet {
 
             if shielded_identity_commitment.is_some() || endpoint_commitment.is_some() {
                 Self::ensure_signature_bundle(signature_bundle)?;
+                let challenge_commitment = Self::miner_identity_signature_challenge(
+                    miner_id,
+                    miner.operator_commitment,
+                    shielded_identity_commitment,
+                    endpoint_commitment,
+                );
                 MinerIdentityCommitments::<T>::insert(
                     miner_id,
                     ChainIdentityCommitments {
@@ -1808,9 +1822,11 @@ pub mod pallet {
                     },
                 );
                 MinerIdentitySignatureBundles::<T>::insert(miner_id, signature_bundle);
+                MinerIdentitySignatureChallenges::<T>::insert(miner_id, challenge_commitment);
             } else {
                 MinerIdentityCommitments::<T>::remove(miner_id);
                 MinerIdentitySignatureBundles::<T>::remove(miner_id);
+                MinerIdentitySignatureChallenges::<T>::remove(miner_id);
             }
 
             Self::deposit_event(Event::MinerIdentityCommitmentsUpdated { miner_id });
@@ -1836,6 +1852,12 @@ pub mod pallet {
 
             if shielded_identity_commitment.is_some() || endpoint_commitment.is_some() {
                 Self::ensure_signature_bundle(signature_bundle)?;
+                let challenge_commitment = Self::validator_identity_signature_challenge(
+                    validator_id,
+                    validator.operator_commitment,
+                    shielded_identity_commitment,
+                    endpoint_commitment,
+                );
                 ValidatorIdentityCommitments::<T>::insert(
                     validator_id,
                     ChainIdentityCommitments {
@@ -1844,9 +1866,14 @@ pub mod pallet {
                     },
                 );
                 ValidatorIdentitySignatureBundles::<T>::insert(validator_id, signature_bundle);
+                ValidatorIdentitySignatureChallenges::<T>::insert(
+                    validator_id,
+                    challenge_commitment,
+                );
             } else {
                 ValidatorIdentityCommitments::<T>::remove(validator_id);
                 ValidatorIdentitySignatureBundles::<T>::remove(validator_id);
+                ValidatorIdentitySignatureChallenges::<T>::remove(validator_id);
             }
 
             Self::deposit_event(Event::ValidatorIdentityCommitmentsUpdated { validator_id });
@@ -2307,6 +2334,54 @@ pub mod pallet {
             status: RegistryStatus,
         ) -> Commitment {
             (domain, participant_id, operator_commitment, status).using_encoded(blake2_256)
+        }
+
+        pub(crate) fn miner_identity_signature_challenge(
+            miner_id: MinerId,
+            operator_commitment: Commitment,
+            shielded_identity_commitment: Option<Commitment>,
+            endpoint_commitment: Option<Commitment>,
+        ) -> Commitment {
+            Self::identity_signature_challenge(
+                b"qubitum.identity.miner.v1",
+                miner_id,
+                operator_commitment,
+                shielded_identity_commitment,
+                endpoint_commitment,
+            )
+        }
+
+        pub(crate) fn validator_identity_signature_challenge(
+            validator_id: ValidatorId,
+            operator_commitment: Commitment,
+            shielded_identity_commitment: Option<Commitment>,
+            endpoint_commitment: Option<Commitment>,
+        ) -> Commitment {
+            Self::identity_signature_challenge(
+                b"qubitum.identity.validator.v1",
+                validator_id,
+                operator_commitment,
+                shielded_identity_commitment,
+                endpoint_commitment,
+            )
+        }
+
+        fn identity_signature_challenge(
+            domain: &'static [u8],
+            subject_id: u64,
+            operator_commitment: Commitment,
+            shielded_identity_commitment: Option<Commitment>,
+            endpoint_commitment: Option<Commitment>,
+        ) -> Commitment {
+            (
+                domain,
+                subject_id,
+                operator_commitment,
+                shielded_identity_commitment,
+                endpoint_commitment,
+                T::SignatureMode::get(),
+            )
+                .using_encoded(blake2_256)
         }
 
         pub(crate) fn subnet_policy_commitment(
