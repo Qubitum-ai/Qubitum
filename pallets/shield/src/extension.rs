@@ -3,12 +3,11 @@ use codec::{Decode, DecodeWithMemTracking, Encode};
 use frame_support::pallet_prelude::*;
 use frame_support::traits::IsSubType;
 use scale_info::TypeInfo;
-use sp_runtime::impl_tx_ext_default;
 use sp_runtime::traits::{
     AsSystemOriginSigner, DispatchInfoOf, Dispatchable, Implication, TransactionExtension,
     ValidateResult,
 };
-use sp_runtime::transaction_validity::TransactionSource;
+use sp_runtime::transaction_validity::{TransactionSource, TransactionValidityError};
 use subtensor_macros::freeze_struct;
 use subtensor_runtime_common::CustomTransactionError;
 
@@ -39,8 +38,6 @@ where
     type Implicit = ();
     type Val = ();
     type Pre = ();
-
-    impl_tx_ext_default!(<T as frame_system::Config>::RuntimeCall; prepare);
 
     fn weight(&self, _call: &<T as frame_system::Config>::RuntimeCall) -> Weight {
         // Some arbitrary weight added to account for the cost
@@ -75,6 +72,33 @@ where
         };
 
         Ok((Default::default(), (), origin))
+    }
+
+    fn prepare(
+        self,
+        _val: Self::Val,
+        origin: &<T as frame_system::Config>::RuntimeOrigin,
+        call: &<T as frame_system::Config>::RuntimeCall,
+        _info: &DispatchInfoOf<<T as frame_system::Config>::RuntimeCall>,
+        _len: usize,
+    ) -> Result<Self::Pre, TransactionValidityError> {
+        // Ensure the transaction is signed, else we just skip the extension.
+        if origin.as_system_origin_signer().is_none() {
+            return Ok(());
+        }
+
+        // Ensure the transaction is a shielded transaction, else we just skip the extension.
+        let Some(Call::submit_encrypted { ciphertext }) = IsSubType::<Call<T>>::is_sub_type(call)
+        else {
+            return Ok(());
+        };
+
+        // Reject malformed ciphertext during block preparation too.
+        let Some(ShieldedTransaction { .. }) = ShieldedTransaction::parse(ciphertext) else {
+            return Err(CustomTransactionError::FailedShieldedTxParsing.into());
+        };
+
+        Ok(())
     }
 }
 
@@ -125,6 +149,16 @@ mod tests {
             .map(|(validity, _, _)| validity)
     }
 
+    fn prepare_ext(who: Option<u64>, call: &RuntimeCall) -> Result<(), TransactionValidityError> {
+        let ext = CheckShieldedTxValidity::<Test>::new();
+        let info = call.get_dispatch_info();
+        let origin = match who {
+            Some(id) => RuntimeOrigin::signed(id),
+            None => RuntimeOrigin::none(),
+        };
+        ext.prepare((), &origin, call, &info, 0)
+    }
+
     #[test]
     fn non_shield_call_passes_through() {
         new_test_ext().execute_with(|| {
@@ -166,6 +200,31 @@ mod tests {
                 validate_ext(Some(1), &call, TransactionSource::External),
                 Err(CustomTransactionError::FailedShieldedTxParsing.into())
             );
+        });
+    }
+
+    #[test]
+    fn malformed_ciphertext_rejected_during_prepare() {
+        new_test_ext().execute_with(|| {
+            let call = RuntimeCall::MevShield(crate::Call::submit_encrypted {
+                ciphertext: BoundedVec::truncate_from(vec![0u8; 5]),
+            });
+            assert_eq!(
+                prepare_ext(Some(1), &call),
+                Err(CustomTransactionError::FailedShieldedTxParsing.into())
+            );
+        });
+    }
+
+    #[test]
+    fn prepare_passes_unsigned_and_non_shield_calls_through() {
+        new_test_ext().execute_with(|| {
+            let shield_call = make_submit_call([0xFF; 16]);
+            assert!(prepare_ext(None, &shield_call).is_ok());
+
+            let non_shield_call =
+                RuntimeCall::System(frame_system::Call::remark { remark: vec![] });
+            assert!(prepare_ext(Some(1), &non_shield_call).is_ok());
         });
     }
 
