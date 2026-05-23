@@ -9,13 +9,13 @@ use crate::{
     InferenceRequestTerms, InferenceRequestTermsWitness, InferenceRequestTimingWitness,
     InferenceRequests, LegacyAccountingMigrationFailures, LegacyRoutingIndexMigrationFailures,
     MinerCount, MinerIdentityCommitments, MinerIdentitySignatureBundles,
-    MinerIdentitySignatureChallenges, Miners, PendingInferenceRequestCount, PendingMinerRequests,
-    PendingValidatorRequests, ProofRecords, ProofVerificationPolicy, PublicRegistryStatus,
-    RejectedInferenceRequestCount, RequestCount, SettledInferenceRequestCount, SubnetCount,
-    Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
-    TotalTreasuryFees, TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
-    ValidatorIdentitySignatureBundles, ValidatorIdentitySignatureChallenges, Validators,
-    VerifyProof,
+    MinerIdentitySignatureChallenges, MinerLockedBond, Miners, PendingInferenceRequestCount,
+    PendingMinerRequests, PendingValidatorRequests, ProofRecords, ProofVerificationPolicy,
+    PublicRegistryStatus, RejectedInferenceRequestCount, RequestCount,
+    SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned, TotalInferenceEscrowed,
+    TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees, TotalValidatorFees,
+    ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles,
+    ValidatorIdentitySignatureChallenges, ValidatorLockedStake, Validators, VerifyProof,
     mock::{
         Balances, Qubitum, RuntimeEvent, RuntimeOrigin, System, Test, new_test_ext,
         set_verification_outcome,
@@ -799,6 +799,249 @@ fn slashed_validator_can_exit_with_remaining_stake() {
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
             0
+        );
+    });
+}
+
+#[test]
+fn participant_capital_lifecycle_uses_per_registry_record_amounts() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::General,
+            ProofSystem::RiscZeroStark
+        ));
+        for model in [10, 11] {
+            assert_ok!(Qubitum::register_miner(
+                RuntimeOrigin::signed(2),
+                0,
+                commitment(model),
+                ProofSystem::RiscZeroStark
+            ));
+        }
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            1,
+            MIN_MINER_BOND
+        ));
+        assert_eq!(MinerLockedBond::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(MinerLockedBond::<Test>::get(1), Some(MIN_MINER_BOND));
+
+        assert_ok!(Qubitum::slash_miner(RuntimeOrigin::root(), 0, 2, 1_000));
+
+        assert_eq!(MinerLockedBond::<Test>::get(0), Some(90_000_000_000));
+        assert_eq!(MinerLockedBond::<Test>::get(1), Some(MIN_MINER_BOND));
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            190_000_000_000
+        );
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().status,
+            RegistryStatus::Slashed
+        );
+        assert_eq!(
+            Miners::<Test>::get(1).unwrap().status,
+            RegistryStatus::Active
+        );
+
+        assert_ok!(Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0));
+        System::set_block_number(20);
+        assert_ok!(Qubitum::withdraw_miner_bond(RuntimeOrigin::signed(2), 0));
+
+        assert_eq!(MinerLockedBond::<Test>::get(0), None);
+        assert_eq!(MinerLockedBond::<Test>::get(1), Some(MIN_MINER_BOND));
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            MIN_MINER_BOND
+        );
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().status,
+            RegistryStatus::Disabled
+        );
+        assert_eq!(
+            Miners::<Test>::get(1).unwrap().status,
+            RegistryStatus::Active
+        );
+    });
+
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::General,
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(3),
+            0,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(3),
+            0,
+            MIN_MINER_BOND
+        ));
+        assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(ValidatorLockedStake::<Test>::get(1), Some(MIN_MINER_BOND));
+
+        assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 3, 1_000));
+
+        assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(90_000_000_000));
+        assert_eq!(ValidatorLockedStake::<Test>::get(1), Some(MIN_MINER_BOND));
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            190_000_000_000
+        );
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Slashed
+        );
+        assert_eq!(
+            Validators::<Test>::get(1).unwrap().status,
+            RegistryStatus::Active
+        );
+
+        assert_ok!(Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0));
+        System::set_block_number(20);
+        assert_ok!(Qubitum::withdraw_validator_stake(
+            RuntimeOrigin::signed(3),
+            0
+        ));
+
+        assert_eq!(ValidatorLockedStake::<Test>::get(0), None);
+        assert_eq!(ValidatorLockedStake::<Test>::get(1), Some(MIN_MINER_BOND));
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            MIN_MINER_BOND
+        );
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Disabled
+        );
+        assert_eq!(
+            Validators::<Test>::get(1).unwrap().status,
+            RegistryStatus::Active
+        );
+    });
+}
+
+#[test]
+fn legacy_missing_capital_records_fallback_only_when_unambiguous() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::General,
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(10),
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            MIN_MINER_BOND
+        ));
+        MinerLockedBond::<Test>::remove(0);
+
+        assert_ok!(Qubitum::slash_miner(RuntimeOrigin::root(), 0, 2, 1_000));
+
+        assert_eq!(MinerLockedBond::<Test>::get(0), Some(90_000_000_000));
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            90_000_000_000
+        );
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().status,
+            RegistryStatus::Slashed
+        );
+    });
+
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::General,
+            ProofSystem::RiscZeroStark
+        ));
+        for model in [10, 11] {
+            assert_ok!(Qubitum::register_miner(
+                RuntimeOrigin::signed(2),
+                0,
+                commitment(model),
+                ProofSystem::RiscZeroStark
+            ));
+        }
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            1,
+            MIN_MINER_BOND
+        ));
+        MinerLockedBond::<Test>::remove(0);
+
+        assert_noop!(
+            Qubitum::slash_miner(RuntimeOrigin::root(), 0, 2, 1_000),
+            Error::<Test>::MissingCapitalRecord
+        );
+
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            MIN_MINER_BOND * 2
+        );
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(
+            Miners::<Test>::get(1).unwrap().status,
+            RegistryStatus::Active
+        );
+    });
+
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::General,
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(3),
+            0,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(3),
+            0,
+            MIN_MINER_BOND
+        ));
+        ValidatorLockedStake::<Test>::remove(0);
+
+        assert_noop!(
+            Qubitum::slash_validator(RuntimeOrigin::root(), 0, 3, 1_000),
+            Error::<Test>::MissingCapitalRecord
+        );
+
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            MIN_MINER_BOND * 2
+        );
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(
+            Validators::<Test>::get(1).unwrap().status,
+            RegistryStatus::Active
         );
     });
 }

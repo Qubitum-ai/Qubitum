@@ -912,6 +912,14 @@ pub mod pallet {
     >;
 
     #[pallet::storage]
+    pub type MinerLockedBond<T: Config> =
+        StorageMap<_, Twox64Concat, MinerId, BalanceOf<T>, OptionQuery>;
+
+    #[pallet::storage]
+    pub type ValidatorLockedStake<T: Config> =
+        StorageMap<_, Twox64Concat, ValidatorId, BalanceOf<T>, OptionQuery>;
+
+    #[pallet::storage]
     pub type PendingMinerRequests<T: Config> =
         StorageMap<_, Twox64Concat, MinerId, RequestId, ValueQuery>;
 
@@ -1146,6 +1154,8 @@ pub mod pallet {
         InvalidSlashPercent,
         /// Signature commitments do not satisfy the active post-quantum migration policy.
         InvalidSignatureBundle,
+        /// Participant capital accounting is missing for this registry record.
+        MissingCapitalRecord,
         /// Proof verifier reported an internal error.
         VerifierError,
     }
@@ -1250,6 +1260,7 @@ pub mod pallet {
 
                 T::Currency::hold(&HoldReason::MinerBond.into(), &operator, bond)?;
                 Self::insert_active_miner(miner.subnet_id, miner_id)?;
+                MinerLockedBond::<T>::insert(miner_id, bond);
                 miner.status = RegistryStatus::Active;
                 miner.bond_commitment =
                     Self::miner_bond_commitment(miner_id, miner.operator_commitment, miner.status);
@@ -1297,6 +1308,7 @@ pub mod pallet {
 
             Self::insert_active_validator(subnet_id, validator_id)?;
             Validators::<T>::insert(validator_id, validator);
+            ValidatorLockedStake::<T>::insert(validator_id, stake);
             Self::deposit_event(Event::ValidatorRegistered {
                 validator_id,
                 subnet_id,
@@ -1659,7 +1671,7 @@ pub mod pallet {
                     Error::<T>::MinerExitUnavailable
                 );
 
-                let bond = Self::held_miner_bond(&operator);
+                let bond = Self::locked_miner_bond(miner_id, &operator)?;
                 if bond != BalanceOf::<T>::default() {
                     T::Currency::release(
                         &HoldReason::MinerBond.into(),
@@ -1668,6 +1680,7 @@ pub mod pallet {
                         Precision::Exact,
                     )?;
                 }
+                MinerLockedBond::<T>::remove(miner_id);
                 miner.status = RegistryStatus::Disabled;
                 miner.bond_commitment =
                     Self::miner_bond_commitment(miner_id, miner.operator_commitment, miner.status);
@@ -1742,7 +1755,7 @@ pub mod pallet {
                     Error::<T>::ValidatorExitUnavailable
                 );
 
-                let stake = Self::held_validator_stake(&operator);
+                let stake = Self::locked_validator_stake(validator_id, &operator)?;
                 if stake != BalanceOf::<T>::default() {
                     T::Currency::release(
                         &HoldReason::ValidatorStake.into(),
@@ -1751,6 +1764,7 @@ pub mod pallet {
                         Precision::Exact,
                     )?;
                 }
+                ValidatorLockedStake::<T>::remove(validator_id);
                 validator.status = RegistryStatus::Disabled;
                 validator.stake_commitment = Self::validator_stake_commitment(
                     validator_id,
@@ -2715,6 +2729,68 @@ pub mod pallet {
 
         fn held_validator_stake(operator: &T::AccountId) -> BalanceOf<T> {
             T::Currency::balance_on_hold(&HoldReason::ValidatorStake.into(), operator)
+        }
+
+        fn capital_bearing_status(status: RegistryStatus) -> bool {
+            matches!(
+                status,
+                RegistryStatus::Active | RegistryStatus::Slashed | RegistryStatus::Exiting { .. }
+            )
+        }
+
+        fn miner_capital_record_count(operator_commitment: Commitment) -> u32 {
+            Miners::<T>::iter()
+                .filter(|(_, miner)| {
+                    miner.operator_commitment == operator_commitment
+                        && Self::capital_bearing_status(miner.status)
+                })
+                .fold(0_u32, |count, _| count.saturating_add(1))
+        }
+
+        fn validator_capital_record_count(operator_commitment: Commitment) -> u32 {
+            Validators::<T>::iter()
+                .filter(|(_, validator)| {
+                    validator.operator_commitment == operator_commitment
+                        && Self::capital_bearing_status(validator.status)
+                })
+                .fold(0_u32, |count, _| count.saturating_add(1))
+        }
+
+        fn locked_miner_bond(
+            miner_id: MinerId,
+            operator: &T::AccountId,
+        ) -> Result<BalanceOf<T>, DispatchError> {
+            if let Some(bond) = MinerLockedBond::<T>::get(miner_id) {
+                return Ok(bond);
+            }
+
+            let miner = Miners::<T>::get(miner_id).ok_or(Error::<T>::UnknownMiner)?;
+            Self::ensure_miner_operator(&miner, operator)?;
+            ensure!(
+                Self::capital_bearing_status(miner.status)
+                    && Self::miner_capital_record_count(miner.operator_commitment) == 1,
+                Error::<T>::MissingCapitalRecord
+            );
+            Ok(Self::held_miner_bond(operator))
+        }
+
+        fn locked_validator_stake(
+            validator_id: ValidatorId,
+            operator: &T::AccountId,
+        ) -> Result<BalanceOf<T>, DispatchError> {
+            if let Some(stake) = ValidatorLockedStake::<T>::get(validator_id) {
+                return Ok(stake);
+            }
+
+            let validator =
+                Validators::<T>::get(validator_id).ok_or(Error::<T>::UnknownValidator)?;
+            Self::ensure_validator_operator(&validator, operator)?;
+            ensure!(
+                Self::capital_bearing_status(validator.status)
+                    && Self::validator_capital_record_count(validator.operator_commitment) == 1,
+                Error::<T>::MissingCapitalRecord
+            );
+            Ok(Self::held_validator_stake(operator))
         }
 
         fn ensure_miner_operator(miner: &ChainMiner, operator: &T::AccountId) -> DispatchResult {
@@ -4255,7 +4331,7 @@ pub mod pallet {
             let amount = Miners::<T>::try_mutate(miner_id, |maybe_miner| {
                 let miner = maybe_miner.as_mut().ok_or(Error::<T>::UnknownMiner)?;
                 Self::ensure_miner_operator(miner, operator)?;
-                let current_bond = Self::held_miner_bond(operator);
+                let current_bond = Self::locked_miner_bond(miner_id, operator)?;
                 let slash_amount = pro_rata::<T>(current_bond, slash_bps)?;
                 let burned = T::Currency::burn_held(
                     &HoldReason::MinerBond.into(),
@@ -4267,6 +4343,7 @@ pub mod pallet {
                 let remaining_bond = current_bond
                     .checked_sub(&burned)
                     .ok_or(Error::<T>::ArithmeticOverflow)?;
+                MinerLockedBond::<T>::insert(miner_id, remaining_bond);
                 if remaining_bond < T::MinMinerBond::get()
                     && !matches!(miner.status, RegistryStatus::Exiting { .. })
                 {
@@ -4298,7 +4375,7 @@ pub mod pallet {
                     .as_mut()
                     .ok_or(Error::<T>::UnknownValidator)?;
                 Self::ensure_validator_operator(validator, operator)?;
-                let current_stake = Self::held_validator_stake(operator);
+                let current_stake = Self::locked_validator_stake(validator_id, operator)?;
                 let slash_amount = pro_rata::<T>(current_stake, slash_bps)?;
                 let burned = T::Currency::burn_held(
                     &HoldReason::ValidatorStake.into(),
@@ -4310,6 +4387,7 @@ pub mod pallet {
                 let remaining_stake = current_stake
                     .checked_sub(&burned)
                     .ok_or(Error::<T>::ArithmeticOverflow)?;
+                ValidatorLockedStake::<T>::insert(validator_id, remaining_stake);
                 if remaining_stake < T::MinValidatorStake::get()
                     && !matches!(validator.status, RegistryStatus::Exiting { .. })
                 {
