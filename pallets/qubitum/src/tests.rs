@@ -3668,6 +3668,57 @@ fn request_commitment_call_hides_assignment_and_terms_blindings() {
 }
 
 #[test]
+fn request_commitment_call_rejects_non_current_created_at() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        RequestCount::<Test>::put(89);
+        System::set_block_number(5);
+        let assignment = Qubitum::route_assignment(0, 89).unwrap();
+
+        assert_noop!(
+            Qubitum::request_inference_commitments(
+                RuntimeOrigin::signed(4),
+                89,
+                InferenceRequestCommitmentParams {
+                    subnet_id: 0,
+                    input_commitment: commitment(1),
+                    assignment_commitment: Qubitum::request_assignment_commitment(
+                        89,
+                        0,
+                        assignment.miner_id,
+                        assignment.validator_id,
+                        assignment_blinding(),
+                    ),
+                    created_at: 4,
+                    timing_commitment: Qubitum::request_timing_commitment(89, 4, timing_blinding()),
+                    terms_commitment: Qubitum::request_terms_commitment(
+                        89,
+                        1_000,
+                        250,
+                        50,
+                        terms_blinding(),
+                    ),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::RequestMismatch
+        );
+        assert!(InferenceRequests::<Test>::get(89).is_none());
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            0
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(assignment.miner_id), 0);
+        assert_eq!(
+            PendingValidatorRequests::<Test>::get(assignment.validator_id),
+            0
+        );
+    });
+}
+
+#[test]
 fn request_inference_requires_nonzero_assignment_blinding() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
