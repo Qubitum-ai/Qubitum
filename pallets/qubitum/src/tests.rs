@@ -4,15 +4,16 @@ use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, AutoRouteInferenceRequestParams,
     CancelledInferenceRequestCount, ChainInferenceRequest, ChainPublicInferenceRequest,
     ChainPublicMiner, ChainPublicProofRecord, ChainPublicSubnet, ChainPublicValidator,
-    ChainRequestStatusCounts, ChainRouteAvailability, Error, HoldReason, InferenceRequestParams,
-    InferenceRequestStatus, InferenceRequestTerms, InferenceRequestTermsWitness,
-    InferenceRequestTimingWitness, InferenceRequests, MinerCount, MinerIdentityCommitments,
-    MinerIdentitySignatureBundles, Miners, PendingInferenceRequestCount, PendingMinerRequests,
-    PendingValidatorRequests, ProofRecords, PublicRegistryStatus, RejectedInferenceRequestCount,
-    RequestCount, SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned,
-    TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees,
-    TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
-    ValidatorIdentitySignatureBundles, Validators,
+    ChainRequestStatusCounts, ChainRouteAvailability, Error, FailClosedProofVerifier, HoldReason,
+    InferenceRequestParams, InferenceRequestStatus, InferenceRequestTerms,
+    InferenceRequestTermsWitness, InferenceRequestTimingWitness, InferenceRequests, MinerCount,
+    MinerIdentityCommitments, MinerIdentitySignatureBundles, Miners, PendingInferenceRequestCount,
+    PendingMinerRequests, PendingValidatorRequests, ProofRecords, ProofVerificationPolicy,
+    PublicRegistryStatus, RejectedInferenceRequestCount, RequestCount,
+    SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned, TotalInferenceEscrowed,
+    TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees, TotalValidatorFees,
+    ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles, Validators,
+    VerifyProof,
     mock::{
         Balances, Qubitum, RuntimeEvent, RuntimeOrigin, System, Test, new_test_ext,
         set_verification_outcome,
@@ -3751,6 +3752,27 @@ fn submit_proof_rejects_unbound_transcript_commitment() {
             Error::<Test>::ProofTranscriptMismatch
         );
         assert!(!ProofRecords::<Test>::contains_key(44));
+    });
+}
+
+#[test]
+fn fail_closed_verifier_never_accepts_shape_only_proofs() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(44);
+        let submission = valid_submission(44);
+        let policy = ProofVerificationPolicy {
+            proof_system: ProofSystem::RiscZeroStark,
+            model_commitment: commitment(10),
+            min_proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
+            max_proof_size_bytes: TARGET_PROOF_SIZE_MAX_BYTES,
+            max_verification_latency_ms: TARGET_VERIFICATION_MS,
+        };
+
+        assert_eq!(
+            FailClosedProofVerifier::verify(&submission, policy),
+            Ok(VerificationOutcome::Error)
+        );
     });
 }
 

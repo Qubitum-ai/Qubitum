@@ -272,7 +272,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     //   `spec_version`, and `authoring_version` are the same between Wasm and native.
     // This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
     //   the compatible custom types.
-    spec_version: 448,
+    spec_version: 449,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 6,
@@ -570,6 +570,9 @@ impl pallet_qubitum::Config for Runtime {
     type SignatureMode = QubitumSignatureMode;
     type RuntimeHoldReason = RuntimeHoldReason;
     type WeightInfo = pallet_qubitum::weights::SubstrateWeight<Runtime>;
+    #[cfg(not(feature = "runtime-benchmarks"))]
+    type ProofVerifier = pallet_qubitum::FailClosedProofVerifier;
+    #[cfg(feature = "runtime-benchmarks")]
     type ProofVerifier = pallet_qubitum::ShapeProofVerifier;
     type ProtocolTreasury = QubitumProtocolTreasury;
     type MinerExitCooldownBlocks = QubitumMinerExitCooldownBlocks;

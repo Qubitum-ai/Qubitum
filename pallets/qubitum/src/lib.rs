@@ -51,6 +51,18 @@ pub trait VerifyProof {
     ) -> Result<VerificationOutcome, DispatchError>;
 }
 
+/// Fail-closed verifier for production runtimes until a concrete zkVM verifier is wired in.
+pub struct FailClosedProofVerifier;
+
+impl VerifyProof for FailClosedProofVerifier {
+    fn verify(
+        _submission: &InferenceProofSubmission,
+        _policy: ProofVerificationPolicy,
+    ) -> Result<VerificationOutcome, DispatchError> {
+        Ok(VerificationOutcome::Error)
+    }
+}
+
 /// Shape-only verifier used until a concrete zkVM verifier is wired in.
 pub struct ShapeProofVerifier;
 
