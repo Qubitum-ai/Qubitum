@@ -2047,6 +2047,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
                 has_shielded_identity_commitment: true,
                 has_endpoint_commitment: true,
                 signature_commitment_recorded: true,
+                signature_challenge_bound: true,
                 signature_verified: false,
                 challenge_available: true,
             }
@@ -2096,6 +2097,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
                 has_shielded_identity_commitment: true,
                 has_endpoint_commitment: true,
                 signature_commitment_recorded: true,
+                signature_challenge_bound: true,
                 signature_verified: false,
                 challenge_available: true,
             }
@@ -2157,6 +2159,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
                 has_shielded_identity_commitment: false,
                 has_endpoint_commitment: false,
                 signature_commitment_recorded: false,
+                signature_challenge_bound: false,
                 signature_verified: false,
                 challenge_available: false,
             })
@@ -2191,6 +2194,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
                 has_shielded_identity_commitment: false,
                 has_endpoint_commitment: false,
                 signature_commitment_recorded: false,
+                signature_challenge_bound: false,
                 signature_verified: false,
                 challenge_available: false,
             })
@@ -2439,6 +2443,10 @@ fn routing_and_proof_reject_unbound_identity_signature_bundles() {
 
         MinerIdentitySignatureBundles::<Test>::insert(0, post_quantum_signature_bundle());
 
+        let public_identity = Qubitum::public_miner_identity(0).unwrap();
+        assert!(public_identity.signature_commitment_recorded);
+        assert!(public_identity.challenge_available);
+        assert!(!public_identity.signature_challenge_bound);
         assert!(!Qubitum::next_route_availability(0).available);
         assert_noop!(
             submit_proof(RuntimeOrigin::signed(3), valid_submission(88)),

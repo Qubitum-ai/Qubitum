@@ -495,6 +495,7 @@ pub mod pallet {
         pub has_shielded_identity_commitment: bool,
         pub has_endpoint_commitment: bool,
         pub signature_commitment_recorded: bool,
+        pub signature_challenge_bound: bool,
         pub signature_verified: bool,
         pub challenge_available: bool,
     }
@@ -2191,7 +2192,7 @@ pub mod pallet {
         }
 
         pub fn public_miner_identity(miner_id: MinerId) -> Option<ChainPublicIdentity> {
-            Miners::<T>::contains_key(miner_id).then(|| {
+            Miners::<T>::get(miner_id).map(|miner| {
                 let commitments = MinerIdentityCommitments::<T>::get(miner_id);
                 ChainPublicIdentity {
                     participant_id: miner_id,
@@ -2206,6 +2207,10 @@ pub mod pallet {
                     signature_commitment_recorded: MinerIdentitySignatureBundles::<T>::contains_key(
                         miner_id,
                     ),
+                    signature_challenge_bound: Self::ensure_miner_signature_bundle_bound(
+                        miner_id, &miner,
+                    )
+                    .is_ok(),
                     signature_verified: false,
                     challenge_available: MinerIdentitySignatureChallenges::<T>::contains_key(
                         miner_id,
@@ -2215,7 +2220,7 @@ pub mod pallet {
         }
 
         pub fn public_validator_identity(validator_id: ValidatorId) -> Option<ChainPublicIdentity> {
-            Validators::<T>::contains_key(validator_id).then(|| {
+            Validators::<T>::get(validator_id).map(|validator| {
                 let commitments = ValidatorIdentityCommitments::<T>::get(validator_id);
                 ChainPublicIdentity {
                     participant_id: validator_id,
@@ -2229,6 +2234,11 @@ pub mod pallet {
                         .is_some(),
                     signature_commitment_recorded:
                         ValidatorIdentitySignatureBundles::<T>::contains_key(validator_id),
+                    signature_challenge_bound: Self::ensure_validator_signature_bundle_bound(
+                        validator_id,
+                        &validator,
+                    )
+                    .is_ok(),
                     signature_verified: false,
                     challenge_available: ValidatorIdentitySignatureChallenges::<T>::contains_key(
                         validator_id,
