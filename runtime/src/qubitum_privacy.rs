@@ -86,6 +86,13 @@ impl CheckQubitumShielding {
                 Self::encoded_bytes_privacy_violation(bytes, depth + 1)
             }
             RuntimeCall::Preimage(_) => None,
+            RuntimeCall::MevShield(pallet_shield::Call::submit_encrypted { ciphertext }) => {
+                if pallet_shield::parse_valid_submit_encrypted_ciphertext(ciphertext).is_some() {
+                    None
+                } else {
+                    Some(CustomTransactionError::FailedShieldedTxParsing)
+                }
+            }
             RuntimeCall::MevShield(pallet_shield::Call::store_encrypted { .. }) => {
                 Some(CustomTransactionError::ShieldStoreEncryptedDisabled)
             }
@@ -195,9 +202,30 @@ mod tests {
         })
     }
 
+    fn valid_shield_ciphertext() -> BoundedVec<u8, ConstU32<8192>> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&[0xAB; 16]);
+        buf.extend_from_slice(&(1088u16).to_le_bytes());
+        buf.extend_from_slice(&[0xCC; 1088]);
+        buf.extend_from_slice(&[0xDD; 24]);
+        buf.extend_from_slice(&[0xEE; 16]);
+
+        BoundedVec::truncate_from(buf)
+    }
+
+    fn malformed_shield_ciphertext() -> BoundedVec<u8, ConstU32<8192>> {
+        BoundedVec::truncate_from(vec![0u8; 5])
+    }
+
     fn shield_call() -> RuntimeCall {
         RuntimeCall::MevShield(pallet_shield::Call::submit_encrypted {
-            ciphertext: BoundedVec::<u8, ConstU32<8192>>::truncate_from(vec![0xAA; 64]),
+            ciphertext: valid_shield_ciphertext(),
+        })
+    }
+
+    fn malformed_shield_call() -> RuntimeCall {
+        RuntimeCall::MevShield(pallet_shield::Call::submit_encrypted {
+            ciphertext: malformed_shield_ciphertext(),
         })
     }
 
@@ -250,6 +278,13 @@ mod tests {
         assert_eq!(
             validate_ext(&call, TransactionSource::External),
             Err(CustomTransactionError::ShieldStoreEncryptedDisabled.into())
+        );
+    }
+
+    fn assert_malformed_shield_rejected(call: RuntimeCall) {
+        assert_eq!(
+            validate_ext(&call, TransactionSource::External),
+            Err(CustomTransactionError::FailedShieldedTxParsing.into())
         );
     }
 
@@ -589,6 +624,54 @@ mod tests {
     }
 
     #[test]
+    fn malformed_shield_envelope_is_rejected() {
+        new_test_ext().execute_with(|| {
+            assert_malformed_shield_rejected(malformed_shield_call());
+            assert_eq!(
+                validate_ext(&malformed_shield_call(), TransactionSource::InBlock),
+                Err(CustomTransactionError::FailedShieldedTxParsing.into())
+            );
+        });
+    }
+
+    #[test]
+    fn wrapped_malformed_shield_envelopes_are_rejected() {
+        new_test_ext().execute_with(|| {
+            let calls = vec![
+                RuntimeCall::Utility(pallet_subtensor_utility::Call::if_else {
+                    main: Box::new(remark_call(15)),
+                    fallback: Box::new(malformed_shield_call()),
+                }),
+                RuntimeCall::Proxy(pallet_subtensor_proxy::Call::proxy {
+                    real: account(2).into(),
+                    force_proxy_type: None,
+                    call: Box::new(malformed_shield_call()),
+                }),
+                RuntimeCall::Sudo(pallet_sudo::Call::sudo {
+                    call: Box::new(malformed_shield_call()),
+                }),
+                RuntimeCall::Multisig(pallet_multisig::Call::as_multi_threshold_1 {
+                    other_signatories: vec![account(2)],
+                    call: Box::new(malformed_shield_call()),
+                }),
+                RuntimeCall::Scheduler(pallet_scheduler::Call::schedule_after {
+                    after: 2,
+                    maybe_periodic: None,
+                    priority: 0,
+                    call: Box::new(malformed_shield_call()),
+                }),
+                RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                    bytes: malformed_shield_call().encode(),
+                }),
+            ];
+
+            for call in calls {
+                assert_malformed_shield_rejected(call);
+            }
+        });
+    }
+
+    #[test]
     fn shield_envelope_and_non_qubitum_calls_pass() {
         new_test_ext().execute_with(|| {
             assert!(validate_ext(&shield_call(), TransactionSource::External).is_ok());
@@ -641,6 +724,24 @@ mod tests {
             assert_eq!(
                 prepare_ext(&wrapped),
                 Err(CustomTransactionError::ShieldStoreEncryptedDisabled.into())
+            );
+        });
+    }
+
+    #[test]
+    fn prepare_rejects_malformed_shield_envelopes() {
+        new_test_ext().execute_with(|| {
+            assert_eq!(
+                prepare_ext(&malformed_shield_call()),
+                Err(CustomTransactionError::FailedShieldedTxParsing.into())
+            );
+
+            let wrapped = RuntimeCall::Utility(pallet_subtensor_utility::Call::batch_all {
+                calls: vec![malformed_shield_call()],
+            });
+            assert_eq!(
+                prepare_ext(&wrapped),
+                Err(CustomTransactionError::FailedShieldedTxParsing.into())
             );
         });
     }

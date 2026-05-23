@@ -62,6 +62,13 @@ pub fn store_encrypted_weight() -> Weight {
     Weight::from_parts(STORE_ENCRYPTED_WEIGHT, 0)
 }
 
+pub fn parse_valid_submit_encrypted_ciphertext(ciphertext: &[u8]) -> Option<ShieldedTransaction> {
+    let shielded_tx = ShieldedTransaction::parse(ciphertext)?;
+
+    Ciphertext::<MlKem768>::try_from(shielded_tx.kem_ct.as_slice()).ok()?;
+    (shielded_tx.aead_ct.len() >= MIN_AEAD_CIPHERTEXT_LEN).then_some(shielded_tx)
+}
+
 /// Trait for decrypting stored extrinsics before dispatch.
 pub trait ExtrinsicDecryptor<RuntimeCall> {
     /// Decrypt the stored bytes and return the decoded RuntimeCall.
@@ -371,7 +378,7 @@ pub mod pallet {
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
             ensure!(
-                Self::parse_valid_submit_encrypted_ciphertext(&ciphertext).is_some(),
+                parse_valid_submit_encrypted_ciphertext(&ciphertext).is_some(),
                 Error::<T>::BadCiphertext
             );
             let id: T::Hash = T::Hashing::hash_of(&(who.clone(), &ciphertext));
@@ -497,15 +504,6 @@ pub mod pallet {
 }
 
 impl<T: Config> Pallet<T> {
-    pub(crate) fn parse_valid_submit_encrypted_ciphertext(
-        ciphertext: &[u8],
-    ) -> Option<ShieldedTransaction> {
-        let shielded_tx = ShieldedTransaction::parse(ciphertext)?;
-
-        Ciphertext::<MlKem768>::try_from(shielded_tx.kem_ct.as_slice()).ok()?;
-        (shielded_tx.aead_ct.len() >= MIN_AEAD_CIPHERTEXT_LEN).then_some(shielded_tx)
-    }
-
     /// Process pending encrypted extrinsics up to the weight limit.
     /// Returns the total weight consumed.
     pub fn process_pending_extrinsics() -> Weight {
@@ -636,7 +634,7 @@ impl<T: Config> Pallet<T> {
             return None;
         };
 
-        Self::parse_valid_submit_encrypted_ciphertext(ciphertext)
+        parse_valid_submit_encrypted_ciphertext(ciphertext)
     }
 
     pub fn is_shielded_using_current_key(key_hash: &[u8; 16]) -> bool {

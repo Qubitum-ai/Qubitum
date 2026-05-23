@@ -67,7 +67,7 @@ where
         };
 
         // Reject malformed ciphertext regardless of source.
-        if crate::Pallet::<T>::parse_valid_submit_encrypted_ciphertext(ciphertext).is_none() {
+        if crate::parse_valid_submit_encrypted_ciphertext(ciphertext).is_none() {
             return Err(CustomTransactionError::FailedShieldedTxParsing.into());
         }
 
@@ -94,7 +94,7 @@ where
         };
 
         // Reject malformed ciphertext during block preparation too.
-        if crate::Pallet::<T>::parse_valid_submit_encrypted_ciphertext(ciphertext).is_none() {
+        if crate::parse_valid_submit_encrypted_ciphertext(ciphertext).is_none() {
             return Err(CustomTransactionError::FailedShieldedTxParsing.into());
         }
 
