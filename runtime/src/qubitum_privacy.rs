@@ -1,5 +1,5 @@
 use crate::{RuntimeCall, RuntimeOrigin};
-use codec::{Decode, DecodeWithMemTracking, Encode};
+use codec::{Decode, DecodeLimit, DecodeWithMemTracking, Encode};
 use frame_support::pallet_prelude::TypeInfo;
 use sp_runtime::impl_tx_ext_default;
 use sp_runtime::traits::{DispatchInfoOf, Implication, TransactionExtension, ValidateResult};
@@ -23,10 +23,14 @@ impl CheckQubitumShielding {
     }
 
     fn encoded_bytes_privacy_violation(bytes: &[u8], depth: u8) -> Option<CustomTransactionError> {
-        let mut input = bytes;
-        match RuntimeCall::decode(&mut input) {
-            Ok(call) if input.is_empty() => Self::privacy_violation_at_depth(&call, depth),
-            _ => None,
+        if depth >= MAX_CALL_SCAN_DEPTH {
+            return Some(CustomTransactionError::QubitumCallMustBeShielded);
+        }
+
+        let remaining_depth = u32::from(MAX_CALL_SCAN_DEPTH - depth);
+        match RuntimeCall::decode_all_with_depth_limit(remaining_depth, &mut &bytes[..]) {
+            Ok(call) => Self::privacy_violation_at_depth(&call, depth),
+            Err(_) => Some(CustomTransactionError::QubitumCallMustBeShielded),
         }
     }
 
@@ -187,6 +191,12 @@ mod tests {
             encrypted_call: BoundedVec::<u8, pallet_shield::MaxEncryptedCallSize>::truncate_from(
                 vec![seed; 64],
             ),
+        })
+    }
+
+    fn nested_batch_call(call: RuntimeCall, depth: u8) -> RuntimeCall {
+        (0..depth).fold(call, |inner, _| {
+            RuntimeCall::Utility(pallet_subtensor_utility::Call::batch { calls: vec![inner] })
         })
     }
 
@@ -443,6 +453,26 @@ mod tests {
     }
 
     #[test]
+    fn encoded_preimage_malformed_call_bytes_fail_closed() {
+        new_test_ext().execute_with(|| {
+            let call = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: vec![0xFF; 8],
+            });
+            assert_qubitum_rejected(call);
+        });
+    }
+
+    #[test]
+    fn encoded_preimage_exceeding_decode_depth_fails_closed() {
+        new_test_ext().execute_with(|| {
+            let call = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: nested_batch_call(remark_call(8), MAX_CALL_SCAN_DEPTH + 1).encode(),
+            });
+            assert_qubitum_rejected(call);
+        });
+    }
+
+    #[test]
     fn store_encrypted_is_disabled_in_public_runtime() {
         new_test_ext().execute_with(|| {
             let call = RuntimeCall::MevShield(pallet_shield::Call::store_encrypted {
@@ -560,14 +590,7 @@ mod tests {
     #[test]
     fn excessively_nested_wrappers_fail_closed() {
         new_test_ext().execute_with(|| {
-            let mut call = remark_call(11);
-            for _ in 0..MAX_CALL_SCAN_DEPTH {
-                call = RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
-                    calls: vec![call],
-                });
-            }
-
-            assert_qubitum_rejected(call);
+            assert_qubitum_rejected(nested_batch_call(remark_call(11), MAX_CALL_SCAN_DEPTH));
         });
     }
 }
