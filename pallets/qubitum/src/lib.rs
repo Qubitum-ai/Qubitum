@@ -156,7 +156,7 @@ pub mod pallet {
     const LEGACY_ASSIGNMENT_BLINDING: Commitment = [0; 32];
     const LEGACY_TIMING_BLINDING: Commitment = [0; 32];
     const LEGACY_TERMS_BLINDING: Commitment = [0; 32];
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(16);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(17);
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -933,7 +933,8 @@ pub mod pallet {
                 .saturating_add(Self::rebuild_request_status_counts())
                 .saturating_add(Self::migrate_proof_record_timestamps(on_chain))
                 .saturating_add(Self::migrate_proof_record_assignment_commitments(on_chain))
-                .saturating_add(Self::migrate_proof_record_audit_commitments(on_chain));
+                .saturating_add(Self::migrate_proof_record_audit_commitments(on_chain))
+                .saturating_add(Self::migrate_identity_signature_challenges(on_chain));
             STORAGE_VERSION.put::<Pallet<T>>();
             weight.saturating_add(T::DbWeight::get().reads_writes(1, 1))
         }
@@ -3176,6 +3177,55 @@ pub mod pallet {
             });
 
             T::DbWeight::get().reads_writes(migrated, migrated)
+        }
+
+        fn migrate_identity_signature_challenges(on_chain: StorageVersion) -> Weight {
+            if on_chain >= StorageVersion::new(17) {
+                return Weight::zero();
+            }
+
+            let mut scanned = 0_u64;
+            let mut migrated = 0_u64;
+
+            for (miner_id, _) in MinerIdentitySignatureBundles::<T>::iter() {
+                scanned = scanned.saturating_add(1);
+                if let (Some(commitments), Some(miner)) = (
+                    MinerIdentityCommitments::<T>::get(miner_id),
+                    Miners::<T>::get(miner_id),
+                ) {
+                    MinerIdentitySignatureChallenges::<T>::insert(
+                        miner_id,
+                        Self::miner_identity_signature_challenge(
+                            miner_id,
+                            miner.operator_commitment,
+                            commitments.shielded_identity_commitment,
+                            commitments.endpoint_commitment,
+                        ),
+                    );
+                    migrated = migrated.saturating_add(1);
+                }
+            }
+
+            for (validator_id, _) in ValidatorIdentitySignatureBundles::<T>::iter() {
+                scanned = scanned.saturating_add(1);
+                if let (Some(commitments), Some(validator)) = (
+                    ValidatorIdentityCommitments::<T>::get(validator_id),
+                    Validators::<T>::get(validator_id),
+                ) {
+                    ValidatorIdentitySignatureChallenges::<T>::insert(
+                        validator_id,
+                        Self::validator_identity_signature_challenge(
+                            validator_id,
+                            validator.operator_commitment,
+                            commitments.shielded_identity_commitment,
+                            commitments.endpoint_commitment,
+                        ),
+                    );
+                    migrated = migrated.saturating_add(1);
+                }
+            }
+
+            T::DbWeight::get().reads_writes(scanned.saturating_mul(3), migrated)
         }
 
         fn migrate_operator_commitments(on_chain: StorageVersion) -> Weight {

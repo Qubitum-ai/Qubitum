@@ -1777,7 +1777,60 @@ fn runtime_upgrade_migrates_subnet_owner_and_policy_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(16)
+            StorageVersion::new(17)
+        );
+    });
+}
+
+#[test]
+fn runtime_upgrade_migrates_identity_signature_challenges() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(2),
+            0,
+            Some(commitment(70)),
+            Some(commitment(71)),
+            post_quantum_signature_bundle(),
+        ));
+        assert_ok!(Qubitum::set_validator_identity_commitments(
+            RuntimeOrigin::signed(3),
+            0,
+            Some(commitment(72)),
+            Some(commitment(73)),
+            post_quantum_signature_bundle(),
+        ));
+
+        MinerIdentitySignatureChallenges::<Test>::remove(0);
+        ValidatorIdentitySignatureChallenges::<Test>::remove(0);
+        StorageVersion::new(16).put::<crate::Pallet<Test>>();
+
+        <Qubitum as Hooks<u64>>::on_runtime_upgrade();
+
+        let miner = Miners::<Test>::get(0).unwrap();
+        assert_eq!(
+            MinerIdentitySignatureChallenges::<Test>::get(0),
+            Some(Qubitum::miner_identity_signature_challenge(
+                0,
+                miner.operator_commitment,
+                Some(commitment(70)),
+                Some(commitment(71)),
+            ))
+        );
+        let validator = Validators::<Test>::get(0).unwrap();
+        assert_eq!(
+            ValidatorIdentitySignatureChallenges::<Test>::get(0),
+            Some(Qubitum::validator_identity_signature_challenge(
+                0,
+                validator.operator_commitment,
+                Some(commitment(72)),
+                Some(commitment(73)),
+            ))
+        );
+        assert_eq!(
+            StorageVersion::get::<crate::Pallet<Test>>(),
+            StorageVersion::new(17)
         );
     });
 }
@@ -1843,7 +1896,7 @@ fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(16)
+            StorageVersion::new(17)
         );
     });
 }
@@ -1912,7 +1965,7 @@ fn runtime_upgrade_migrates_proof_record_routes_to_commitments() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(16)
+            StorageVersion::new(17)
         );
     });
 }
@@ -1985,7 +2038,7 @@ fn runtime_upgrade_migrates_proof_record_details_to_audit_commitments() {
         }
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(16)
+            StorageVersion::new(17)
         );
     });
 }
@@ -2049,7 +2102,7 @@ fn runtime_upgrade_migrates_registry_operators_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(16)
+            StorageVersion::new(17)
         );
     });
 }
@@ -2118,7 +2171,7 @@ fn runtime_upgrade_migrates_participant_capital_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(16)
+            StorageVersion::new(17)
         );
     });
 }
@@ -2173,7 +2226,7 @@ fn runtime_upgrade_migrates_request_users_to_commitments() {
         assert_eq!(PendingValidatorRequests::<Test>::get(9), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(16)
+            StorageVersion::new(17)
         );
     });
 }
@@ -2213,7 +2266,7 @@ fn runtime_upgrade_migrates_request_timing_to_commitments() {
         assert_eq!(request.status, InferenceRequestStatus::Pending);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(16)
+            StorageVersion::new(17)
         );
     });
 }
@@ -2253,7 +2306,7 @@ fn runtime_upgrade_migrates_request_terms_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(16)
+            StorageVersion::new(17)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 123_456);
         assert_eq!(TotalValidatorFees::<Test>::get(), 3_086);
@@ -3239,7 +3292,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(16)
+            StorageVersion::new(17)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
