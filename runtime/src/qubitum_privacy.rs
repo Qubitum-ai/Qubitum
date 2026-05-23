@@ -136,6 +136,7 @@ mod tests {
     use crate::{RuntimeCall, System};
     use frame_support::dispatch::GetDispatchInfo;
     use frame_support::pallet_prelude::{BoundedVec, ConstU32};
+    use frame_support::weights::Weight;
     use qubitum_protocol::ProofSystem;
     use sp_runtime::AccountId32;
     use sp_runtime::BuildStorage;
@@ -169,9 +170,23 @@ mod tests {
         })
     }
 
+    fn remark_call(seed: u8) -> RuntimeCall {
+        RuntimeCall::System(frame_system::Call::remark {
+            remark: commitment(seed).to_vec(),
+        })
+    }
+
     fn shield_call() -> RuntimeCall {
         RuntimeCall::MevShield(pallet_shield::Call::submit_encrypted {
             ciphertext: BoundedVec::<u8, ConstU32<8192>>::truncate_from(vec![0xAA; 64]),
+        })
+    }
+
+    fn store_encrypted_call(seed: u8) -> RuntimeCall {
+        RuntimeCall::MevShield(pallet_shield::Call::store_encrypted {
+            encrypted_call: BoundedVec::<u8, pallet_shield::MaxEncryptedCallSize>::truncate_from(
+                vec![seed; 64],
+            ),
         })
     }
 
@@ -193,13 +208,24 @@ mod tests {
             .map(|_| ())
     }
 
+    fn assert_qubitum_rejected(call: RuntimeCall) {
+        assert_eq!(
+            validate_ext(&call, TransactionSource::External),
+            Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+        );
+    }
+
+    fn assert_store_encrypted_disabled(call: RuntimeCall) {
+        assert_eq!(
+            validate_ext(&call, TransactionSource::External),
+            Err(CustomTransactionError::ShieldStoreEncryptedDisabled.into())
+        );
+    }
+
     #[test]
     fn direct_external_qubitum_call_must_be_shielded() {
         new_test_ext().execute_with(|| {
-            assert_eq!(
-                validate_ext(&direct_qubitum_call(), TransactionSource::External),
-                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
-            );
+            assert_qubitum_rejected(direct_qubitum_call());
         });
     }
 
@@ -223,10 +249,48 @@ mod tests {
             let call = RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
                 calls: vec![direct_qubitum_call()],
             });
-            assert_eq!(
-                validate_ext(&call, TransactionSource::External),
-                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
-            );
+            assert_qubitum_rejected(call);
+        });
+    }
+
+    #[test]
+    fn alternate_utility_wrappers_must_be_shielded() {
+        new_test_ext().execute_with(|| {
+            let signed_origin = Box::new(crate::OriginCaller::system(
+                frame_system::RawOrigin::Signed(account(2)),
+            ));
+            let calls = vec![
+                RuntimeCall::Utility(pallet_subtensor_utility::Call::batch_all {
+                    calls: vec![direct_qubitum_call()],
+                }),
+                RuntimeCall::Utility(pallet_subtensor_utility::Call::force_batch {
+                    calls: vec![direct_qubitum_call()],
+                }),
+                RuntimeCall::Utility(pallet_subtensor_utility::Call::as_derivative {
+                    index: 1,
+                    call: Box::new(direct_qubitum_call()),
+                }),
+                RuntimeCall::Utility(pallet_subtensor_utility::Call::dispatch_as {
+                    as_origin: signed_origin.clone(),
+                    call: Box::new(direct_qubitum_call()),
+                }),
+                RuntimeCall::Utility(pallet_subtensor_utility::Call::with_weight {
+                    call: Box::new(direct_qubitum_call()),
+                    weight: Weight::zero(),
+                }),
+                RuntimeCall::Utility(pallet_subtensor_utility::Call::dispatch_as_fallible {
+                    as_origin: signed_origin,
+                    call: Box::new(direct_qubitum_call()),
+                }),
+                RuntimeCall::Utility(pallet_subtensor_utility::Call::if_else {
+                    main: Box::new(remark_call(3)),
+                    fallback: Box::new(direct_qubitum_call()),
+                }),
+            ];
+
+            for call in calls {
+                assert_qubitum_rejected(call);
+            }
         });
     }
 
@@ -238,10 +302,20 @@ mod tests {
                 force_proxy_type: None,
                 call: Box::new(direct_qubitum_call()),
             });
-            assert_eq!(
-                validate_ext(&call, TransactionSource::External),
-                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
-            );
+            assert_qubitum_rejected(call);
+        });
+    }
+
+    #[test]
+    fn proxy_announced_wrapped_external_qubitum_call_must_be_shielded() {
+        new_test_ext().execute_with(|| {
+            let call = RuntimeCall::Proxy(pallet_subtensor_proxy::Call::proxy_announced {
+                delegate: account(2).into(),
+                real: account(3).into(),
+                force_proxy_type: None,
+                call: Box::new(direct_qubitum_call()),
+            });
+            assert_qubitum_rejected(call);
         });
     }
 
@@ -251,10 +325,27 @@ mod tests {
             let call = RuntimeCall::Sudo(pallet_sudo::Call::sudo {
                 call: Box::new(direct_qubitum_call()),
             });
-            assert_eq!(
-                validate_ext(&call, TransactionSource::External),
-                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
-            );
+            assert_qubitum_rejected(call);
+        });
+    }
+
+    #[test]
+    fn alternate_sudo_wrappers_must_be_shielded() {
+        new_test_ext().execute_with(|| {
+            let calls = vec![
+                RuntimeCall::Sudo(pallet_sudo::Call::sudo_unchecked_weight {
+                    call: Box::new(direct_qubitum_call()),
+                    weight: Weight::zero(),
+                }),
+                RuntimeCall::Sudo(pallet_sudo::Call::sudo_as {
+                    who: account(2).into(),
+                    call: Box::new(direct_qubitum_call()),
+                }),
+            ];
+
+            for call in calls {
+                assert_qubitum_rejected(call);
+            }
         });
     }
 
@@ -265,10 +356,21 @@ mod tests {
                 other_signatories: vec![account(2)],
                 call: Box::new(direct_qubitum_call()),
             });
-            assert_eq!(
-                validate_ext(&call, TransactionSource::External),
-                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
-            );
+            assert_qubitum_rejected(call);
+        });
+    }
+
+    #[test]
+    fn multisig_as_multi_wrapped_external_qubitum_call_must_be_shielded() {
+        new_test_ext().execute_with(|| {
+            let call = RuntimeCall::Multisig(pallet_multisig::Call::as_multi {
+                threshold: 2,
+                other_signatories: vec![account(2)],
+                maybe_timepoint: None,
+                call: Box::new(direct_qubitum_call()),
+                max_weight: Weight::zero(),
+            });
+            assert_qubitum_rejected(call);
         });
     }
 
@@ -281,10 +383,39 @@ mod tests {
                 priority: 0,
                 call: Box::new(direct_qubitum_call()),
             });
-            assert_eq!(
-                validate_ext(&call, TransactionSource::External),
-                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
-            );
+            assert_qubitum_rejected(call);
+        });
+    }
+
+    #[test]
+    fn delayed_scheduler_wrappers_must_be_shielded() {
+        new_test_ext().execute_with(|| {
+            let calls = vec![
+                RuntimeCall::Scheduler(pallet_scheduler::Call::schedule_named {
+                    id: [1; 32],
+                    when: 2,
+                    maybe_periodic: None,
+                    priority: 0,
+                    call: Box::new(direct_qubitum_call()),
+                }),
+                RuntimeCall::Scheduler(pallet_scheduler::Call::schedule_after {
+                    after: 2,
+                    maybe_periodic: None,
+                    priority: 0,
+                    call: Box::new(direct_qubitum_call()),
+                }),
+                RuntimeCall::Scheduler(pallet_scheduler::Call::schedule_named_after {
+                    id: [2; 32],
+                    after: 2,
+                    maybe_periodic: None,
+                    priority: 0,
+                    call: Box::new(direct_qubitum_call()),
+                }),
+            ];
+
+            for call in calls {
+                assert_qubitum_rejected(call);
+            }
         });
     }
 
@@ -305,10 +436,7 @@ mod tests {
     fn encoded_preimage_non_qubitum_call_passes() {
         new_test_ext().execute_with(|| {
             let call = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
-                bytes: RuntimeCall::System(frame_system::Call::remark {
-                    remark: commitment(7).to_vec(),
-                })
-                .encode(),
+                bytes: remark_call(7).encode(),
             });
             assert!(validate_ext(&call, TransactionSource::External).is_ok());
         });
@@ -333,17 +461,7 @@ mod tests {
     #[test]
     fn store_encrypted_ciphertext_bytes_are_disabled_in_public_runtime() {
         new_test_ext().execute_with(|| {
-            let call = RuntimeCall::MevShield(pallet_shield::Call::store_encrypted {
-                encrypted_call:
-                    BoundedVec::<u8, pallet_shield::MaxEncryptedCallSize>::truncate_from(vec![
-                        0xAA;
-                        64
-                    ]),
-            });
-            assert_eq!(
-                validate_ext(&call, TransactionSource::External),
-                Err(CustomTransactionError::ShieldStoreEncryptedDisabled.into())
-            );
+            assert_store_encrypted_disabled(store_encrypted_call(0xAA));
         });
     }
 
@@ -368,13 +486,63 @@ mod tests {
     }
 
     #[test]
+    fn wrapped_store_encrypted_calls_are_disabled_in_public_runtime() {
+        new_test_ext().execute_with(|| {
+            let calls = vec![
+                RuntimeCall::Utility(pallet_subtensor_utility::Call::if_else {
+                    main: Box::new(remark_call(12)),
+                    fallback: Box::new(store_encrypted_call(0xA1)),
+                }),
+                RuntimeCall::Proxy(pallet_subtensor_proxy::Call::proxy {
+                    real: account(2).into(),
+                    force_proxy_type: None,
+                    call: Box::new(store_encrypted_call(0xA2)),
+                }),
+                RuntimeCall::Proxy(pallet_subtensor_proxy::Call::proxy_announced {
+                    delegate: account(2).into(),
+                    real: account(3).into(),
+                    force_proxy_type: None,
+                    call: Box::new(store_encrypted_call(0xA3)),
+                }),
+                RuntimeCall::Sudo(pallet_sudo::Call::sudo_unchecked_weight {
+                    call: Box::new(store_encrypted_call(0xA4)),
+                    weight: Weight::zero(),
+                }),
+                RuntimeCall::Sudo(pallet_sudo::Call::sudo_as {
+                    who: account(2).into(),
+                    call: Box::new(store_encrypted_call(0xA5)),
+                }),
+                RuntimeCall::Multisig(pallet_multisig::Call::as_multi {
+                    threshold: 2,
+                    other_signatories: vec![account(2)],
+                    maybe_timepoint: None,
+                    call: Box::new(store_encrypted_call(0xA6)),
+                    max_weight: Weight::zero(),
+                }),
+                RuntimeCall::Scheduler(pallet_scheduler::Call::schedule_named_after {
+                    id: [3; 32],
+                    after: 2,
+                    maybe_periodic: None,
+                    priority: 0,
+                    call: Box::new(store_encrypted_call(0xA7)),
+                }),
+                RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                    bytes: store_encrypted_call(0xA8).encode(),
+                }),
+            ];
+
+            for call in calls {
+                assert_store_encrypted_disabled(call);
+            }
+        });
+    }
+
+    #[test]
     fn shield_envelope_and_non_qubitum_calls_pass() {
         new_test_ext().execute_with(|| {
             assert!(validate_ext(&shield_call(), TransactionSource::External).is_ok());
             assert!(validate_ext(&shield_call(), TransactionSource::InBlock).is_ok());
-            let call = RuntimeCall::System(frame_system::Call::remark {
-                remark: commitment(9).to_vec(),
-            });
+            let call = remark_call(9);
             assert!(validate_ext(&call, TransactionSource::External).is_ok());
         });
     }
@@ -386,6 +554,20 @@ mod tests {
                 validate_ext(&direct_qubitum_call(), TransactionSource::InBlock),
                 Err(CustomTransactionError::QubitumCallMustBeShielded.into())
             );
+        });
+    }
+
+    #[test]
+    fn excessively_nested_wrappers_fail_closed() {
+        new_test_ext().execute_with(|| {
+            let mut call = remark_call(11);
+            for _ in 0..MAX_CALL_SCAN_DEPTH {
+                call = RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                    calls: vec![call],
+                });
+            }
+
+            assert_qubitum_rejected(call);
         });
     }
 }
