@@ -2855,6 +2855,35 @@ fn check_whitelist() {
 }
 
 #[test]
+fn qubitum_protocol_params_report_runtime_verifier_readiness() {
+    let params = pallet_qubitum::Pallet::<Runtime>::protocol_params();
+
+    #[cfg(not(feature = "runtime-benchmarks"))]
+    {
+        assert_eq!(
+            params.proof_verifier_mode,
+            pallet_qubitum::ProofVerifierMode::FailClosed
+        );
+        assert!(!params.proof_settlement_enabled);
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    {
+        assert_eq!(
+            params.proof_verifier_mode,
+            pallet_qubitum::ProofVerifierMode::ShapeOnly
+        );
+        assert!(params.proof_settlement_enabled);
+    }
+
+    assert!(!params.production_zk_verifier);
+    assert!(!params.committed_request_payloads);
+    assert!(!params.shielded_call_payloads);
+    assert!(!params.private_route_selection);
+    assert!(!params.post_quantum_account_signatures);
+}
+
+#[test]
 fn test_into_substrate_balance_valid() {
     // Valid conversion within u64 range
     let evm_balance: EvmBalance = 1_000_000_000_000_000_000u128.into(); // 1 TAO in EVM
