@@ -5,17 +5,18 @@ use crate::{
     CancelledInferenceRequestCount, ChainInferenceRequest, ChainMiner, ChainPublicIdentity,
     ChainPublicInferenceRequest, ChainPublicMiner, ChainPublicProofRecord, ChainPublicSubnet,
     ChainPublicValidator, ChainRequestStatusCounts, ChainRouteAvailability, ChainValidator, Error,
-    FailClosedProofVerifier, HoldReason, InferenceRequestParams, InferenceRequestStatus,
-    InferenceRequestTerms, InferenceRequestTermsWitness, InferenceRequestTimingWitness,
-    InferenceRequests, LegacyAccountingMigrationFailures, LegacyCapitalRecordMigrationFailures,
-    LegacyRoutingIndexMigrationFailures, MinerCount, MinerIdentityCommitments,
-    MinerIdentitySignatureBundles, MinerIdentitySignatureChallenges, MinerLockedBond, Miners,
-    PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests, ProofRecords,
-    ProofVerificationPolicy, PublicRegistryStatus, RejectedInferenceRequestCount, RequestCount,
-    SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned, TotalInferenceEscrowed,
-    TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees, TotalValidatorFees,
-    ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles,
-    ValidatorIdentitySignatureChallenges, ValidatorLockedStake, Validators, VerifyProof,
+    FailClosedProofVerifier, HoldReason, InferenceRequestCommitmentParams, InferenceRequestParams,
+    InferenceRequestStatus, InferenceRequestTerms, InferenceRequestTermsWitness,
+    InferenceRequestTimingWitness, InferenceRequests, LegacyAccountingMigrationFailures,
+    LegacyCapitalRecordMigrationFailures, LegacyRoutingIndexMigrationFailures, MinerCount,
+    MinerIdentityCommitments, MinerIdentitySignatureBundles, MinerIdentitySignatureChallenges,
+    MinerLockedBond, Miners, PendingInferenceRequestCount, PendingMinerRequests,
+    PendingValidatorRequests, ProofRecords, ProofVerificationPolicy, PublicRegistryStatus,
+    RejectedInferenceRequestCount, RequestCount, SettledInferenceRequestCount, SubnetCount,
+    Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
+    TotalTreasuryFees, TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
+    ValidatorIdentitySignatureBundles, ValidatorIdentitySignatureChallenges, ValidatorLockedStake,
+    Validators, VerifyProof,
     mock::{
         Balances, Qubitum, RuntimeEvent, RuntimeOrigin, System, Test, new_test_ext,
         set_verification_outcome,
@@ -555,6 +556,7 @@ fn protocol_params_expose_runtime_policy() {
         assert_eq!(params.max_verification_latency_ms, TARGET_VERIFICATION_MS);
         assert_eq!(params.max_proof_submission_age_blocks, 10);
         assert_eq!(params.signature_mode, SignatureMode::FullPostQuantum);
+        assert!(params.committed_request_payloads);
         assert!(!params.shielded_call_payloads);
         assert!(!params.private_route_selection);
         assert!(!params.post_quantum_account_signatures);
@@ -3598,6 +3600,70 @@ fn request_storage_commits_route_assignment_without_raw_participant_ids() {
         assert_eq!(
             PendingValidatorRequests::<Test>::get(assignment.validator_id),
             1
+        );
+    });
+}
+
+#[test]
+fn request_commitment_call_hides_assignment_and_terms_blindings() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        RequestCount::<Test>::put(88);
+        let assignment = Qubitum::route_assignment(0, 88).unwrap();
+        let assignment_commitment = Qubitum::request_assignment_commitment(
+            88,
+            0,
+            assignment.miner_id,
+            assignment.validator_id,
+            assignment_blinding(),
+        );
+        let terms_commitment =
+            Qubitum::request_terms_commitment(88, 1_000, 250, 50, terms_blinding());
+        let params = InferenceRequestCommitmentParams {
+            subnet_id: 0,
+            input_commitment: commitment(1),
+            assignment_commitment,
+            timing_blinding: timing_blinding(),
+            terms_commitment,
+            payment: 1_000,
+            validator_fee_bps: 250,
+            treasury_fee_bps: 50,
+        };
+        let encoded_call = crate::Call::<Test>::request_inference_commitments {
+            request_id: 88,
+            params: params.clone(),
+        }
+        .encode();
+
+        assert!(!contains_subsequence(
+            &encoded_call,
+            &assignment_blinding().encode()
+        ));
+        assert!(!contains_subsequence(
+            &encoded_call,
+            &terms_blinding().encode()
+        ));
+        assert!(contains_subsequence(
+            &encoded_call,
+            &timing_blinding().encode()
+        ));
+
+        assert_ok!(Qubitum::request_inference_commitments(
+            RuntimeOrigin::signed(4),
+            88,
+            params
+        ));
+        let request = InferenceRequests::<Test>::get(88).unwrap();
+        assert_eq!(request.assignment_commitment, assignment_commitment);
+        assert_eq!(request.terms_commitment, terms_commitment);
+        assert_eq!(
+            request.timing_commitment,
+            Qubitum::request_timing_commitment(88, 0, timing_blinding())
+        );
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(88)));
+        assert_eq!(
+            InferenceRequests::<Test>::get(88).unwrap().status,
+            InferenceRequestStatus::Settled
         );
     });
 }

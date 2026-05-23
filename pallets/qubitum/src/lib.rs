@@ -751,6 +751,7 @@ pub mod pallet {
         pub max_verification_latency_ms: u32,
         pub max_proof_submission_age_blocks: BlockNumber,
         pub signature_mode: SignatureMode,
+        pub committed_request_payloads: bool,
         pub shielded_call_payloads: bool,
         pub private_route_selection: bool,
         pub post_quantum_account_signatures: bool,
@@ -806,6 +807,20 @@ pub mod pallet {
         pub assignment_blinding: Commitment,
         pub timing_blinding: Commitment,
         pub terms_blinding: Commitment,
+        pub payment: Balance,
+        pub validator_fee_bps: u16,
+        pub treasury_fee_bps: u16,
+    }
+
+    #[derive(
+        Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
+    )]
+    pub struct InferenceRequestCommitmentParams<Balance> {
+        pub subnet_id: SubnetId,
+        pub input_commitment: Commitment,
+        pub assignment_commitment: Commitment,
+        pub timing_blinding: Commitment,
+        pub terms_commitment: Commitment,
         pub payment: Balance,
         pub validator_fee_bps: u16,
         pub treasury_fee_bps: u16,
@@ -1573,6 +1588,50 @@ pub mod pallet {
             )
         }
 
+        /// Open an inference request using precommitted private assignment and terms witnesses.
+        #[pallet::call_index(18)]
+        #[pallet::weight(T::WeightInfo::request_inference())]
+        #[frame_support::transactional]
+        pub fn request_inference_commitments(
+            origin: OriginFor<T>,
+            request_id: RequestId,
+            params: InferenceRequestCommitmentParams<BalanceOf<T>>,
+        ) -> DispatchResult {
+            let user = ensure_signed(origin)?;
+            Self::ensure_inference_request_commitments_openable(
+                request_id,
+                params.subnet_id,
+                params.input_commitment,
+                params.assignment_commitment,
+                params.timing_blinding,
+                params.terms_commitment,
+                params.payment,
+                params.validator_fee_bps,
+                params.treasury_fee_bps,
+            )?;
+            let assignment = Self::route_assignment(params.subnet_id, request_id)
+                .ok_or(Error::<T>::NoRouteAvailable)?;
+            let timing_commitment = Self::request_timing_commitment(
+                request_id,
+                Self::current_block(),
+                params.timing_blinding,
+            );
+            Self::open_inference_request_with_commitments(
+                user,
+                request_id,
+                params.subnet_id,
+                assignment.miner_id,
+                assignment.validator_id,
+                params.input_commitment,
+                params.assignment_commitment,
+                params.terms_commitment,
+                timing_commitment,
+                params.payment,
+                params.validator_fee_bps,
+                params.treasury_fee_bps,
+            )
+        }
+
         /// Cancel a pending inference request and release escrowed QBT.
         #[pallet::call_index(7)]
         #[pallet::weight(T::WeightInfo::cancel_inference())]
@@ -2020,6 +2079,7 @@ pub mod pallet {
                 max_verification_latency_ms: T::MaxVerificationLatencyMs::get(),
                 max_proof_submission_age_blocks: T::MaxProofSubmissionAgeBlocks::get(),
                 signature_mode: T::SignatureMode::get(),
+                committed_request_payloads: true,
                 shielded_call_payloads: false,
                 private_route_selection: false,
                 post_quantum_account_signatures: false,
@@ -2199,6 +2259,36 @@ pub mod pallet {
         }
 
         #[allow(clippy::too_many_arguments)]
+        fn ensure_inference_request_commitments_openable(
+            request_id: RequestId,
+            subnet_id: SubnetId,
+            input_commitment: Commitment,
+            assignment_commitment: Commitment,
+            timing_blinding: Commitment,
+            terms_commitment: Commitment,
+            payment: BalanceOf<T>,
+            validator_fee_bps: u16,
+            treasury_fee_bps: u16,
+        ) -> DispatchResult {
+            ensure_commitment::<T>(input_commitment)?;
+            ensure_commitment::<T>(assignment_commitment)?;
+            ensure_commitment::<T>(timing_blinding)?;
+            ensure_commitment::<T>(terms_commitment)?;
+            ensure!(
+                !InferenceRequests::<T>::contains_key(request_id),
+                Error::<T>::DuplicateRequest
+            );
+            ensure!(
+                payment > BalanceOf::<T>::default(),
+                Error::<T>::InvalidPayment
+            );
+            Self::validate_fee_split(validator_fee_bps, treasury_fee_bps)?;
+            let subnet = Subnets::<T>::get(subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
+            ensure!(subnet.active, Error::<T>::NotActive);
+            Ok(())
+        }
+
+        #[allow(clippy::too_many_arguments)]
         fn open_inference_request(
             user: T::AccountId,
             request_id: RequestId,
@@ -2213,6 +2303,54 @@ pub mod pallet {
             validator_fee_bps: u16,
             treasury_fee_bps: u16,
         ) -> DispatchResult {
+            let created_at = Self::current_block();
+            let assignment_commitment = Self::request_assignment_commitment(
+                request_id,
+                subnet_id,
+                miner_id,
+                validator_id,
+                assignment_blinding,
+            );
+            let terms_commitment = Self::request_terms_commitment(
+                request_id,
+                payment,
+                validator_fee_bps,
+                treasury_fee_bps,
+                terms_blinding,
+            );
+            let timing_commitment =
+                Self::request_timing_commitment(request_id, created_at, timing_blinding);
+            Self::open_inference_request_with_commitments(
+                user,
+                request_id,
+                subnet_id,
+                miner_id,
+                validator_id,
+                input_commitment,
+                assignment_commitment,
+                terms_commitment,
+                timing_commitment,
+                payment,
+                validator_fee_bps,
+                treasury_fee_bps,
+            )
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn open_inference_request_with_commitments(
+            user: T::AccountId,
+            request_id: RequestId,
+            subnet_id: SubnetId,
+            miner_id: MinerId,
+            validator_id: ValidatorId,
+            input_commitment: Commitment,
+            assignment_commitment: Commitment,
+            terms_commitment: Commitment,
+            timing_commitment: Commitment,
+            payment: BalanceOf<T>,
+            _validator_fee_bps: u16,
+            _treasury_fee_bps: u16,
+        ) -> DispatchResult {
             Self::ensure_request_assignment(subnet_id, miner_id, validator_id)?;
             Self::ensure_next_request_id(request_id)?;
             Self::ensure_inference_escrow_can_record(payment)?;
@@ -2221,33 +2359,16 @@ pub mod pallet {
             Self::increment_pending_assignment(miner_id, validator_id)?;
             Self::increment_request_status_count(InferenceRequestStatus::Pending)?;
             Self::record_inference_escrow(payment)?;
-            let created_at = Self::current_block();
             InferenceRequests::<T>::insert(
                 request_id,
                 ChainInferenceRequest {
                     request_id,
                     user_commitment: Self::request_user_commitment(&user),
                     subnet_id,
-                    assignment_commitment: Self::request_assignment_commitment(
-                        request_id,
-                        subnet_id,
-                        miner_id,
-                        validator_id,
-                        assignment_blinding,
-                    ),
+                    assignment_commitment,
                     input_commitment,
-                    terms_commitment: Self::request_terms_commitment(
-                        request_id,
-                        payment,
-                        validator_fee_bps,
-                        treasury_fee_bps,
-                        terms_blinding,
-                    ),
-                    timing_commitment: Self::request_timing_commitment(
-                        request_id,
-                        created_at,
-                        timing_blinding,
-                    ),
+                    terms_commitment,
+                    timing_commitment,
                     status: InferenceRequestStatus::Pending,
                 },
             );
