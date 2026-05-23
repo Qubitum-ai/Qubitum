@@ -479,6 +479,26 @@ pub mod pallet {
     }
 
     #[derive(
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        TypeInfo,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Debug,
+        MaxEncodedLen,
+    )]
+    pub struct ChainPublicIdentity {
+        pub participant_id: u64,
+        pub has_shielded_identity_commitment: bool,
+        pub has_endpoint_commitment: bool,
+        pub signature_attested: bool,
+        pub challenge_available: bool,
+    }
+
+    #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
     pub struct ChainProofRecord {
@@ -2022,6 +2042,50 @@ pub mod pallet {
                 id: validator.id,
                 subnet_id: validator.subnet_id,
                 status: PublicRegistryStatus::from(validator.status),
+            })
+        }
+
+        pub fn public_miner_identity(miner_id: MinerId) -> Option<ChainPublicIdentity> {
+            Miners::<T>::contains_key(miner_id).then(|| {
+                let commitments = MinerIdentityCommitments::<T>::get(miner_id);
+                ChainPublicIdentity {
+                    participant_id: miner_id,
+                    has_shielded_identity_commitment: commitments
+                        .as_ref()
+                        .and_then(|identity| identity.shielded_identity_commitment)
+                        .is_some(),
+                    has_endpoint_commitment: commitments
+                        .as_ref()
+                        .and_then(|identity| identity.endpoint_commitment)
+                        .is_some(),
+                    signature_attested: MinerIdentitySignatureBundles::<T>::contains_key(miner_id),
+                    challenge_available: MinerIdentitySignatureChallenges::<T>::contains_key(
+                        miner_id,
+                    ),
+                }
+            })
+        }
+
+        pub fn public_validator_identity(validator_id: ValidatorId) -> Option<ChainPublicIdentity> {
+            Validators::<T>::contains_key(validator_id).then(|| {
+                let commitments = ValidatorIdentityCommitments::<T>::get(validator_id);
+                ChainPublicIdentity {
+                    participant_id: validator_id,
+                    has_shielded_identity_commitment: commitments
+                        .as_ref()
+                        .and_then(|identity| identity.shielded_identity_commitment)
+                        .is_some(),
+                    has_endpoint_commitment: commitments
+                        .as_ref()
+                        .and_then(|identity| identity.endpoint_commitment)
+                        .is_some(),
+                    signature_attested: ValidatorIdentitySignatureBundles::<T>::contains_key(
+                        validator_id,
+                    ),
+                    challenge_available: ValidatorIdentitySignatureChallenges::<T>::contains_key(
+                        validator_id,
+                    ),
+                }
             })
         }
 

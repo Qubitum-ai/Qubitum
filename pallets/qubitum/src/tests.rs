@@ -2,17 +2,17 @@
 
 use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, AutoRouteInferenceRequestParams,
-    CancelledInferenceRequestCount, ChainInferenceRequest, ChainPublicInferenceRequest,
-    ChainPublicMiner, ChainPublicProofRecord, ChainPublicSubnet, ChainPublicValidator,
-    ChainRequestStatusCounts, ChainRouteAvailability, Error, FailClosedProofVerifier, HoldReason,
-    InferenceRequestParams, InferenceRequestStatus, InferenceRequestTerms,
-    InferenceRequestTermsWitness, InferenceRequestTimingWitness, InferenceRequests, MinerCount,
-    MinerIdentityCommitments, MinerIdentitySignatureBundles, MinerIdentitySignatureChallenges,
-    Miners, PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests,
-    ProofRecords, ProofVerificationPolicy, PublicRegistryStatus, RejectedInferenceRequestCount,
-    RequestCount, SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned,
-    TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees,
-    TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
+    CancelledInferenceRequestCount, ChainInferenceRequest, ChainPublicIdentity,
+    ChainPublicInferenceRequest, ChainPublicMiner, ChainPublicProofRecord, ChainPublicSubnet,
+    ChainPublicValidator, ChainRequestStatusCounts, ChainRouteAvailability, Error,
+    FailClosedProofVerifier, HoldReason, InferenceRequestParams, InferenceRequestStatus,
+    InferenceRequestTerms, InferenceRequestTermsWitness, InferenceRequestTimingWitness,
+    InferenceRequests, MinerCount, MinerIdentityCommitments, MinerIdentitySignatureBundles,
+    MinerIdentitySignatureChallenges, Miners, PendingInferenceRequestCount, PendingMinerRequests,
+    PendingValidatorRequests, ProofRecords, ProofVerificationPolicy, PublicRegistryStatus,
+    RejectedInferenceRequestCount, RequestCount, SettledInferenceRequestCount, SubnetCount,
+    Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
+    TotalTreasuryFees, TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
     ValidatorIdentitySignatureBundles, ValidatorIdentitySignatureChallenges, Validators,
     VerifyProof,
     mock::{
@@ -1245,6 +1245,29 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
             Some(post_quantum_signature_bundle())
         );
         let miner_signature_challenge = MinerIdentitySignatureChallenges::<Test>::get(0).unwrap();
+        let public_miner_identity = Qubitum::public_miner_identity(0).unwrap();
+        assert_eq!(
+            public_miner_identity,
+            ChainPublicIdentity {
+                participant_id: 0,
+                has_shielded_identity_commitment: true,
+                has_endpoint_commitment: true,
+                signature_attested: true,
+                challenge_available: true,
+            }
+        );
+        let encoded_public_miner_identity = public_miner_identity.encode();
+        for hidden in [
+            commitment(20).encode(),
+            commitment(21).encode(),
+            post_quantum_signature_bundle().encode(),
+            miner_signature_challenge.encode(),
+        ] {
+            assert!(!contains_subsequence(
+                &encoded_public_miner_identity,
+                &hidden
+            ));
+        }
         let miner = Miners::<Test>::get(0).unwrap();
         assert_eq!(
             miner_signature_challenge,
@@ -1270,6 +1293,29 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         );
         let validator_signature_challenge =
             ValidatorIdentitySignatureChallenges::<Test>::get(0).unwrap();
+        let public_validator_identity = Qubitum::public_validator_identity(0).unwrap();
+        assert_eq!(
+            public_validator_identity,
+            ChainPublicIdentity {
+                participant_id: 0,
+                has_shielded_identity_commitment: true,
+                has_endpoint_commitment: true,
+                signature_attested: true,
+                challenge_available: true,
+            }
+        );
+        let encoded_public_validator_identity = public_validator_identity.encode();
+        for hidden in [
+            commitment(22).encode(),
+            commitment(23).encode(),
+            post_quantum_signature_bundle().encode(),
+            validator_signature_challenge.encode(),
+        ] {
+            assert!(!contains_subsequence(
+                &encoded_public_validator_identity,
+                &hidden
+            ));
+        }
         let validator = Validators::<Test>::get(0).unwrap();
         assert_eq!(
             validator_signature_challenge,
@@ -1308,6 +1354,16 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         assert!(MinerIdentityCommitments::<Test>::get(0).is_none());
         assert!(MinerIdentitySignatureBundles::<Test>::get(0).is_none());
         assert!(MinerIdentitySignatureChallenges::<Test>::get(0).is_none());
+        assert_eq!(
+            Qubitum::public_miner_identity(0),
+            Some(ChainPublicIdentity {
+                participant_id: 0,
+                has_shielded_identity_commitment: false,
+                has_endpoint_commitment: false,
+                signature_attested: false,
+                challenge_available: false,
+            })
+        );
         assert_noop!(
             Qubitum::set_validator_identity_commitments(
                 RuntimeOrigin::signed(3),
@@ -1331,6 +1387,18 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         assert!(ValidatorIdentityCommitments::<Test>::get(0).is_none());
         assert!(ValidatorIdentitySignatureBundles::<Test>::get(0).is_none());
         assert!(ValidatorIdentitySignatureChallenges::<Test>::get(0).is_none());
+        assert_eq!(
+            Qubitum::public_validator_identity(0),
+            Some(ChainPublicIdentity {
+                participant_id: 0,
+                has_shielded_identity_commitment: false,
+                has_endpoint_commitment: false,
+                signature_attested: false,
+                challenge_available: false,
+            })
+        );
+        assert_eq!(Qubitum::public_miner_identity(999), None);
+        assert_eq!(Qubitum::public_validator_identity(999), None);
     });
 }
 

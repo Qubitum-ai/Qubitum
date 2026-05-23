@@ -272,7 +272,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     //   `spec_version`, and `authoring_version` are the same between Wasm and native.
     // This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
     //   the compatible custom types.
-    spec_version: 458,
+    spec_version: 459,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 6,
@@ -2611,40 +2611,16 @@ impl_runtime_apis! {
             pallet_qubitum::Pallet::<Runtime>::public_validator(validator_id)
         }
 
-        fn qubitum_miner_identity_commitments(
+        fn qubitum_miner_identity(
             miner_id: qubitum_protocol::MinerId,
-        ) -> Option<pallet_qubitum::ChainIdentityCommitments> {
-            pallet_qubitum::MinerIdentityCommitments::<Runtime>::get(miner_id)
+        ) -> Option<pallet_qubitum::ChainPublicIdentity> {
+            pallet_qubitum::Pallet::<Runtime>::public_miner_identity(miner_id)
         }
 
-        fn qubitum_miner_identity_signature_bundle(
-            miner_id: qubitum_protocol::MinerId,
-        ) -> Option<qubitum_protocol::SignatureBundle> {
-            pallet_qubitum::MinerIdentitySignatureBundles::<Runtime>::get(miner_id)
-        }
-
-        fn qubitum_miner_identity_signature_challenge(
-            miner_id: qubitum_protocol::MinerId,
-        ) -> Option<qubitum_protocol::Commitment> {
-            pallet_qubitum::MinerIdentitySignatureChallenges::<Runtime>::get(miner_id)
-        }
-
-        fn qubitum_validator_identity_commitments(
+        fn qubitum_validator_identity(
             validator_id: qubitum_protocol::ValidatorId,
-        ) -> Option<pallet_qubitum::ChainIdentityCommitments> {
-            pallet_qubitum::ValidatorIdentityCommitments::<Runtime>::get(validator_id)
-        }
-
-        fn qubitum_validator_identity_signature_bundle(
-            validator_id: qubitum_protocol::ValidatorId,
-        ) -> Option<qubitum_protocol::SignatureBundle> {
-            pallet_qubitum::ValidatorIdentitySignatureBundles::<Runtime>::get(validator_id)
-        }
-
-        fn qubitum_validator_identity_signature_challenge(
-            validator_id: qubitum_protocol::ValidatorId,
-        ) -> Option<qubitum_protocol::Commitment> {
-            pallet_qubitum::ValidatorIdentitySignatureChallenges::<Runtime>::get(validator_id)
+        ) -> Option<pallet_qubitum::ChainPublicIdentity> {
+            pallet_qubitum::Pallet::<Runtime>::public_validator_identity(validator_id)
         }
 
         fn qubitum_inference_request(

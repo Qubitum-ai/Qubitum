@@ -1,11 +1,11 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use pallet_qubitum::{
-    ChainAccounting, ChainIdentityCommitments, ChainProtocolParams, ChainPublicInferenceRequest,
+    ChainAccounting, ChainProtocolParams, ChainPublicIdentity, ChainPublicInferenceRequest,
     ChainPublicMiner, ChainPublicProofRecord, ChainPublicSubnet, ChainPublicValidator,
     ChainRequestStatusCounts, ChainRouteAvailability,
 };
-use qubitum_protocol::{Commitment, MinerId, RequestId, SignatureBundle, SubnetId, ValidatorId};
+use qubitum_protocol::{MinerId, RequestId, SubnetId, ValidatorId};
 use subtensor_runtime_common::TaoBalance;
 
 sp_api::decl_runtime_apis! {
@@ -13,12 +13,8 @@ sp_api::decl_runtime_apis! {
         fn qubitum_subnet(subnet_id: SubnetId) -> Option<ChainPublicSubnet>;
         fn qubitum_miner(miner_id: MinerId) -> Option<ChainPublicMiner>;
         fn qubitum_validator(validator_id: ValidatorId) -> Option<ChainPublicValidator>;
-        fn qubitum_miner_identity_commitments(miner_id: MinerId) -> Option<ChainIdentityCommitments>;
-        fn qubitum_miner_identity_signature_bundle(miner_id: MinerId) -> Option<SignatureBundle>;
-        fn qubitum_miner_identity_signature_challenge(miner_id: MinerId) -> Option<Commitment>;
-        fn qubitum_validator_identity_commitments(validator_id: ValidatorId) -> Option<ChainIdentityCommitments>;
-        fn qubitum_validator_identity_signature_bundle(validator_id: ValidatorId) -> Option<SignatureBundle>;
-        fn qubitum_validator_identity_signature_challenge(validator_id: ValidatorId) -> Option<Commitment>;
+        fn qubitum_miner_identity(miner_id: MinerId) -> Option<ChainPublicIdentity>;
+        fn qubitum_validator_identity(validator_id: ValidatorId) -> Option<ChainPublicIdentity>;
         fn qubitum_inference_request(request_id: RequestId) -> Option<ChainPublicInferenceRequest>;
         fn qubitum_proof_record(request_id: RequestId) -> Option<ChainPublicProofRecord>;
         fn qubitum_route_assignment(subnet_id: SubnetId, request_id: RequestId) -> ChainRouteAvailability;
