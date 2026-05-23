@@ -835,6 +835,93 @@ fn register_validator_locks_stake() {
 }
 
 #[test]
+fn active_set_capacity_failures_rollback_locked_capital_and_ids() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::General,
+            ProofSystem::RiscZeroStark
+        ));
+
+        let miner_limit = <Test as crate::Config>::MaxActiveMinersPerSubnet::get();
+        for index in 0..miner_limit {
+            assert_ok!(Qubitum::register_miner(
+                RuntimeOrigin::signed(2),
+                0,
+                commitment(index.saturating_add(10) as u8),
+                ProofSystem::RiscZeroStark
+            ));
+            assert_ok!(Qubitum::activate_miner(
+                RuntimeOrigin::signed(2),
+                u64::from(index),
+                MIN_MINER_BOND
+            ));
+        }
+
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(250),
+            ProofSystem::RiscZeroStark
+        ));
+        let overflow_miner_id = MinerCount::<Test>::get().saturating_sub(1);
+        let held_before = Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2);
+
+        assert_noop!(
+            Qubitum::activate_miner(RuntimeOrigin::signed(2), overflow_miner_id, MIN_MINER_BOND),
+            Error::<Test>::TooManyActiveMiners
+        );
+
+        let miner = Miners::<Test>::get(overflow_miner_id).unwrap();
+        assert_eq!(miner.status, RegistryStatus::Pending);
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            held_before
+        );
+        assert_eq!(
+            ActiveMinersBySubnet::<Test>::get(0).len(),
+            miner_limit as usize
+        );
+        assert!(!ActiveMinersBySubnet::<Test>::get(0).contains(&overflow_miner_id));
+    });
+
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::General,
+            ProofSystem::RiscZeroStark
+        ));
+
+        let validator_limit = <Test as crate::Config>::MaxActiveValidatorsPerSubnet::get();
+        for _ in 0..validator_limit {
+            assert_ok!(Qubitum::register_validator(
+                RuntimeOrigin::signed(3),
+                0,
+                MIN_MINER_BOND
+            ));
+        }
+        let validator_count_before = ValidatorCount::<Test>::get();
+        let held_before = Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3);
+
+        assert_noop!(
+            Qubitum::register_validator(RuntimeOrigin::signed(3), 0, MIN_MINER_BOND),
+            Error::<Test>::TooManyActiveValidators
+        );
+
+        assert_eq!(ValidatorCount::<Test>::get(), validator_count_before);
+        assert!(Validators::<Test>::get(validator_count_before).is_none());
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            held_before
+        );
+        assert_eq!(
+            ActiveValidatorsBySubnet::<Test>::get(0).len(),
+            validator_limit as usize
+        );
+    });
+}
+
+#[test]
 fn registry_id_overflows_do_not_burn_or_lock_funds() {
     new_test_ext().execute_with(|| {
         SubnetCount::<Test>::put(u16::MAX);
