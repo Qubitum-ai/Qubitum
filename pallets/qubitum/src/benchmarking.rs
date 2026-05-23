@@ -40,15 +40,51 @@ fn proof(seed: u8) -> ProofEnvelope {
     ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
 }
 
-fn post_quantum_signature_bundle(seed: u8) -> SignatureBundle {
+fn post_quantum_signature_bundle<T: Config>(seed: u8, challenge: Commitment) -> SignatureBundle {
+    let unsigned = SignatureCommitment {
+        algorithm: SignatureAlgorithm::Dilithium3,
+        public_key_commitment: commitment(seed),
+        signature_commitment: [0; 32],
+    };
     SignatureBundle {
         classical: None,
         post_quantum: Some(SignatureCommitment {
-            algorithm: SignatureAlgorithm::Dilithium3,
-            public_key_commitment: commitment(seed),
-            signature_commitment: commitment(seed.saturating_add(1)),
+            signature_commitment: Pallet::<T>::identity_signature_binding(challenge, unsigned),
+            ..unsigned
         }),
     }
+}
+
+fn miner_signature_bundle<T: Config>(
+    miner_id: u64,
+    shielded_identity_commitment: Option<Commitment>,
+    endpoint_commitment: Option<Commitment>,
+    seed: u8,
+) -> SignatureBundle {
+    let miner = Miners::<T>::get(miner_id).unwrap();
+    let challenge = Pallet::<T>::miner_identity_signature_challenge(
+        miner_id,
+        miner.operator_commitment,
+        shielded_identity_commitment,
+        endpoint_commitment,
+    );
+    post_quantum_signature_bundle::<T>(seed, challenge)
+}
+
+fn validator_signature_bundle<T: Config>(
+    validator_id: u64,
+    shielded_identity_commitment: Option<Commitment>,
+    endpoint_commitment: Option<Commitment>,
+    seed: u8,
+) -> SignatureBundle {
+    let validator = Validators::<T>::get(validator_id).unwrap();
+    let challenge = Pallet::<T>::validator_identity_signature_challenge(
+        validator_id,
+        validator.operator_commitment,
+        shielded_identity_commitment,
+        endpoint_commitment,
+    );
+    post_quantum_signature_bundle::<T>(seed, challenge)
 }
 
 fn assert_last_event<T: Config>(generic_event: <T as frame_system::Config>::RuntimeEvent) {
@@ -101,7 +137,7 @@ fn activate_bench_miner<T: Config>() -> T::AccountId {
         0,
         Some(commitment(120)),
         Some(commitment(121)),
-        post_quantum_signature_bundle(130),
+        miner_signature_bundle::<T>(0, Some(commitment(120)), Some(commitment(121)), 130),
     )
     .unwrap();
     miner
@@ -124,7 +160,7 @@ fn register_bench_validator<T: Config>() -> T::AccountId {
         0,
         Some(commitment(122)),
         Some(commitment(123)),
-        post_quantum_signature_bundle(140),
+        validator_signature_bundle::<T>(0, Some(commitment(122)), Some(commitment(123)), 140),
     )
     .unwrap();
     validator

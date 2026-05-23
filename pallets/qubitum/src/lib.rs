@@ -23,8 +23,8 @@ use frame_support::{
 };
 use qubitum_protocol::{
     BlockNumber, Commitment, InferenceProofSubmission, MinerId, ProofEnvelope, ProofSystem,
-    RegistryStatus, RequestId, SignatureBundle, SignatureMode, SignaturePolicy, SubnetDomain,
-    SubnetId, ValidatorId, VerificationOutcome,
+    RegistryStatus, RequestId, SignatureBundle, SignatureCommitment, SignatureMode,
+    SignaturePolicy, SubnetDomain, SubnetId, ValidatorId, VerificationOutcome,
 };
 use scale_info::TypeInfo;
 use sp_io::hashing::blake2_256;
@@ -757,6 +757,7 @@ pub mod pallet {
         pub private_route_selection: bool,
         pub post_quantum_account_signatures: bool,
         pub identity_signature_commitment_policy: bool,
+        pub identity_signature_challenge_binding: bool,
         pub identity_signature_verification: bool,
         pub miner_exit_cooldown_blocks: BlockNumber,
         pub validator_exit_cooldown_blocks: BlockNumber,
@@ -1955,13 +1956,16 @@ pub mod pallet {
             Self::ensure_optional_commitment(endpoint_commitment)?;
 
             if shielded_identity_commitment.is_some() || endpoint_commitment.is_some() {
-                Self::ensure_signature_bundle(signature_bundle)?;
                 let challenge_commitment = Self::miner_identity_signature_challenge(
                     miner_id,
                     miner.operator_commitment,
                     shielded_identity_commitment,
                     endpoint_commitment,
                 );
+                Self::ensure_signature_bundle_bound_to_challenge(
+                    signature_bundle,
+                    challenge_commitment,
+                )?;
                 MinerIdentityCommitments::<T>::insert(
                     miner_id,
                     ChainIdentityCommitments {
@@ -1976,7 +1980,16 @@ pub mod pallet {
                     || MinerIdentitySignatureBundles::<T>::contains_key(miner_id)
                     || MinerIdentitySignatureChallenges::<T>::contains_key(miner_id)
                 {
-                    Self::ensure_signature_bundle(signature_bundle)?;
+                    let challenge_commitment = Self::miner_identity_signature_challenge(
+                        miner_id,
+                        miner.operator_commitment,
+                        None,
+                        None,
+                    );
+                    Self::ensure_signature_bundle_bound_to_challenge(
+                        signature_bundle,
+                        challenge_commitment,
+                    )?;
                 }
                 MinerIdentityCommitments::<T>::remove(miner_id);
                 MinerIdentitySignatureBundles::<T>::remove(miner_id);
@@ -2005,13 +2018,16 @@ pub mod pallet {
             Self::ensure_optional_commitment(endpoint_commitment)?;
 
             if shielded_identity_commitment.is_some() || endpoint_commitment.is_some() {
-                Self::ensure_signature_bundle(signature_bundle)?;
                 let challenge_commitment = Self::validator_identity_signature_challenge(
                     validator_id,
                     validator.operator_commitment,
                     shielded_identity_commitment,
                     endpoint_commitment,
                 );
+                Self::ensure_signature_bundle_bound_to_challenge(
+                    signature_bundle,
+                    challenge_commitment,
+                )?;
                 ValidatorIdentityCommitments::<T>::insert(
                     validator_id,
                     ChainIdentityCommitments {
@@ -2029,7 +2045,16 @@ pub mod pallet {
                     || ValidatorIdentitySignatureBundles::<T>::contains_key(validator_id)
                     || ValidatorIdentitySignatureChallenges::<T>::contains_key(validator_id)
                 {
-                    Self::ensure_signature_bundle(signature_bundle)?;
+                    let challenge_commitment = Self::validator_identity_signature_challenge(
+                        validator_id,
+                        validator.operator_commitment,
+                        None,
+                        None,
+                    );
+                    Self::ensure_signature_bundle_bound_to_challenge(
+                        signature_bundle,
+                        challenge_commitment,
+                    )?;
                 }
                 ValidatorIdentityCommitments::<T>::remove(validator_id);
                 ValidatorIdentitySignatureBundles::<T>::remove(validator_id);
@@ -2082,6 +2107,7 @@ pub mod pallet {
                 private_route_selection: false,
                 post_quantum_account_signatures: false,
                 identity_signature_commitment_policy: true,
+                identity_signature_challenge_binding: true,
                 identity_signature_verification: false,
                 miner_exit_cooldown_blocks: T::MinerExitCooldownBlocks::get(),
                 validator_exit_cooldown_blocks: T::ValidatorExitCooldownBlocks::get(),
@@ -2708,6 +2734,20 @@ pub mod pallet {
                 .using_encoded(blake2_256)
         }
 
+        pub(crate) fn identity_signature_binding(
+            challenge: Commitment,
+            signature: SignatureCommitment,
+        ) -> Commitment {
+            (
+                b"qubitum.identity.signature.binding.v1",
+                challenge,
+                signature.algorithm,
+                signature.public_key_commitment,
+                T::SignatureMode::get(),
+            )
+                .using_encoded(blake2_256)
+        }
+
         pub(crate) fn subnet_policy_commitment(
             subnet_id: SubnetId,
             domain: SubnetDomain,
@@ -3181,19 +3221,88 @@ pub mod pallet {
                 .map_err(|_| Error::<T>::InvalidSignatureBundle.into())
         }
 
+        fn ensure_signature_bundle_bound_to_challenge(
+            signature_bundle: SignatureBundle,
+            challenge: Commitment,
+        ) -> DispatchResult {
+            Self::ensure_signature_bundle(signature_bundle)?;
+            if let Some(signature) = signature_bundle.classical {
+                Self::ensure_signature_commitment_bound_to_challenge(signature, challenge)?;
+            }
+            if let Some(signature) = signature_bundle.post_quantum {
+                Self::ensure_signature_commitment_bound_to_challenge(signature, challenge)?;
+            }
+            Ok(())
+        }
+
+        fn ensure_signature_commitment_bound_to_challenge(
+            signature: SignatureCommitment,
+            challenge: Commitment,
+        ) -> DispatchResult {
+            ensure!(
+                signature.signature_commitment
+                    == Self::identity_signature_binding(challenge, signature),
+                Error::<T>::InvalidSignatureBundle
+            );
+            Ok(())
+        }
+
         fn ensure_participant_signature_bundles(
             miner_id: MinerId,
             validator_id: ValidatorId,
         ) -> DispatchResult {
-            ensure!(
-                MinerIdentitySignatureBundles::<T>::contains_key(miner_id),
-                Error::<T>::MissingSignatureBundle
-            );
-            ensure!(
-                ValidatorIdentitySignatureBundles::<T>::contains_key(validator_id),
-                Error::<T>::MissingSignatureBundle
-            );
+            let miner = Miners::<T>::get(miner_id).ok_or(Error::<T>::UnknownMiner)?;
+            let validator =
+                Validators::<T>::get(validator_id).ok_or(Error::<T>::UnknownValidator)?;
+            Self::ensure_miner_signature_bundle_bound(miner_id, &miner)?;
+            Self::ensure_validator_signature_bundle_bound(validator_id, &validator)?;
             Ok(())
+        }
+
+        fn ensure_miner_signature_bundle_bound(
+            miner_id: MinerId,
+            miner: &ChainMiner,
+        ) -> DispatchResult {
+            let commitments = MinerIdentityCommitments::<T>::get(miner_id)
+                .ok_or(Error::<T>::MissingSignatureBundle)?;
+            let stored_challenge = MinerIdentitySignatureChallenges::<T>::get(miner_id)
+                .ok_or(Error::<T>::MissingSignatureBundle)?;
+            let expected_challenge = Self::miner_identity_signature_challenge(
+                miner_id,
+                miner.operator_commitment,
+                commitments.shielded_identity_commitment,
+                commitments.endpoint_commitment,
+            );
+            ensure!(
+                stored_challenge == expected_challenge,
+                Error::<T>::InvalidSignatureBundle
+            );
+            let signature_bundle = MinerIdentitySignatureBundles::<T>::get(miner_id)
+                .ok_or(Error::<T>::MissingSignatureBundle)?;
+            Self::ensure_signature_bundle_bound_to_challenge(signature_bundle, expected_challenge)
+        }
+
+        fn ensure_validator_signature_bundle_bound(
+            validator_id: ValidatorId,
+            validator: &ChainValidator,
+        ) -> DispatchResult {
+            let commitments = ValidatorIdentityCommitments::<T>::get(validator_id)
+                .ok_or(Error::<T>::MissingSignatureBundle)?;
+            let stored_challenge = ValidatorIdentitySignatureChallenges::<T>::get(validator_id)
+                .ok_or(Error::<T>::MissingSignatureBundle)?;
+            let expected_challenge = Self::validator_identity_signature_challenge(
+                validator_id,
+                validator.operator_commitment,
+                commitments.shielded_identity_commitment,
+                commitments.endpoint_commitment,
+            );
+            ensure!(
+                stored_challenge == expected_challenge,
+                Error::<T>::InvalidSignatureBundle
+            );
+            let signature_bundle = ValidatorIdentitySignatureBundles::<T>::get(validator_id)
+                .ok_or(Error::<T>::MissingSignatureBundle)?;
+            Self::ensure_signature_bundle_bound_to_challenge(signature_bundle, expected_challenge)
         }
 
         fn route_active_miner(subnet_id: SubnetId, seed: u64) -> Option<MinerId> {
@@ -3213,7 +3322,7 @@ pub mod pallet {
                 };
                 if miner.subnet_id == subnet_id
                     && miner.status == RegistryStatus::Active
-                    && MinerIdentitySignatureBundles::<T>::contains_key(miner_id)
+                    && Self::ensure_miner_signature_bundle_bound(miner_id, &miner).is_ok()
                 {
                     return Some(miner_id);
                 }
@@ -3244,7 +3353,8 @@ pub mod pallet {
                 if validator.subnet_id == subnet_id
                     && validator.status == RegistryStatus::Active
                     && validator.operator_commitment != miner_operator_commitment
-                    && ValidatorIdentitySignatureBundles::<T>::contains_key(validator_id)
+                    && Self::ensure_validator_signature_bundle_bound(validator_id, &validator)
+                        .is_ok()
                 {
                     return Some(validator_id);
                 }
