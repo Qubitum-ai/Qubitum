@@ -1110,6 +1110,7 @@ pub mod pallet {
         /// Create a permissionless Qubitum subnet by burning QBT.
         #[pallet::call_index(0)]
         #[pallet::weight(T::WeightInfo::create_subnet())]
+        #[frame_support::transactional]
         pub fn create_subnet(
             origin: OriginFor<T>,
             domain: SubnetDomain,
@@ -1137,6 +1138,7 @@ pub mod pallet {
         /// Register a miner by burning QBT and committing to a model.
         #[pallet::call_index(1)]
         #[pallet::weight(T::WeightInfo::register_miner())]
+        #[frame_support::transactional]
         pub fn register_miner(
             origin: OriginFor<T>,
             subnet_id: SubnetId,

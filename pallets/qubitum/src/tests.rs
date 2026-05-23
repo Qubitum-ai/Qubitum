@@ -835,6 +835,118 @@ fn register_validator_locks_stake() {
 }
 
 #[test]
+fn registry_id_overflows_do_not_burn_or_lock_funds() {
+    new_test_ext().execute_with(|| {
+        SubnetCount::<Test>::put(u16::MAX);
+        let burned_before = TotalBurned::<Test>::get();
+        assert_noop!(
+            Qubitum::create_subnet(
+                RuntimeOrigin::signed(1),
+                SubnetDomain::Code,
+                ProofSystem::RiscZeroStark
+            ),
+            Error::<Test>::ArithmeticOverflow
+        );
+        assert_eq!(TotalBurned::<Test>::get(), burned_before);
+        assert!(Subnets::<Test>::get(u16::MAX).is_none());
+        assert_eq!(SubnetCount::<Test>::get(), u16::MAX);
+    });
+
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::Code,
+            ProofSystem::RiscZeroStark
+        ));
+        MinerCount::<Test>::put(u64::MAX);
+        let burned_before = TotalBurned::<Test>::get();
+        assert_noop!(
+            Qubitum::register_miner(
+                RuntimeOrigin::signed(2),
+                0,
+                commitment(10),
+                ProofSystem::RiscZeroStark
+            ),
+            Error::<Test>::ArithmeticOverflow
+        );
+        assert_eq!(TotalBurned::<Test>::get(), burned_before);
+        assert!(Miners::<Test>::get(u64::MAX).is_none());
+        assert_eq!(MinerCount::<Test>::get(), u64::MAX);
+    });
+
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::Code,
+            ProofSystem::RiscZeroStark
+        ));
+        ValidatorCount::<Test>::put(u64::MAX);
+        assert_noop!(
+            Qubitum::register_validator(RuntimeOrigin::signed(3), 0, MIN_MINER_BOND),
+            Error::<Test>::ArithmeticOverflow
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            0
+        );
+        assert!(Validators::<Test>::get(u64::MAX).is_none());
+        assert_eq!(ValidatorCount::<Test>::get(), u64::MAX);
+    });
+}
+
+#[test]
+fn request_id_overflow_does_not_escrow_or_increment_pending() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        RequestCount::<Test>::put(u64::MAX);
+        let assignment = Qubitum::route_assignment(0, u64::MAX).unwrap();
+
+        assert_noop!(
+            Qubitum::request_inference(
+                RuntimeOrigin::signed(4),
+                u64::MAX,
+                InferenceRequestParams {
+                    subnet_id: 0,
+                    miner_id: assignment.miner_id,
+                    validator_id: assignment.validator_id,
+                    input_commitment: commitment(1),
+                    assignment_blinding: assignment_blinding(),
+                    timing_blinding: timing_blinding(),
+                    terms_blinding: terms_blinding(),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::ArithmeticOverflow
+        );
+
+        assert!(InferenceRequests::<Test>::get(u64::MAX).is_none());
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            0
+        );
+        assert_eq!(PendingInferenceRequestCount::<Test>::get(), 0);
+        assert_eq!(
+            Qubitum::request_status_counts(),
+            ChainRequestStatusCounts {
+                pending: 0,
+                settled: 0,
+                cancelled: 0,
+                rejected: 0,
+                expired: 0,
+            }
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(assignment.miner_id), 0);
+        assert_eq!(
+            PendingValidatorRequests::<Test>::get(assignment.validator_id),
+            0
+        );
+        assert_eq!(RequestCount::<Test>::get(), u64::MAX);
+    });
+}
+
+#[test]
 fn role_commitments_are_domain_separated_with_legacy_authorization() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
