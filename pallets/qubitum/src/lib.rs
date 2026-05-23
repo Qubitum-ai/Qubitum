@@ -4372,6 +4372,7 @@ pub mod pallet {
                 Self::ensure_miner_operator(miner, operator)?;
                 let current_bond = Self::locked_miner_bond(miner_id, operator)?;
                 let slash_amount = pro_rata::<T>(current_bond, slash_bps)?;
+                Self::ensure_burned_can_record(slash_amount)?;
                 let burned = T::Currency::burn_held(
                     &HoldReason::MinerBond.into(),
                     operator,
@@ -4416,6 +4417,7 @@ pub mod pallet {
                 Self::ensure_validator_operator(validator, operator)?;
                 let current_stake = Self::locked_validator_stake(validator_id, operator)?;
                 let slash_amount = pro_rata::<T>(current_stake, slash_bps)?;
+                Self::ensure_burned_can_record(slash_amount)?;
                 let burned = T::Currency::burn_held(
                     &HoldReason::ValidatorStake.into(),
                     operator,
@@ -4443,6 +4445,13 @@ pub mod pallet {
 
             Self::record_burned(amount)?;
             Ok(amount)
+        }
+
+        fn ensure_burned_can_record(amount: BalanceOf<T>) -> DispatchResult {
+            TotalBurned::<T>::get()
+                .checked_add(&amount)
+                .ok_or(Error::<T>::ArithmeticOverflow)?;
+            Ok(())
         }
 
         fn record_burned(amount: BalanceOf<T>) -> DispatchResult {

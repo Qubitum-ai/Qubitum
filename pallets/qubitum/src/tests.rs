@@ -1383,12 +1383,79 @@ fn accounting_overflows_fail_without_state_changes() {
             Miners::<Test>::get(0).unwrap().status,
             RegistryStatus::Active
         );
+        assert_eq!(MinerLockedBond::<Test>::get(0), Some(MIN_MINER_BOND));
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
             MIN_MINER_BOND
         );
         assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
         assert_eq!(TotalBurned::<Test>::get(), u128::MAX);
+    });
+
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        TotalBurned::<Test>::put(u128::MAX);
+
+        assert_noop!(
+            Qubitum::slash_validator(RuntimeOrigin::root(), 0, 3, 1_000),
+            Error::<Test>::ArithmeticOverflow
+        );
+
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            MIN_MINER_BOND
+        );
+        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert_eq!(TotalBurned::<Test>::get(), u128::MAX);
+    });
+
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(82);
+        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
+        TotalBurned::<Test>::put(u128::MAX);
+
+        assert_noop!(
+            submit_proof(RuntimeOrigin::signed(3), valid_submission(82)),
+            Error::<Test>::ArithmeticOverflow
+        );
+
+        assert!(ProofRecords::<Test>::get(82).is_none());
+        assert_eq!(
+            InferenceRequests::<Test>::get(82).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(MinerLockedBond::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            MIN_MINER_BOND
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            MIN_MINER_BOND
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            1_000
+        );
+        assert_eq!(TotalBurned::<Test>::get(), u128::MAX);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
     });
 }
 
