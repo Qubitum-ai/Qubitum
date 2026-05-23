@@ -7,14 +7,14 @@ use crate::{
     ChainPublicValidator, ChainRequestStatusCounts, ChainRouteAvailability, Error,
     FailClosedProofVerifier, HoldReason, InferenceRequestParams, InferenceRequestStatus,
     InferenceRequestTerms, InferenceRequestTermsWitness, InferenceRequestTimingWitness,
-    InferenceRequests, MinerCount, MinerIdentityCommitments, MinerIdentitySignatureBundles,
-    MinerIdentitySignatureChallenges, Miners, PendingInferenceRequestCount, PendingMinerRequests,
-    PendingValidatorRequests, ProofRecords, ProofVerificationPolicy, PublicRegistryStatus,
-    RejectedInferenceRequestCount, RequestCount, SettledInferenceRequestCount, SubnetCount,
-    Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
-    TotalTreasuryFees, TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
-    ValidatorIdentitySignatureBundles, ValidatorIdentitySignatureChallenges, Validators,
-    VerifyProof,
+    InferenceRequests, LegacyAccountingMigrationFailures, MinerCount, MinerIdentityCommitments,
+    MinerIdentitySignatureBundles, MinerIdentitySignatureChallenges, Miners,
+    PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests, ProofRecords,
+    ProofVerificationPolicy, PublicRegistryStatus, RejectedInferenceRequestCount, RequestCount,
+    SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned, TotalInferenceEscrowed,
+    TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees, TotalValidatorFees,
+    ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles,
+    ValidatorIdentitySignatureChallenges, Validators, VerifyProof,
     mock::{
         Balances, Qubitum, RuntimeEvent, RuntimeOrigin, System, Test, new_test_ext,
         set_verification_outcome,
@@ -2744,6 +2744,99 @@ fn runtime_upgrade_migrates_request_terms_to_commitments() {
         assert_eq!(TotalValidatorFees::<Test>::get(), 3_086);
         assert_eq!(TotalTreasuryFees::<Test>::get(), 617);
         assert_eq!(TotalMinerPayouts::<Test>::get(), 119_753);
+    });
+}
+
+#[test]
+fn runtime_upgrade_records_legacy_accounting_failures_without_saturated_totals() {
+    new_test_ext().execute_with(|| {
+        let max_payment_request = LegacyChainInferenceRequestV13 {
+            request_id: 91,
+            user_commitment: Qubitum::account_commitment(&44),
+            subnet_id: 3,
+            assignment_commitment: Qubitum::legacy_request_assignment_commitment(91, 3, 7, 9),
+            input_commitment: commitment(55),
+            payment: u128::MAX,
+            validator_fee_bps: 0,
+            treasury_fee_bps: 0,
+            timing_commitment: Qubitum::legacy_request_timing_commitment(91, 12),
+            status: InferenceRequestStatus::Settled,
+        };
+        let one_unit_request = LegacyChainInferenceRequestV13 {
+            request_id: 92,
+            user_commitment: Qubitum::account_commitment(&45),
+            subnet_id: 3,
+            assignment_commitment: Qubitum::legacy_request_assignment_commitment(92, 3, 7, 9),
+            input_commitment: commitment(56),
+            payment: 1,
+            validator_fee_bps: 0,
+            treasury_fee_bps: 0,
+            timing_commitment: Qubitum::legacy_request_timing_commitment(92, 13),
+            status: InferenceRequestStatus::Settled,
+        };
+        sp_io::storage::set(
+            &InferenceRequests::<Test>::hashed_key_for(91),
+            &max_payment_request.encode(),
+        );
+        sp_io::storage::set(
+            &InferenceRequests::<Test>::hashed_key_for(92),
+            &one_unit_request.encode(),
+        );
+        StorageVersion::new(13).put::<crate::Pallet<Test>>();
+
+        <Qubitum as Hooks<u64>>::on_runtime_upgrade();
+
+        assert_eq!(LegacyAccountingMigrationFailures::<Test>::get(), 1);
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 0);
+        assert_eq!(TotalMinerPayouts::<Test>::get(), 0);
+        assert_eq!(TotalValidatorFees::<Test>::get(), 0);
+        assert_eq!(TotalTreasuryFees::<Test>::get(), 0);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
+        assert_eq!(
+            InferenceRequests::<Test>::get(91).unwrap().status,
+            InferenceRequestStatus::Settled
+        );
+        assert_eq!(
+            InferenceRequests::<Test>::get(92).unwrap().status,
+            InferenceRequestStatus::Settled
+        );
+        assert_eq!(
+            StorageVersion::get::<crate::Pallet<Test>>(),
+            StorageVersion::new(17)
+        );
+    });
+
+    new_test_ext().execute_with(|| {
+        let invalid_split_request = LegacyChainInferenceRequestV13 {
+            request_id: 93,
+            user_commitment: Qubitum::account_commitment(&46),
+            subnet_id: 3,
+            assignment_commitment: Qubitum::legacy_request_assignment_commitment(93, 3, 7, 9),
+            input_commitment: commitment(57),
+            payment: 100,
+            validator_fee_bps: 10_001,
+            treasury_fee_bps: 0,
+            timing_commitment: Qubitum::legacy_request_timing_commitment(93, 14),
+            status: InferenceRequestStatus::Settled,
+        };
+        sp_io::storage::set(
+            &InferenceRequests::<Test>::hashed_key_for(93),
+            &invalid_split_request.encode(),
+        );
+        StorageVersion::new(13).put::<crate::Pallet<Test>>();
+
+        <Qubitum as Hooks<u64>>::on_runtime_upgrade();
+
+        assert_eq!(LegacyAccountingMigrationFailures::<Test>::get(), 1);
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 0);
+        assert_eq!(TotalMinerPayouts::<Test>::get(), 0);
+        assert_eq!(TotalValidatorFees::<Test>::get(), 0);
+        assert_eq!(TotalTreasuryFees::<Test>::get(), 0);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
+        assert_eq!(
+            InferenceRequests::<Test>::get(93).unwrap().status,
+            InferenceRequestStatus::Settled
+        );
     });
 }
 

@@ -28,7 +28,7 @@ use qubitum_protocol::{
 };
 use scale_info::TypeInfo;
 use sp_io::hashing::blake2_256;
-use sp_runtime::{DispatchError, Saturating, traits::SaturatedConversion};
+use sp_runtime::{DispatchError, traits::SaturatedConversion};
 
 type BalanceOf<T> =
     <<T as Config>::Currency as fungible::Inspect<<T as frame_system::Config>::AccountId>>::Balance;
@@ -933,6 +933,9 @@ pub mod pallet {
 
     #[pallet::storage]
     pub type TotalInferenceRefunded<T: Config> = StorageValue<_, BalanceOf<T>, ValueQuery>;
+
+    #[pallet::storage]
+    pub type LegacyAccountingMigrationFailures<T: Config> = StorageValue<_, u32, ValueQuery>;
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
@@ -3095,39 +3098,54 @@ pub mod pallet {
             validator_fee_bps: u16,
             treasury_fee_bps: u16,
             status: InferenceRequestStatus,
-        ) {
-            accounting.total_inference_escrowed =
-                accounting.total_inference_escrowed.saturating_add(payment);
+        ) -> DispatchResult {
+            let mut next = accounting.clone();
+            Self::checked_accounting_add(&mut next.total_inference_escrowed, payment)?;
             match status {
                 InferenceRequestStatus::Settled => {
-                    if let Ok((miner_payment, validator_fee, treasury_fee)) =
-                        Self::payment_split(payment, validator_fee_bps, treasury_fee_bps)
-                    {
-                        accounting.total_miner_payouts =
-                            accounting.total_miner_payouts.saturating_add(miner_payment);
-                        accounting.total_validator_fees = accounting
-                            .total_validator_fees
-                            .saturating_add(validator_fee);
-                        accounting.total_treasury_fees =
-                            accounting.total_treasury_fees.saturating_add(treasury_fee);
-                    }
+                    let (miner_payment, validator_fee, treasury_fee) =
+                        Self::payment_split(payment, validator_fee_bps, treasury_fee_bps)?;
+                    Self::checked_accounting_add(&mut next.total_miner_payouts, miner_payment)?;
+                    Self::checked_accounting_add(&mut next.total_validator_fees, validator_fee)?;
+                    Self::checked_accounting_add(&mut next.total_treasury_fees, treasury_fee)?;
                 }
                 InferenceRequestStatus::Cancelled
                 | InferenceRequestStatus::Rejected
                 | InferenceRequestStatus::Expired => {
-                    accounting.total_inference_refunded =
-                        accounting.total_inference_refunded.saturating_add(payment);
+                    Self::checked_accounting_add(&mut next.total_inference_refunded, payment)?;
                 }
                 InferenceRequestStatus::Pending => {}
             }
+            *accounting = next;
+            Ok(())
         }
 
-        fn put_inference_accounting(accounting: ChainAccounting<BalanceOf<T>>) {
+        fn checked_accounting_add(
+            total: &mut BalanceOf<T>,
+            amount: BalanceOf<T>,
+        ) -> DispatchResult {
+            *total = total
+                .checked_add(&amount)
+                .ok_or(Error::<T>::ArithmeticOverflow)?;
+            Ok(())
+        }
+
+        fn note_legacy_accounting_failure(failures: &mut u32) {
+            *failures = failures.saturating_add(1);
+        }
+
+        fn put_inference_accounting(accounting: ChainAccounting<BalanceOf<T>>, failures: u32) {
+            let accounting = if failures == 0 {
+                accounting
+            } else {
+                Self::zero_accounting()
+            };
             TotalInferenceEscrowed::<T>::put(accounting.total_inference_escrowed);
             TotalMinerPayouts::<T>::put(accounting.total_miner_payouts);
             TotalValidatorFees::<T>::put(accounting.total_validator_fees);
             TotalTreasuryFees::<T>::put(accounting.total_treasury_fees);
             TotalInferenceRefunded::<T>::put(accounting.total_inference_refunded);
+            LegacyAccountingMigrationFailures::<T>::put(failures);
         }
 
         fn rebuild_request_status_counts() -> Weight {
@@ -3460,19 +3478,24 @@ pub mod pallet {
 
             let clear_weight = Self::clear_pending_assignment_counters();
             let mut accounting = Self::zero_accounting();
+            let mut accounting_failures = 0_u32;
             let mut migrated = 0_u64;
             InferenceRequests::<T>::translate::<
                 ChainInferenceRequestV8<T::AccountId, BalanceOf<T>>,
                 _,
             >(|_, old| {
                 migrated = migrated.saturating_add(1);
-                Self::record_legacy_request_accounting(
+                if Self::record_legacy_request_accounting(
                     &mut accounting,
                     old.payment,
                     old.validator_fee_bps,
                     old.treasury_fee_bps,
                     old.status,
-                );
+                )
+                .is_err()
+                {
+                    Self::note_legacy_accounting_failure(&mut accounting_failures);
+                }
                 if old.status == InferenceRequestStatus::Pending {
                     let _ = Self::increment_pending_assignment(old.miner_id, old.validator_id);
                 }
@@ -3500,10 +3523,10 @@ pub mod pallet {
                     status: old.status,
                 })
             });
-            Self::put_inference_accounting(accounting);
+            Self::put_inference_accounting(accounting, accounting_failures);
 
             clear_weight.saturating_add(
-                T::DbWeight::get().reads_writes(migrated, migrated.saturating_add(5)),
+                T::DbWeight::get().reads_writes(migrated, migrated.saturating_add(6)),
             )
         }
 
@@ -3514,17 +3537,22 @@ pub mod pallet {
 
             let clear_weight = Self::clear_pending_assignment_counters();
             let mut accounting = Self::zero_accounting();
+            let mut accounting_failures = 0_u32;
             let mut migrated = 0_u64;
             InferenceRequests::<T>::translate::<ChainInferenceRequestV10<BalanceOf<T>>, _>(
                 |_, old| {
                     migrated = migrated.saturating_add(1);
-                    Self::record_legacy_request_accounting(
+                    if Self::record_legacy_request_accounting(
                         &mut accounting,
                         old.payment,
                         old.validator_fee_bps,
                         old.treasury_fee_bps,
                         old.status,
-                    );
+                    )
+                    .is_err()
+                    {
+                        Self::note_legacy_accounting_failure(&mut accounting_failures);
+                    }
                     if old.status == InferenceRequestStatus::Pending {
                         let _ = Self::increment_pending_assignment(old.miner_id, old.validator_id);
                     }
@@ -3553,10 +3581,10 @@ pub mod pallet {
                     })
                 },
             );
-            Self::put_inference_accounting(accounting);
+            Self::put_inference_accounting(accounting, accounting_failures);
 
             clear_weight.saturating_add(
-                T::DbWeight::get().reads_writes(migrated, migrated.saturating_add(5)),
+                T::DbWeight::get().reads_writes(migrated, migrated.saturating_add(6)),
             )
         }
 
@@ -3566,17 +3594,22 @@ pub mod pallet {
             }
 
             let mut accounting = Self::zero_accounting();
+            let mut accounting_failures = 0_u32;
             let mut migrated = 0_u64;
             InferenceRequests::<T>::translate::<ChainInferenceRequestV12<BalanceOf<T>>, _>(
                 |_, old| {
                     migrated = migrated.saturating_add(1);
-                    Self::record_legacy_request_accounting(
+                    if Self::record_legacy_request_accounting(
                         &mut accounting,
                         old.payment,
                         old.validator_fee_bps,
                         old.treasury_fee_bps,
                         old.status,
-                    );
+                    )
+                    .is_err()
+                    {
+                        Self::note_legacy_accounting_failure(&mut accounting_failures);
+                    }
                     Some(ChainInferenceRequest {
                         request_id: old.request_id,
                         user_commitment: old.user_commitment,
@@ -3597,9 +3630,9 @@ pub mod pallet {
                     })
                 },
             );
-            Self::put_inference_accounting(accounting);
+            Self::put_inference_accounting(accounting, accounting_failures);
 
-            T::DbWeight::get().reads_writes(migrated, migrated.saturating_add(5))
+            T::DbWeight::get().reads_writes(migrated, migrated.saturating_add(6))
         }
 
         fn migrate_request_terms_commitments(on_chain: StorageVersion) -> Weight {
@@ -3608,17 +3641,22 @@ pub mod pallet {
             }
 
             let mut accounting = Self::zero_accounting();
+            let mut accounting_failures = 0_u32;
             let mut migrated = 0_u64;
             InferenceRequests::<T>::translate::<ChainInferenceRequestV13<BalanceOf<T>>, _>(
                 |_, old| {
                     migrated = migrated.saturating_add(1);
-                    Self::record_legacy_request_accounting(
+                    if Self::record_legacy_request_accounting(
                         &mut accounting,
                         old.payment,
                         old.validator_fee_bps,
                         old.treasury_fee_bps,
                         old.status,
-                    );
+                    )
+                    .is_err()
+                    {
+                        Self::note_legacy_accounting_failure(&mut accounting_failures);
+                    }
                     Some(ChainInferenceRequest {
                         request_id: old.request_id,
                         user_commitment: old.user_commitment,
@@ -3636,9 +3674,9 @@ pub mod pallet {
                     })
                 },
             );
-            Self::put_inference_accounting(accounting);
+            Self::put_inference_accounting(accounting, accounting_failures);
 
-            T::DbWeight::get().reads_writes(migrated, migrated.saturating_add(5))
+            T::DbWeight::get().reads_writes(migrated, migrated.saturating_add(6))
         }
 
         #[cfg(feature = "try-runtime")]
