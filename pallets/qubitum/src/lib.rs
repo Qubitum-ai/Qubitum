@@ -2004,19 +2004,13 @@ pub mod pallet {
             Self::route_assignment(subnet_id, RequestCount::<T>::get())
         }
 
-        pub fn route_availability(
-            subnet_id: SubnetId,
-            request_id: RequestId,
-        ) -> ChainRouteAvailability {
+        pub fn next_route_availability(subnet_id: SubnetId) -> ChainRouteAvailability {
+            let request_id = RequestCount::<T>::get();
             ChainRouteAvailability {
                 request_id,
                 subnet_id,
                 available: Self::route_assignment(subnet_id, request_id).is_some(),
             }
-        }
-
-        pub fn next_route_availability(subnet_id: SubnetId) -> ChainRouteAvailability {
-            Self::route_availability(subnet_id, RequestCount::<T>::get())
         }
 
         pub fn public_subnet(subnet_id: SubnetId) -> Option<ChainPublicSubnet> {

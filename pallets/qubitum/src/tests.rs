@@ -3281,19 +3281,11 @@ fn next_route_assignment_uses_chain_next_request_id() {
 }
 
 #[test]
-fn public_route_availability_does_not_expose_participant_assignment() {
+fn public_next_route_availability_does_not_expose_participant_assignment_or_future_oracle() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         RequestCount::<Test>::put(42);
 
-        assert_eq!(
-            Qubitum::route_availability(0, 42),
-            ChainRouteAvailability {
-                request_id: 42,
-                subnet_id: 0,
-                available: true,
-            }
-        );
         assert_eq!(
             Qubitum::next_route_availability(0),
             ChainRouteAvailability {
@@ -3305,7 +3297,7 @@ fn public_route_availability_does_not_expose_participant_assignment() {
 
         assert_ok!(Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0));
         assert_eq!(
-            Qubitum::route_availability(0, 42),
+            Qubitum::next_route_availability(0),
             ChainRouteAvailability {
                 request_id: 42,
                 subnet_id: 0,

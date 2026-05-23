@@ -48,14 +48,6 @@ pub trait QubitumRpcApi<BlockHash> {
     #[method(name = "qubitum_getProofRecord")]
     fn get_proof_record(&self, request_id: RequestId, at: Option<BlockHash>) -> RpcResult<Vec<u8>>;
 
-    #[method(name = "qubitum_routeAvailability")]
-    fn route_availability(
-        &self,
-        subnet_id: SubnetId,
-        request_id: RequestId,
-        at: Option<BlockHash>,
-    ) -> RpcResult<Vec<u8>>;
-
     #[method(name = "qubitum_nextRouteAvailability")]
     fn next_route_availability(
         &self,
@@ -227,23 +219,6 @@ where
             .map(|result| result.encode())
             .map_err(|e| {
                 Error::RuntimeError(format!("Unable to get Qubitum inference request: {e:?}"))
-                    .into()
-            })
-    }
-
-    fn route_availability(
-        &self,
-        subnet_id: SubnetId,
-        request_id: RequestId,
-        at: Option<<Block as BlockT>::Hash>,
-    ) -> RpcResult<Vec<u8>> {
-        let api = self.client.runtime_api();
-        let at = self.at_or_best(at);
-
-        api.qubitum_route_availability(at, subnet_id, request_id)
-            .map(|result| result.encode())
-            .map_err(|e| {
-                Error::RuntimeError(format!("Unable to get Qubitum route availability: {e:?}"))
                     .into()
             })
     }
