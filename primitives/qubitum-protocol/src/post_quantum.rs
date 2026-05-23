@@ -34,6 +34,10 @@ impl SignatureAlgorithm {
             Self::Dilithium3 | Self::Dilithium5 | Self::Falcon512 | Self::SphincsPlus
         )
     }
+
+    pub const fn is_dilithium(self) -> bool {
+        matches!(self, Self::Dilithium3 | Self::Dilithium5)
+    }
 }
 
 /// Commitment to a public key and signature payload.
@@ -103,7 +107,7 @@ impl SignaturePolicy {
             }
             SignatureMode::HybridDilithium => {
                 require_classical(bundle.classical)?;
-                require_post_quantum(bundle.post_quantum)?;
+                require_dilithium(bundle.post_quantum)?;
             }
             SignatureMode::FullPostQuantum => {
                 reject_classical(bundle.classical)?;
@@ -123,6 +127,16 @@ fn require_classical(signature: Option<SignatureCommitment>) -> Result<(), Proto
 fn require_post_quantum(signature: Option<SignatureCommitment>) -> Result<(), ProtocolError> {
     let signature = signature.ok_or(ProtocolError::MissingPostQuantumSignature)?;
     validate_post_quantum(signature)
+}
+
+fn require_dilithium(signature: Option<SignatureCommitment>) -> Result<(), ProtocolError> {
+    let signature = signature.ok_or(ProtocolError::MissingPostQuantumSignature)?;
+    ensure_nonzero_commitments(signature)?;
+    if signature.algorithm.is_dilithium() {
+        Ok(())
+    } else {
+        Err(ProtocolError::UnsupportedSignatureAlgorithm)
+    }
 }
 
 fn reject_classical(signature: Option<SignatureCommitment>) -> Result<(), ProtocolError> {
@@ -237,6 +251,23 @@ mod tests {
             SignaturePolicy::new(SignatureMode::HybridDilithium).validate(dual),
             Ok(dual)
         );
+    }
+
+    #[test]
+    fn hybrid_phase_rejects_non_dilithium_post_quantum_signatures() {
+        for algorithm in [
+            SignatureAlgorithm::Falcon512,
+            SignatureAlgorithm::SphincsPlus,
+        ] {
+            let bundle = SignatureBundle {
+                classical: Some(sig(SignatureAlgorithm::Ecdsa, 1)),
+                post_quantum: Some(sig(algorithm, 3)),
+            };
+            assert_eq!(
+                SignaturePolicy::new(SignatureMode::HybridDilithium).validate(bundle),
+                Err(ProtocolError::UnsupportedSignatureAlgorithm)
+            );
+        }
     }
 
     #[test]
@@ -390,7 +421,7 @@ mod tests {
                     classical: Some(sig(classical, 50)),
                     post_quantum: Some(sig(post_quantum, 60)),
                 };
-                let expected = if classical.is_classical() && post_quantum.is_post_quantum() {
+                let expected = if classical.is_classical() && post_quantum.is_dilithium() {
                     Ok(bundle)
                 } else {
                     Err(ProtocolError::UnsupportedSignatureAlgorithm)
