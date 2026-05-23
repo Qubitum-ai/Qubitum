@@ -494,7 +494,8 @@ pub mod pallet {
         pub participant_id: u64,
         pub has_shielded_identity_commitment: bool,
         pub has_endpoint_commitment: bool,
-        pub signature_attested: bool,
+        pub signature_commitment_recorded: bool,
+        pub signature_verified: bool,
         pub challenge_available: bool,
     }
 
@@ -2176,7 +2177,10 @@ pub mod pallet {
                         .as_ref()
                         .and_then(|identity| identity.endpoint_commitment)
                         .is_some(),
-                    signature_attested: MinerIdentitySignatureBundles::<T>::contains_key(miner_id),
+                    signature_commitment_recorded: MinerIdentitySignatureBundles::<T>::contains_key(
+                        miner_id,
+                    ),
+                    signature_verified: false,
                     challenge_available: MinerIdentitySignatureChallenges::<T>::contains_key(
                         miner_id,
                     ),
@@ -2197,9 +2201,9 @@ pub mod pallet {
                         .as_ref()
                         .and_then(|identity| identity.endpoint_commitment)
                         .is_some(),
-                    signature_attested: ValidatorIdentitySignatureBundles::<T>::contains_key(
-                        validator_id,
-                    ),
+                    signature_commitment_recorded:
+                        ValidatorIdentitySignatureBundles::<T>::contains_key(validator_id),
+                    signature_verified: false,
                     challenge_available: ValidatorIdentitySignatureChallenges::<T>::contains_key(
                         validator_id,
                     ),

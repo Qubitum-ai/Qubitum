@@ -1983,7 +1983,8 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
                 participant_id: 0,
                 has_shielded_identity_commitment: true,
                 has_endpoint_commitment: true,
-                signature_attested: true,
+                signature_commitment_recorded: true,
+                signature_verified: false,
                 challenge_available: true,
             }
         );
@@ -2031,7 +2032,8 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
                 participant_id: 0,
                 has_shielded_identity_commitment: true,
                 has_endpoint_commitment: true,
-                signature_attested: true,
+                signature_commitment_recorded: true,
+                signature_verified: false,
                 challenge_available: true,
             }
         );
@@ -2091,7 +2093,8 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
                 participant_id: 0,
                 has_shielded_identity_commitment: false,
                 has_endpoint_commitment: false,
-                signature_attested: false,
+                signature_commitment_recorded: false,
+                signature_verified: false,
                 challenge_available: false,
             })
         );
@@ -2124,7 +2127,8 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
                 participant_id: 0,
                 has_shielded_identity_commitment: false,
                 has_endpoint_commitment: false,
-                signature_attested: false,
+                signature_commitment_recorded: false,
+                signature_verified: false,
                 challenge_available: false,
             })
         );
