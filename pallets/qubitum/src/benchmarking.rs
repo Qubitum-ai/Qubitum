@@ -4,9 +4,9 @@
 #![allow(clippy::arithmetic_side_effects, clippy::unwrap_used)]
 
 use crate::{
-    BalanceOf, Event, InferenceRequestParams, InferenceRequestStatus, InferenceRequests,
-    MinerCount, Miners, ProofRecords, SubnetCount, Subnets, TotalBurned, ValidatorCount,
-    Validators, pallet::*,
+    BalanceOf, Event, InferenceRequestParams, InferenceRequestStatus, InferenceRequestTerms,
+    InferenceRequests, MinerCount, Miners, ProofRecords, SubnetCount, Subnets, TotalBurned,
+    ValidatorCount, Validators, pallet::*,
 };
 use frame_benchmarking::{account, v2::*};
 use frame_support::traits::{Get, fungible::Mutate};
@@ -127,6 +127,14 @@ fn request_bench_inference<T: Config>(request_id: u64) -> T::AccountId {
     )
     .unwrap();
     user
+}
+
+fn bench_request_terms<T: Config>() -> InferenceRequestTerms<BalanceOf<T>> {
+    InferenceRequestTerms {
+        payment: T::MinMinerBond::get(),
+        validator_fee_bps: 250,
+        treasury_fee_bps: 50,
+    }
 }
 
 #[benchmarks]
@@ -322,7 +330,13 @@ mod benchmarks {
         let submitted_at = frame_system::Pallet::<T>::block_number().saturated_into();
 
         #[extrinsic_call]
-        _(RawOrigin::Signed(validator), submission, user, miner);
+        _(
+            RawOrigin::Signed(validator),
+            submission,
+            user,
+            miner,
+            bench_request_terms::<T>(),
+        );
 
         let record = ProofRecords::<T>::get(42).unwrap();
         assert_eq!(record.request_id, 42);
@@ -419,7 +433,14 @@ mod benchmarks {
         );
 
         #[extrinsic_call]
-        _(RawOrigin::Signed(user.clone()), 42, 0, 0, 0);
+        _(
+            RawOrigin::Signed(user.clone()),
+            42,
+            0,
+            0,
+            0,
+            bench_request_terms::<T>(),
+        );
 
         let request = InferenceRequests::<T>::get(42).unwrap();
         assert_eq!(
@@ -441,7 +462,15 @@ mod benchmarks {
         );
 
         #[extrinsic_call]
-        _(RawOrigin::Signed(keeper), 42, user.clone(), 0, 0, 0);
+        _(
+            RawOrigin::Signed(keeper),
+            42,
+            user.clone(),
+            0,
+            0,
+            0,
+            bench_request_terms::<T>(),
+        );
 
         let request = InferenceRequests::<T>::get(42).unwrap();
         assert_eq!(

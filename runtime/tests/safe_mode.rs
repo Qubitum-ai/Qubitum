@@ -46,12 +46,21 @@ fn valid_submission() -> InferenceProofSubmission {
     }
 }
 
+fn request_terms<Balance: From<u64>>() -> pallet_qubitum::InferenceRequestTerms<Balance> {
+    pallet_qubitum::InferenceRequestTerms {
+        payment: 1_000u64.into(),
+        validator_fee_bps: 250,
+        treasury_fee_bps: 50,
+    }
+}
+
 #[test]
 fn qubitum_submit_proof_is_allowed_in_safe_mode() {
     let call = RuntimeCall::Qubitum(pallet_qubitum::Call::submit_proof {
         submission: valid_submission(),
         request_user: account(4),
         miner_operator: account(2),
+        terms: request_terms(),
     });
 
     assert!(SafeModeWhitelistedCalls::contains(&call));
@@ -63,6 +72,7 @@ fn qubitum_challenge_proof_is_allowed_in_safe_mode() {
         submission: valid_submission(),
         request_user: account(4),
         miner_operator: account(2),
+        terms: request_terms(),
     });
 
     assert!(SafeModeWhitelistedCalls::contains(&call));
@@ -116,6 +126,7 @@ fn qubitum_cancel_inference_is_blocked_in_safe_mode() {
         miner_id: 0,
         validator_id: 0,
         created_at: 0,
+        terms: request_terms(),
     });
 
     assert!(!SafeModeWhitelistedCalls::contains(&call));
@@ -129,6 +140,7 @@ fn qubitum_expire_inference_is_blocked_in_safe_mode() {
         miner_id: 0,
         validator_id: 0,
         created_at: 0,
+        terms: request_terms(),
     });
 
     assert!(!SafeModeWhitelistedCalls::contains(&call));
