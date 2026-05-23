@@ -1063,7 +1063,7 @@ pub mod pallet {
             let subnet_id = Self::next_subnet_id()?;
             let subnet = ChainSubnet {
                 id: subnet_id,
-                owner_commitment: Self::account_commitment(&owner),
+                owner_commitment: Self::subnet_owner_commitment(&owner),
                 domain,
                 proof_system,
                 policy_commitment: Self::subnet_policy_commitment(subnet_id, domain, proof_system),
@@ -1097,7 +1097,7 @@ pub mod pallet {
             let miner_id = Self::next_miner_id()?;
             let miner = ChainMiner {
                 id: miner_id,
-                operator_commitment: Self::account_commitment(&operator),
+                operator_commitment: Self::operator_commitment(&operator),
                 subnet_id,
                 model_commitment,
                 proof_system,
@@ -1173,7 +1173,7 @@ pub mod pallet {
             let validator_id = Self::next_validator_id()?;
             let validator = ChainValidator {
                 id: validator_id,
-                operator_commitment: Self::account_commitment(&operator),
+                operator_commitment: Self::operator_commitment(&operator),
                 subnet_id,
                 stake_commitment: Self::balance_commitment(stake),
                 status: RegistryStatus::Active,
@@ -1916,7 +1916,7 @@ pub mod pallet {
                 request_id,
                 ChainInferenceRequest {
                     request_id,
-                    user_commitment: Self::account_commitment(&user),
+                    user_commitment: Self::request_user_commitment(&user),
                     subnet_id,
                     assignment_commitment: Self::request_assignment_commitment(
                         request_id,
@@ -2120,6 +2120,22 @@ pub mod pallet {
             who.using_encoded(blake2_256)
         }
 
+        pub(crate) fn subnet_owner_commitment(who: &T::AccountId) -> Commitment {
+            Self::role_account_commitment(b"qubitum.subnet.owner.v1", who)
+        }
+
+        pub(crate) fn operator_commitment(who: &T::AccountId) -> Commitment {
+            Self::role_account_commitment(b"qubitum.operator.v1", who)
+        }
+
+        pub(crate) fn request_user_commitment(who: &T::AccountId) -> Commitment {
+            Self::role_account_commitment(b"qubitum.request.user.v1", who)
+        }
+
+        fn role_account_commitment(domain: &'static [u8], who: &T::AccountId) -> Commitment {
+            (domain, who).using_encoded(blake2_256)
+        }
+
         pub(crate) fn balance_commitment(amount: BalanceOf<T>) -> Commitment {
             amount.using_encoded(blake2_256)
         }
@@ -2259,7 +2275,7 @@ pub mod pallet {
 
         fn ensure_miner_operator(miner: &ChainMiner, operator: &T::AccountId) -> DispatchResult {
             ensure!(
-                miner.operator_commitment == Self::account_commitment(operator),
+                Self::operator_commitment_matches(miner.operator_commitment, operator),
                 Error::<T>::NotOperator
             );
             Ok(())
@@ -2270,7 +2286,7 @@ pub mod pallet {
             operator: &T::AccountId,
         ) -> DispatchResult {
             ensure!(
-                validator.operator_commitment == Self::account_commitment(operator),
+                Self::operator_commitment_matches(validator.operator_commitment, operator),
                 Error::<T>::NotOperator
             );
             Ok(())
@@ -2281,10 +2297,18 @@ pub mod pallet {
             operator: &T::AccountId,
         ) -> DispatchResult {
             ensure!(
-                validator.operator_commitment == Self::account_commitment(operator),
+                Self::operator_commitment_matches(validator.operator_commitment, operator),
                 Error::<T>::NotValidatorOperator
             );
             Ok(())
+        }
+
+        pub(crate) fn operator_commitment_matches(
+            stored: Commitment,
+            operator: &T::AccountId,
+        ) -> bool {
+            stored == Self::operator_commitment(operator)
+                || stored == Self::account_commitment(operator)
         }
 
         fn ensure_request_user(
@@ -2292,10 +2316,18 @@ pub mod pallet {
             user: &T::AccountId,
         ) -> DispatchResult {
             ensure!(
-                request.user_commitment == Self::account_commitment(user),
+                Self::request_user_commitment_matches(request.user_commitment, user),
                 Error::<T>::NotRequestOwner
             );
             Ok(())
+        }
+
+        pub(crate) fn request_user_commitment_matches(
+            stored: Commitment,
+            user: &T::AccountId,
+        ) -> bool {
+            stored == Self::request_user_commitment(user)
+                || stored == Self::account_commitment(user)
         }
 
         fn ensure_request_assignment_witness(
@@ -2779,7 +2811,7 @@ pub mod pallet {
                 migrated_miners = migrated_miners.saturating_add(1);
                 Some(ChainMiner {
                     id: old.id,
-                    operator_commitment: Self::account_commitment(&old.operator),
+                    operator_commitment: Self::operator_commitment(&old.operator),
                     subnet_id: old.subnet_id,
                     model_commitment: old.model_commitment,
                     proof_system: old.proof_system,
@@ -2794,7 +2826,7 @@ pub mod pallet {
                     migrated_validators = migrated_validators.saturating_add(1);
                     Some(ChainValidator {
                         id: old.id,
-                        operator_commitment: Self::account_commitment(&old.operator),
+                        operator_commitment: Self::operator_commitment(&old.operator),
                         subnet_id: old.subnet_id,
                         stake_commitment: Self::balance_commitment(old.stake),
                         status: old.status,
@@ -2816,7 +2848,7 @@ pub mod pallet {
                 migrated = migrated.saturating_add(1);
                 Some(ChainSubnet {
                     id: old.id,
-                    owner_commitment: Self::account_commitment(&old.owner),
+                    owner_commitment: Self::subnet_owner_commitment(&old.owner),
                     domain: old.domain,
                     proof_system: old.proof_system,
                     policy_commitment: (
@@ -2899,7 +2931,7 @@ pub mod pallet {
                 }
                 Some(ChainInferenceRequest {
                     request_id: old.request_id,
-                    user_commitment: Self::account_commitment(&old.user),
+                    user_commitment: Self::request_user_commitment(&old.user),
                     subnet_id: old.subnet_id,
                     assignment_commitment: Self::request_assignment_commitment(
                         old.request_id,

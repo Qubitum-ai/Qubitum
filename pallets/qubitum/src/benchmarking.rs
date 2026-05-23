@@ -179,7 +179,7 @@ mod benchmarks {
         assert_eq!(registered_miner.id, 0);
         assert_eq!(
             registered_miner.operator_commitment,
-            Pallet::<T>::account_commitment(&miner)
+            Pallet::<T>::operator_commitment(&miner)
         );
         assert_eq!(registered_miner.subnet_id, 0);
         assert_eq!(registered_miner.model_commitment, commitment(10));
@@ -267,7 +267,7 @@ mod benchmarks {
         assert_eq!(registered_validator.id, 0);
         assert_eq!(
             registered_validator.operator_commitment,
-            Pallet::<T>::account_commitment(&validator)
+            Pallet::<T>::operator_commitment(&validator)
         );
         assert_eq!(registered_validator.subnet_id, 0);
         assert_eq!(
@@ -409,7 +409,7 @@ mod benchmarks {
         let request = InferenceRequests::<T>::get(42).unwrap();
         assert_eq!(
             request.user_commitment,
-            Pallet::<T>::account_commitment(&user)
+            Pallet::<T>::request_user_commitment(&user)
         );
         assert_eq!(request.status, InferenceRequestStatus::Pending);
         assert_last_event::<T>(
@@ -443,7 +443,7 @@ mod benchmarks {
         let request = InferenceRequests::<T>::get(42).unwrap();
         assert_eq!(
             request.user_commitment,
-            Pallet::<T>::account_commitment(&user)
+            Pallet::<T>::request_user_commitment(&user)
         );
         assert_eq!(request.status, InferenceRequestStatus::Cancelled);
         assert_last_event::<T>(Event::<T>::InferenceCancelled { request_id: 42 }.into());
@@ -473,7 +473,7 @@ mod benchmarks {
         let request = InferenceRequests::<T>::get(42).unwrap();
         assert_eq!(
             request.user_commitment,
-            Pallet::<T>::account_commitment(&user)
+            Pallet::<T>::request_user_commitment(&user)
         );
         assert_eq!(request.status, InferenceRequestStatus::Expired);
         assert_last_event::<T>(Event::<T>::InferenceExpired { request_id: 42 }.into());

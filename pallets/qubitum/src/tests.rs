@@ -340,7 +340,11 @@ fn create_subnet_burns_qbt_and_commits_owner_and_policy() {
         ));
 
         let subnet = Subnets::<Test>::get(0).unwrap();
-        assert_eq!(subnet.owner_commitment, Qubitum::account_commitment(&1));
+        assert_eq!(
+            subnet.owner_commitment,
+            Qubitum::subnet_owner_commitment(&1)
+        );
+        assert_ne!(subnet.owner_commitment, Qubitum::account_commitment(&1));
         assert_eq!(subnet.domain, SubnetDomain::Code);
         assert_eq!(subnet.proof_system, ProofSystem::RiscZeroStark);
         assert_eq!(
@@ -670,6 +674,10 @@ fn register_validator_locks_stake() {
         let validator = Validators::<Test>::get(0).unwrap();
         assert_eq!(
             validator.operator_commitment,
+            Qubitum::operator_commitment(&3)
+        );
+        assert_ne!(
+            validator.operator_commitment,
             Qubitum::account_commitment(&3)
         );
         assert_eq!(validator.status, RegistryStatus::Active);
@@ -678,6 +686,74 @@ fn register_validator_locks_stake() {
             Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
             MIN_MINER_BOND
         );
+    });
+}
+
+#[test]
+fn role_commitments_are_domain_separated_with_legacy_authorization() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(12);
+
+        let subnet = Subnets::<Test>::get(0).unwrap();
+        let miner = Miners::<Test>::get(0).unwrap();
+        let validator = Validators::<Test>::get(0).unwrap();
+        let request = InferenceRequests::<Test>::get(12).unwrap();
+
+        assert_eq!(
+            subnet.owner_commitment,
+            Qubitum::subnet_owner_commitment(&1)
+        );
+        assert_ne!(subnet.owner_commitment, Qubitum::account_commitment(&1));
+        assert_eq!(miner.operator_commitment, Qubitum::operator_commitment(&2));
+        assert_ne!(miner.operator_commitment, Qubitum::account_commitment(&2));
+        assert_eq!(
+            validator.operator_commitment,
+            Qubitum::operator_commitment(&3)
+        );
+        assert_ne!(
+            validator.operator_commitment,
+            Qubitum::account_commitment(&3)
+        );
+        assert_eq!(
+            request.user_commitment,
+            Qubitum::request_user_commitment(&4)
+        );
+        assert_ne!(request.user_commitment, Qubitum::account_commitment(&4));
+
+        Miners::<Test>::mutate(0, |maybe_miner| {
+            maybe_miner.as_mut().unwrap().operator_commitment = Qubitum::account_commitment(&2);
+        });
+        Validators::<Test>::mutate(0, |maybe_validator| {
+            maybe_validator.as_mut().unwrap().operator_commitment = Qubitum::account_commitment(&3);
+        });
+        InferenceRequests::<Test>::mutate(12, |maybe_request| {
+            maybe_request.as_mut().unwrap().user_commitment = Qubitum::account_commitment(&4);
+        });
+
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(2),
+            0,
+            Some(commitment(20)),
+            Some(commitment(21)),
+            post_quantum_signature_bundle(),
+        ));
+        assert_ok!(Qubitum::set_validator_identity_commitments(
+            RuntimeOrigin::signed(3),
+            0,
+            Some(commitment(22)),
+            Some(commitment(23)),
+            post_quantum_signature_bundle(),
+        ));
+        System::set_block_number(10);
+        assert_ok!(Qubitum::cancel_inference(
+            RuntimeOrigin::signed(4),
+            12,
+            0,
+            0,
+            0,
+            request_terms()
+        ));
     });
 }
 
@@ -1434,7 +1510,10 @@ fn runtime_upgrade_migrates_subnet_owner_and_policy_to_commitments() {
 
         let subnet = Subnets::<Test>::get(7).unwrap();
         assert_eq!(subnet.id, 7);
-        assert_eq!(subnet.owner_commitment, Qubitum::account_commitment(&44));
+        assert_eq!(
+            subnet.owner_commitment,
+            Qubitum::subnet_owner_commitment(&44)
+        );
         assert_eq!(
             subnet.policy_commitment,
             Qubitum::subnet_policy_commitment(7, SubnetDomain::Code, ProofSystem::RiscZeroStark)
@@ -1651,7 +1730,7 @@ fn runtime_upgrade_migrates_registry_operators_to_commitments() {
 
         let miner = Miners::<Test>::get(7).unwrap();
         assert_eq!(miner.id, 7);
-        assert_eq!(miner.operator_commitment, Qubitum::account_commitment(&22));
+        assert_eq!(miner.operator_commitment, Qubitum::operator_commitment(&22));
         assert_eq!(miner.model_commitment, commitment(44));
         assert_eq!(
             miner.bond_commitment,
@@ -1667,7 +1746,7 @@ fn runtime_upgrade_migrates_registry_operators_to_commitments() {
         assert_eq!(validator.id, 9);
         assert_eq!(
             validator.operator_commitment,
-            Qubitum::account_commitment(&33)
+            Qubitum::operator_commitment(&33)
         );
         assert_eq!(
             validator.stake_commitment,
@@ -1772,7 +1851,10 @@ fn runtime_upgrade_migrates_request_users_to_commitments() {
 
         let request = InferenceRequests::<Test>::get(91).unwrap();
         assert_eq!(request.request_id, 91);
-        assert_eq!(request.user_commitment, Qubitum::account_commitment(&44));
+        assert_eq!(
+            request.user_commitment,
+            Qubitum::request_user_commitment(&44)
+        );
         assert_eq!(
             request.assignment_commitment,
             Qubitum::request_assignment_commitment(91, 3, 7, 9)
@@ -1889,7 +1971,10 @@ fn request_inference_escrows_payment() {
         request_inference(7);
 
         let request = InferenceRequests::<Test>::get(7).unwrap();
-        assert_eq!(request.user_commitment, Qubitum::account_commitment(&4));
+        assert_eq!(
+            request.user_commitment,
+            Qubitum::request_user_commitment(&4)
+        );
         assert_eq!(
             request.assignment_commitment,
             Qubitum::request_assignment_commitment(7, 0, 0, 0)
@@ -2431,7 +2516,7 @@ fn submit_proof_rejects_self_validation_assignment() {
             88,
             ChainInferenceRequest {
                 request_id: 88,
-                user_commitment: Qubitum::account_commitment(&4),
+                user_commitment: Qubitum::request_user_commitment(&4),
                 subnet_id: 0,
                 assignment_commitment: Qubitum::request_assignment_commitment(88, 0, 0, 0),
                 input_commitment: commitment(1),
@@ -2587,7 +2672,10 @@ fn auto_route_request_computes_assignment_without_caller_supplied_participants()
         ));
 
         let request = InferenceRequests::<Test>::get(54).unwrap();
-        assert_eq!(request.user_commitment, Qubitum::account_commitment(&4));
+        assert_eq!(
+            request.user_commitment,
+            Qubitum::request_user_commitment(&4)
+        );
         assert_eq!(
             request.assignment_commitment,
             Qubitum::request_assignment_commitment(54, 0, 0, 0)
