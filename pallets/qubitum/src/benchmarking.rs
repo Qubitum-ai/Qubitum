@@ -327,7 +327,7 @@ mod benchmarks {
         let validator = register_bench_validator::<T>();
         let user = request_bench_inference::<T>(42);
         let submission = proof_submission::<T>();
-        let submitted_at = frame_system::Pallet::<T>::block_number().saturated_into();
+        let submission_for_audit = submission.clone();
 
         #[extrinsic_call]
         _(
@@ -338,6 +338,9 @@ mod benchmarks {
             bench_request_terms::<T>(),
         );
 
+        let accepted_at = frame_system::Pallet::<T>::block_number().saturated_into();
+        let expected_audit_commitment =
+            Pallet::<T>::proof_audit_commitment(&submission_for_audit, accepted_at);
         let record = ProofRecords::<T>::get(42).unwrap();
         assert_eq!(record.request_id, 42);
         assert_eq!(record.subnet_id, 0);
@@ -345,15 +348,8 @@ mod benchmarks {
             record.assignment_commitment,
             Pallet::<T>::request_assignment_commitment(42, 0, 0, 0)
         );
-        assert_eq!(record.input_commitment, commitment(1));
-        assert_eq!(record.output_commitment, commitment(2));
-        assert_eq!(record.model_commitment, commitment(10));
-        assert_eq!(record.proof, proof(11));
+        assert_eq!(record.audit_commitment, expected_audit_commitment);
         assert_eq!(record.proof_system, ProofSystem::RiscZeroStark);
-        assert_eq!(record.proof_size_bytes, TARGET_PROOF_SIZE_MIN_BYTES);
-        assert_eq!(record.verification_latency_ms, 10);
-        assert_eq!(record.submitted_at, submitted_at);
-        assert!(record.accepted_at >= submitted_at);
     }
 
     #[benchmark]

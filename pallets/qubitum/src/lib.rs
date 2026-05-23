@@ -141,7 +141,7 @@ pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
 
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(14);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(15);
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -453,6 +453,15 @@ pub mod pallet {
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
     pub struct ChainProofRecord {
+        pub request_id: RequestId,
+        pub subnet_id: SubnetId,
+        pub assignment_commitment: Commitment,
+        pub audit_commitment: Commitment,
+        pub proof_system: ProofSystem,
+    }
+
+    #[derive(Decode)]
+    struct ChainProofRecordV14 {
         pub request_id: RequestId,
         pub subnet_id: SubnetId,
         pub assignment_commitment: Commitment,
@@ -855,7 +864,8 @@ pub mod pallet {
                 .saturating_add(Self::rebuild_active_routing_indexes())
                 .saturating_add(Self::rebuild_request_status_counts())
                 .saturating_add(Self::migrate_proof_record_timestamps(on_chain))
-                .saturating_add(Self::migrate_proof_record_assignment_commitments(on_chain));
+                .saturating_add(Self::migrate_proof_record_assignment_commitments(on_chain))
+                .saturating_add(Self::migrate_proof_record_audit_commitments(on_chain));
             STORAGE_VERSION.put::<Pallet<T>>();
             weight.saturating_add(T::DbWeight::get().reads_writes(1, 1))
         }
@@ -1210,15 +1220,11 @@ pub mod pallet {
                         submission.miner_id,
                         submission.validator_id,
                     ),
-                    input_commitment: submission.input_commitment,
-                    output_commitment: submission.output_commitment,
-                    model_commitment: submission.model_commitment,
-                    proof: submission.proof,
+                    audit_commitment: Self::proof_audit_commitment(
+                        &submission,
+                        Self::current_block(),
+                    ),
                     proof_system: submission.proof_system,
-                    proof_size_bytes: submission.proof_size_bytes,
-                    verification_latency_ms: submission.verification_latency_ms,
-                    submitted_at: submission.submitted_at,
-                    accepted_at: Self::current_block(),
                 },
             );
             Self::settle_request_payment(
@@ -2128,6 +2134,64 @@ pub mod pallet {
             (request_id, payment, validator_fee_bps, treasury_fee_bps).using_encoded(blake2_256)
         }
 
+        pub(crate) fn proof_audit_commitment(
+            submission: &InferenceProofSubmission,
+            accepted_at: BlockNumber,
+        ) -> Commitment {
+            (
+                submission.request_id,
+                submission.subnet_id,
+                Self::request_assignment_commitment(
+                    submission.request_id,
+                    submission.subnet_id,
+                    submission.miner_id,
+                    submission.validator_id,
+                ),
+                submission.input_commitment,
+                submission.output_commitment,
+                submission.model_commitment,
+                &submission.proof,
+                submission.proof_system,
+                submission.proof_size_bytes,
+                submission.verification_latency_ms,
+                submission.submitted_at,
+                accepted_at,
+            )
+                .using_encoded(blake2_256)
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn legacy_proof_audit_commitment(
+            request_id: RequestId,
+            subnet_id: SubnetId,
+            assignment_commitment: Commitment,
+            input_commitment: Commitment,
+            output_commitment: Commitment,
+            model_commitment: Commitment,
+            proof: &ProofEnvelope,
+            proof_system: ProofSystem,
+            proof_size_bytes: u32,
+            verification_latency_ms: u32,
+            submitted_at: BlockNumber,
+            accepted_at: BlockNumber,
+        ) -> Commitment {
+            (
+                request_id,
+                subnet_id,
+                assignment_commitment,
+                input_commitment,
+                output_commitment,
+                model_commitment,
+                proof,
+                proof_system,
+                proof_size_bytes,
+                verification_latency_ms,
+                submitted_at,
+                accepted_at,
+            )
+                .using_encoded(blake2_256)
+        }
+
         fn held_miner_bond(operator: &T::AccountId) -> BalanceOf<T> {
             T::Currency::balance_on_hold(&HoldReason::MinerBond.into(), operator)
         }
@@ -2534,24 +2598,31 @@ pub mod pallet {
             let mut migrated = 0_u64;
             ProofRecords::<T>::translate::<ChainProofRecordV4, _>(|_, old| {
                 migrated = migrated.saturating_add(1);
+                let assignment_commitment = Self::request_assignment_commitment(
+                    old.request_id,
+                    old.subnet_id,
+                    old.miner_id,
+                    old.validator_id,
+                );
                 Some(ChainProofRecord {
                     request_id: old.request_id,
                     subnet_id: old.subnet_id,
-                    assignment_commitment: Self::request_assignment_commitment(
+                    assignment_commitment,
+                    audit_commitment: Self::legacy_proof_audit_commitment(
                         old.request_id,
                         old.subnet_id,
-                        old.miner_id,
-                        old.validator_id,
+                        assignment_commitment,
+                        old.input_commitment,
+                        old.output_commitment,
+                        old.model_commitment,
+                        &old.proof,
+                        old.proof_system,
+                        old.proof_size_bytes,
+                        old.verification_latency_ms,
+                        old.submitted_at,
+                        old.submitted_at,
                     ),
-                    input_commitment: old.input_commitment,
-                    output_commitment: old.output_commitment,
-                    model_commitment: old.model_commitment,
-                    proof: old.proof,
                     proof_system: old.proof_system,
-                    proof_size_bytes: old.proof_size_bytes,
-                    verification_latency_ms: old.verification_latency_ms,
-                    submitted_at: old.submitted_at,
-                    accepted_at: old.submitted_at,
                 })
             });
 
@@ -2566,24 +2637,64 @@ pub mod pallet {
             let mut migrated = 0_u64;
             ProofRecords::<T>::translate::<ChainProofRecordV11, _>(|_, old| {
                 migrated = migrated.saturating_add(1);
+                let assignment_commitment = Self::request_assignment_commitment(
+                    old.request_id,
+                    old.subnet_id,
+                    old.miner_id,
+                    old.validator_id,
+                );
                 Some(ChainProofRecord {
                     request_id: old.request_id,
                     subnet_id: old.subnet_id,
-                    assignment_commitment: Self::request_assignment_commitment(
+                    assignment_commitment,
+                    audit_commitment: Self::legacy_proof_audit_commitment(
                         old.request_id,
                         old.subnet_id,
-                        old.miner_id,
-                        old.validator_id,
+                        assignment_commitment,
+                        old.input_commitment,
+                        old.output_commitment,
+                        old.model_commitment,
+                        &old.proof,
+                        old.proof_system,
+                        old.proof_size_bytes,
+                        old.verification_latency_ms,
+                        old.submitted_at,
+                        old.accepted_at,
                     ),
-                    input_commitment: old.input_commitment,
-                    output_commitment: old.output_commitment,
-                    model_commitment: old.model_commitment,
-                    proof: old.proof,
                     proof_system: old.proof_system,
-                    proof_size_bytes: old.proof_size_bytes,
-                    verification_latency_ms: old.verification_latency_ms,
-                    submitted_at: old.submitted_at,
-                    accepted_at: old.accepted_at,
+                })
+            });
+
+            T::DbWeight::get().reads_writes(migrated, migrated)
+        }
+
+        fn migrate_proof_record_audit_commitments(on_chain: StorageVersion) -> Weight {
+            if on_chain < StorageVersion::new(12) || on_chain >= StorageVersion::new(15) {
+                return Weight::zero();
+            }
+
+            let mut migrated = 0_u64;
+            ProofRecords::<T>::translate::<ChainProofRecordV14, _>(|_, old| {
+                migrated = migrated.saturating_add(1);
+                Some(ChainProofRecord {
+                    request_id: old.request_id,
+                    subnet_id: old.subnet_id,
+                    assignment_commitment: old.assignment_commitment,
+                    audit_commitment: Self::legacy_proof_audit_commitment(
+                        old.request_id,
+                        old.subnet_id,
+                        old.assignment_commitment,
+                        old.input_commitment,
+                        old.output_commitment,
+                        old.model_commitment,
+                        &old.proof,
+                        old.proof_system,
+                        old.proof_size_bytes,
+                        old.verification_latency_ms,
+                        old.submitted_at,
+                        old.accepted_at,
+                    ),
+                    proof_system: old.proof_system,
                 })
             });
 
