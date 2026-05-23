@@ -2884,6 +2884,44 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
 }
 
 #[test]
+fn mev_shield_pending_queue_fails_closed_without_runtime_decryptor() {
+    use frame_support::pallet_prelude::BoundedVec;
+    use frame_support::traits::Hooks;
+    use pallet_shield::{NextPendingExtrinsicIndex, PendingExtrinsic, PendingExtrinsics};
+
+    let mut ext: sp_io::TestExternalities = RuntimeGenesisConfig {
+        sudo: pallet_sudo::GenesisConfig { key: None },
+        ..Default::default()
+    }
+    .build_storage()
+    .unwrap_or_else(|err| panic!("runtime genesis config should build: {err:?}"))
+    .into();
+
+    ext.execute_with(|| {
+        System::set_block_number(1);
+        let pending = PendingExtrinsic::<Runtime> {
+            who: AccountId32::new([7; 32]),
+            encrypted_call: BoundedVec::<u8, pallet_shield::MaxEncryptedCallSize>::truncate_from(
+                RuntimeCall::System(frame_system::Call::remark { remark: vec![1] }).encode(),
+            ),
+            submitted_at: 1,
+        };
+        PendingExtrinsics::<Runtime>::insert(0, pending);
+        NextPendingExtrinsicIndex::<Runtime>::put(1);
+
+        assert_eq!(PendingExtrinsics::<Runtime>::count(), 1);
+
+        MevShield::on_initialize(2);
+
+        assert_eq!(PendingExtrinsics::<Runtime>::count(), 0);
+        assert!(PendingExtrinsics::<Runtime>::get(0).is_none());
+        System::assert_has_event(RuntimeEvent::MevShield(
+            pallet_shield::Event::ExtrinsicDecodeFailed { index: 0 },
+        ));
+    });
+}
+
+#[test]
 fn test_into_substrate_balance_valid() {
     // Valid conversion within u64 range
     let evm_balance: EvmBalance = 1_000_000_000_000_000_000u128.into(); // 1 TAO in EVM
