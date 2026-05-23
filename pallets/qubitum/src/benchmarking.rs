@@ -13,7 +13,8 @@ use frame_support::traits::{Get, fungible::Mutate};
 use frame_system::RawOrigin;
 use qubitum_protocol::{
     BlockNumber, Commitment, InferenceProofSubmission, ProofEnvelope, ProofSystem, RegistryStatus,
-    SubnetDomain, TARGET_PROOF_SIZE_MIN_BYTES,
+    SignatureAlgorithm, SignatureBundle, SignatureCommitment, SubnetDomain,
+    TARGET_PROOF_SIZE_MIN_BYTES,
 };
 use sp_runtime::{Saturating, traits::SaturatedConversion};
 
@@ -37,6 +38,17 @@ fn terms_blinding() -> Commitment {
 
 fn proof(seed: u8) -> ProofEnvelope {
     ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
+}
+
+fn post_quantum_signature_bundle(seed: u8) -> SignatureBundle {
+    SignatureBundle {
+        classical: None,
+        post_quantum: Some(SignatureCommitment {
+            algorithm: SignatureAlgorithm::Dilithium3,
+            public_key_commitment: commitment(seed),
+            signature_commitment: commitment(seed.saturating_add(1)),
+        }),
+    }
 }
 
 fn assert_last_event<T: Config>(generic_event: <T as frame_system::Config>::RuntimeEvent) {
@@ -84,6 +96,14 @@ fn activate_bench_miner<T: Config>() -> T::AccountId {
         T::MinMinerBond::get(),
     )
     .unwrap();
+    Pallet::<T>::set_miner_identity_commitments(
+        RawOrigin::Signed(miner.clone()).into(),
+        0,
+        Some(commitment(120)),
+        Some(commitment(121)),
+        post_quantum_signature_bundle(130),
+    )
+    .unwrap();
     miner
 }
 
@@ -97,6 +117,14 @@ fn register_bench_validator<T: Config>() -> T::AccountId {
         RawOrigin::Signed(validator.clone()).into(),
         0,
         T::MinValidatorStake::get(),
+    )
+    .unwrap();
+    Pallet::<T>::set_validator_identity_commitments(
+        RawOrigin::Signed(validator.clone()).into(),
+        0,
+        Some(commitment(122)),
+        Some(commitment(123)),
+        post_quantum_signature_bundle(140),
     )
     .unwrap();
     validator

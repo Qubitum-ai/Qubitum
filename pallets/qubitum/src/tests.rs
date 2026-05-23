@@ -282,6 +282,24 @@ fn register_active_miner_and_validator() {
         0,
         MIN_MINER_BOND
     ));
+    attest_active_miner_and_validator();
+}
+
+fn attest_active_miner_and_validator() {
+    assert_ok!(Qubitum::set_miner_identity_commitments(
+        RuntimeOrigin::signed(2),
+        0,
+        Some(commitment(120)),
+        Some(commitment(121)),
+        post_quantum_signature_bundle(),
+    ));
+    assert_ok!(Qubitum::set_validator_identity_commitments(
+        RuntimeOrigin::signed(3),
+        0,
+        Some(commitment(122)),
+        Some(commitment(123)),
+        post_quantum_signature_bundle(),
+    ));
 }
 
 fn valid_submission(request_id: u64) -> InferenceProofSubmission {
@@ -540,6 +558,121 @@ fn protocol_params_expose_runtime_policy() {
         assert_eq!(params.miner_exit_cooldown_blocks, 20);
         assert_eq!(params.validator_exit_cooldown_blocks, 20);
         assert_eq!(params.request_cancel_delay_blocks, 10);
+    });
+}
+
+#[test]
+fn routing_requires_post_quantum_identity_bundles() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::Code,
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(10),
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(3),
+            0,
+            MIN_MINER_BOND
+        ));
+
+        assert_eq!(
+            Qubitum::next_route_availability(0),
+            ChainRouteAvailability {
+                request_id: 0,
+                subnet_id: 0,
+                available: false,
+            }
+        );
+        assert_noop!(
+            Qubitum::request_inference(
+                RuntimeOrigin::signed(4),
+                0,
+                InferenceRequestParams {
+                    subnet_id: 0,
+                    miner_id: 0,
+                    validator_id: 0,
+                    input_commitment: commitment(1),
+                    assignment_blinding: assignment_blinding(),
+                    timing_blinding: timing_blinding(),
+                    terms_blinding: terms_blinding(),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::NoRouteAvailable
+        );
+
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(2),
+            0,
+            Some(commitment(120)),
+            Some(commitment(121)),
+            post_quantum_signature_bundle(),
+        ));
+        assert!(!Qubitum::next_route_availability(0).available);
+
+        assert_ok!(Qubitum::set_validator_identity_commitments(
+            RuntimeOrigin::signed(3),
+            0,
+            Some(commitment(122)),
+            Some(commitment(123)),
+            post_quantum_signature_bundle(),
+        ));
+        assert!(Qubitum::next_route_availability(0).available);
+        assert_ok!(Qubitum::request_inference(
+            RuntimeOrigin::signed(4),
+            0,
+            InferenceRequestParams {
+                subnet_id: 0,
+                miner_id: 0,
+                validator_id: 0,
+                input_commitment: commitment(1),
+                assignment_blinding: assignment_blinding(),
+                timing_blinding: timing_blinding(),
+                terms_blinding: terms_blinding(),
+                payment: 1_000,
+                validator_fee_bps: 250,
+                treasury_fee_bps: 50,
+            },
+        ));
+    });
+}
+
+#[test]
+fn proof_submission_requires_current_post_quantum_identity_bundles() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(87);
+        MinerIdentitySignatureBundles::<Test>::remove(0);
+
+        assert_noop!(
+            submit_proof(RuntimeOrigin::signed(3), valid_submission(87)),
+            Error::<Test>::MissingSignatureBundle
+        );
+
+        assert!(ProofRecords::<Test>::get(87).is_none());
+        assert_eq!(
+            InferenceRequests::<Test>::get(87).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            1_000
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
     });
 }
 
@@ -3413,6 +3546,13 @@ fn request_storage_commits_route_assignment_without_raw_participant_ids() {
             1,
             MIN_MINER_BOND
         ));
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(1),
+            1,
+            Some(commitment(124)),
+            Some(commitment(125)),
+            post_quantum_signature_bundle(),
+        ));
 
         RequestCount::<Test>::put(3);
         let assignment = Qubitum::route_assignment(0, 3).unwrap();
@@ -4074,15 +4214,36 @@ fn route_assignment_skips_self_validation_validator_when_alternative_exists() {
             0,
             MIN_MINER_BOND
         ));
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(2),
+            0,
+            Some(commitment(120)),
+            Some(commitment(121)),
+            post_quantum_signature_bundle(),
+        ));
         assert_ok!(Qubitum::register_validator(
             RuntimeOrigin::signed(2),
             0,
             MIN_MINER_BOND
         ));
+        assert_ok!(Qubitum::set_validator_identity_commitments(
+            RuntimeOrigin::signed(2),
+            0,
+            Some(commitment(122)),
+            Some(commitment(123)),
+            post_quantum_signature_bundle(),
+        ));
         assert_ok!(Qubitum::register_validator(
             RuntimeOrigin::signed(3),
             0,
             MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::set_validator_identity_commitments(
+            RuntimeOrigin::signed(3),
+            1,
+            Some(commitment(124)),
+            Some(commitment(125)),
+            post_quantum_signature_bundle(),
         ));
 
         let assignment = Qubitum::route_assignment(0, 42).unwrap();
@@ -4127,18 +4288,39 @@ fn route_assignment_scans_past_sixteen_self_validation_conflicts() {
             0,
             MIN_MINER_BOND
         ));
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(2),
+            0,
+            Some(commitment(120)),
+            Some(commitment(121)),
+            post_quantum_signature_bundle(),
+        ));
 
-        for _ in 0..16 {
+        for validator_id in 0..16 {
             assert_ok!(Qubitum::register_validator(
                 RuntimeOrigin::signed(2),
                 0,
                 MIN_MINER_BOND
+            ));
+            assert_ok!(Qubitum::set_validator_identity_commitments(
+                RuntimeOrigin::signed(2),
+                validator_id,
+                Some(commitment(122)),
+                Some(commitment(123)),
+                post_quantum_signature_bundle(),
             ));
         }
         assert_ok!(Qubitum::register_validator(
             RuntimeOrigin::signed(3),
             0,
             MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::set_validator_identity_commitments(
+            RuntimeOrigin::signed(3),
+            16,
+            Some(commitment(124)),
+            Some(commitment(125)),
+            post_quantum_signature_bundle(),
         ));
         assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).len(), 17);
 

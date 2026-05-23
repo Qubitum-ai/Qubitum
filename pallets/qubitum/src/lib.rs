@@ -1159,6 +1159,8 @@ pub mod pallet {
         InvalidSlashPercent,
         /// Signature commitments do not satisfy the active post-quantum migration policy.
         InvalidSignatureBundle,
+        /// Participant has not published the signature bundle required for active routing.
+        MissingSignatureBundle,
         /// Participant capital accounting is missing for this registry record.
         MissingCapitalRecord,
         /// Proof verifier reported an internal error.
@@ -3042,14 +3044,45 @@ pub mod pallet {
                 .map_err(|_| Error::<T>::InvalidSignatureBundle.into())
         }
 
+        fn ensure_participant_signature_bundles(
+            miner_id: MinerId,
+            validator_id: ValidatorId,
+        ) -> DispatchResult {
+            ensure!(
+                MinerIdentitySignatureBundles::<T>::contains_key(miner_id),
+                Error::<T>::MissingSignatureBundle
+            );
+            ensure!(
+                ValidatorIdentitySignatureBundles::<T>::contains_key(validator_id),
+                Error::<T>::MissingSignatureBundle
+            );
+            Ok(())
+        }
+
         fn route_active_miner(subnet_id: SubnetId, seed: u64) -> Option<MinerId> {
             let ids = ActiveMinersBySubnet::<T>::get(subnet_id);
             if ids.is_empty() {
                 return None;
             }
 
-            let target = Self::route_index(seed, ids.len())?;
-            ids.get(target).copied()
+            let start = Self::route_index(seed, ids.len())?;
+            for offset in 0..ids.len() {
+                let target = start.checked_add(offset)?.checked_rem(ids.len())?;
+                let Some(miner_id) = ids.get(target).copied() else {
+                    continue;
+                };
+                let Some(miner) = Miners::<T>::get(miner_id) else {
+                    continue;
+                };
+                if miner.subnet_id == subnet_id
+                    && miner.status == RegistryStatus::Active
+                    && MinerIdentitySignatureBundles::<T>::contains_key(miner_id)
+                {
+                    return Some(miner_id);
+                }
+            }
+
+            None
         }
 
         fn route_active_validator(
@@ -3074,6 +3107,7 @@ pub mod pallet {
                 if validator.subnet_id == subnet_id
                     && validator.status == RegistryStatus::Active
                     && validator.operator_commitment != miner_operator_commitment
+                    && ValidatorIdentitySignatureBundles::<T>::contains_key(validator_id)
                 {
                     return Some(validator_id);
                 }
@@ -4057,6 +4091,7 @@ pub mod pallet {
                 Error::<T>::NotActive
             );
             Self::ensure_distinct_operators(&miner, &validator)?;
+            Self::ensure_participant_signature_bundles(miner_id, validator_id)?;
             Ok(())
         }
 
@@ -4160,6 +4195,10 @@ pub mod pallet {
                 Error::<T>::NotActive
             );
             Self::ensure_distinct_operators(&miner, &validator)?;
+            Self::ensure_participant_signature_bundles(
+                submission.miner_id,
+                submission.validator_id,
+            )?;
 
             Ok((
                 ProofVerificationPolicy {
