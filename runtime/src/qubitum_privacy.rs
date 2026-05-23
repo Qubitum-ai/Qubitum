@@ -120,13 +120,9 @@ impl TransactionExtension<RuntimeCall> for CheckQubitumShielding {
         _len: usize,
         _self_implicit: Self::Implicit,
         _inherited_implication: &impl Implication,
-        source: TransactionSource,
+        _source: TransactionSource,
     ) -> ValidateResult<Self::Val, RuntimeCall> {
-        if matches!(
-            source,
-            TransactionSource::External | TransactionSource::Local
-        ) && Self::contains_qubitum_call(call)
-        {
+        if Self::contains_qubitum_call(call) {
             return Err(CustomTransactionError::QubitumCallMustBeShielded.into());
         }
 
@@ -352,6 +348,7 @@ mod tests {
     fn shield_envelope_and_non_qubitum_calls_pass() {
         new_test_ext().execute_with(|| {
             assert!(validate_ext(&shield_call(), TransactionSource::External).is_ok());
+            assert!(validate_ext(&shield_call(), TransactionSource::InBlock).is_ok());
             let call = RuntimeCall::System(frame_system::Call::remark {
                 remark: commitment(9).to_vec(),
             });
@@ -360,9 +357,12 @@ mod tests {
     }
 
     #[test]
-    fn inblock_qubitum_call_passes_for_decrypted_shielded_payloads() {
+    fn inblock_qubitum_call_must_be_shielded() {
         new_test_ext().execute_with(|| {
-            assert!(validate_ext(&direct_qubitum_call(), TransactionSource::InBlock).is_ok());
+            assert_eq!(
+                validate_ext(&direct_qubitum_call(), TransactionSource::InBlock),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
         });
     }
 }
