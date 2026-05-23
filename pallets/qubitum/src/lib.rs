@@ -142,6 +142,7 @@ pub mod pallet {
     use frame_system::pallet_prelude::*;
 
     const LEGACY_ASSIGNMENT_BLINDING: Commitment = [0; 32];
+    const LEGACY_TERMS_BLINDING: Commitment = [0; 32];
     const STORAGE_VERSION: StorageVersion = StorageVersion::new(16);
     #[pallet::pallet]
     #[pallet::without_storage_info]
@@ -732,6 +733,7 @@ pub mod pallet {
         pub validator_id: ValidatorId,
         pub input_commitment: Commitment,
         pub assignment_blinding: Commitment,
+        pub terms_blinding: Commitment,
         pub payment: Balance,
         pub validator_fee_bps: u16,
         pub treasury_fee_bps: u16,
@@ -744,6 +746,7 @@ pub mod pallet {
         pub subnet_id: SubnetId,
         pub input_commitment: Commitment,
         pub assignment_blinding: Commitment,
+        pub terms_blinding: Commitment,
         pub payment: Balance,
         pub validator_fee_bps: u16,
         pub treasury_fee_bps: u16,
@@ -756,6 +759,14 @@ pub mod pallet {
         pub payment: Balance,
         pub validator_fee_bps: u16,
         pub treasury_fee_bps: u16,
+    }
+
+    #[derive(
+        Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
+    )]
+    pub struct InferenceRequestTermsWitness<Balance> {
+        pub terms: InferenceRequestTerms<Balance>,
+        pub blinding: Commitment,
     }
 
     #[pallet::storage]
@@ -1214,7 +1225,7 @@ pub mod pallet {
             request_user: T::AccountId,
             miner_operator: T::AccountId,
             assignment_blinding: Commitment,
-            terms: InferenceRequestTerms<BalanceOf<T>>,
+            terms_witness: InferenceRequestTermsWitness<BalanceOf<T>>,
         ) -> DispatchResult {
             let validator_operator = ensure_signed(origin)?;
             let policy = Self::validate_submission(
@@ -1237,7 +1248,7 @@ pub mod pallet {
                         &submission,
                         &request_user,
                         assignment_blinding,
-                        &terms,
+                        &terms_witness,
                     )?;
                     Self::deposit_event(Event::ProofRejected {
                         request_id: submission.request_id,
@@ -1272,7 +1283,7 @@ pub mod pallet {
                 &miner_operator,
                 &validator_operator,
                 assignment_blinding,
-                &terms,
+                &terms_witness,
             )?;
 
             Self::deposit_event(Event::ProofAccepted {
@@ -1294,7 +1305,7 @@ pub mod pallet {
             request_user: T::AccountId,
             miner_operator: T::AccountId,
             assignment_blinding: Commitment,
-            terms: InferenceRequestTerms<BalanceOf<T>>,
+            terms_witness: InferenceRequestTermsWitness<BalanceOf<T>>,
         ) -> DispatchResult {
             ensure_signed(origin)?;
             let policy = Self::validate_challenge_submission(
@@ -1310,7 +1321,7 @@ pub mod pallet {
                         &submission,
                         &request_user,
                         assignment_blinding,
-                        &terms,
+                        &terms_witness,
                     )?;
                     Self::deposit_event(Event::ProofRejected {
                         request_id: submission.request_id,
@@ -1368,6 +1379,7 @@ pub mod pallet {
                 params.subnet_id,
                 params.input_commitment,
                 params.assignment_blinding,
+                params.terms_blinding,
                 params.payment,
                 params.validator_fee_bps,
                 params.treasury_fee_bps,
@@ -1387,6 +1399,7 @@ pub mod pallet {
                 params.validator_id,
                 params.input_commitment,
                 params.assignment_blinding,
+                params.terms_blinding,
                 params.payment,
                 params.validator_fee_bps,
                 params.treasury_fee_bps,
@@ -1408,6 +1421,7 @@ pub mod pallet {
                 params.subnet_id,
                 params.input_commitment,
                 params.assignment_blinding,
+                params.terms_blinding,
                 params.payment,
                 params.validator_fee_bps,
                 params.treasury_fee_bps,
@@ -1422,6 +1436,7 @@ pub mod pallet {
                 assignment.validator_id,
                 params.input_commitment,
                 params.assignment_blinding,
+                params.terms_blinding,
                 params.payment,
                 params.validator_fee_bps,
                 params.treasury_fee_bps,
@@ -1439,7 +1454,7 @@ pub mod pallet {
             validator_id: ValidatorId,
             assignment_blinding: Commitment,
             created_at: BlockNumber,
-            terms: InferenceRequestTerms<BalanceOf<T>>,
+            terms_witness: InferenceRequestTermsWitness<BalanceOf<T>>,
         ) -> DispatchResult {
             let user = ensure_signed(origin)?;
             let payment = InferenceRequests::<T>::try_mutate(
@@ -1454,7 +1469,7 @@ pub mod pallet {
                         assignment_blinding,
                     )?;
                     Self::ensure_request_timing_witness(request, created_at)?;
-                    Self::ensure_request_terms_witness(request, &terms)?;
+                    Self::ensure_request_terms_witness(request, &terms_witness)?;
                     ensure!(
                         request.status == InferenceRequestStatus::Pending,
                         Error::<T>::RequestAlreadySettled
@@ -1469,11 +1484,11 @@ pub mod pallet {
                     T::Currency::release(
                         &HoldReason::InferencePayment.into(),
                         &user,
-                        terms.payment,
+                        terms_witness.terms.payment,
                         Precision::Exact,
                     )?;
                     request.status = InferenceRequestStatus::Cancelled;
-                    Ok(terms.payment)
+                    Ok(terms_witness.terms.payment)
                 },
             )?;
             Self::decrement_pending_assignment(miner_id, validator_id)?;
@@ -1681,7 +1696,7 @@ pub mod pallet {
             validator_id: ValidatorId,
             assignment_blinding: Commitment,
             created_at: BlockNumber,
-            terms: InferenceRequestTerms<BalanceOf<T>>,
+            terms_witness: InferenceRequestTermsWitness<BalanceOf<T>>,
         ) -> DispatchResult {
             let _keeper = ensure_signed(origin)?;
             let payment = InferenceRequests::<T>::try_mutate(
@@ -1696,7 +1711,7 @@ pub mod pallet {
                         assignment_blinding,
                     )?;
                     Self::ensure_request_timing_witness(request, created_at)?;
-                    Self::ensure_request_terms_witness(request, &terms)?;
+                    Self::ensure_request_terms_witness(request, &terms_witness)?;
                     ensure!(
                         request.status == InferenceRequestStatus::Pending,
                         Error::<T>::RequestAlreadySettled
@@ -1711,11 +1726,11 @@ pub mod pallet {
                     T::Currency::release(
                         &HoldReason::InferencePayment.into(),
                         &request_user,
-                        terms.payment,
+                        terms_witness.terms.payment,
                         Precision::Exact,
                     )?;
                     request.status = InferenceRequestStatus::Expired;
-                    Ok(terms.payment)
+                    Ok(terms_witness.terms.payment)
                 },
             )?;
             Self::decrement_pending_assignment(miner_id, validator_id)?;
@@ -1933,17 +1948,20 @@ pub mod pallet {
             })
         }
 
+        #[allow(clippy::too_many_arguments)]
         fn ensure_inference_request_openable(
             request_id: RequestId,
             subnet_id: SubnetId,
             input_commitment: Commitment,
             assignment_blinding: Commitment,
+            terms_blinding: Commitment,
             payment: BalanceOf<T>,
             validator_fee_bps: u16,
             treasury_fee_bps: u16,
         ) -> DispatchResult {
             ensure_commitment::<T>(input_commitment)?;
             ensure_commitment::<T>(assignment_blinding)?;
+            ensure_commitment::<T>(terms_blinding)?;
             ensure!(
                 !InferenceRequests::<T>::contains_key(request_id),
                 Error::<T>::DuplicateRequest
@@ -1967,6 +1985,7 @@ pub mod pallet {
             validator_id: ValidatorId,
             input_commitment: Commitment,
             assignment_blinding: Commitment,
+            terms_blinding: Commitment,
             payment: BalanceOf<T>,
             validator_fee_bps: u16,
             treasury_fee_bps: u16,
@@ -1998,6 +2017,7 @@ pub mod pallet {
                         payment,
                         validator_fee_bps,
                         treasury_fee_bps,
+                        terms_blinding,
                     ),
                     timing_commitment: Self::request_timing_commitment(request_id, created_at),
                     status: InferenceRequestStatus::Pending,
@@ -2303,6 +2323,24 @@ pub mod pallet {
             payment: BalanceOf<T>,
             validator_fee_bps: u16,
             treasury_fee_bps: u16,
+            terms_blinding: Commitment,
+        ) -> Commitment {
+            (
+                b"qubitum.request.terms.v1",
+                request_id,
+                payment,
+                validator_fee_bps,
+                treasury_fee_bps,
+                terms_blinding,
+            )
+                .using_encoded(blake2_256)
+        }
+
+        pub(crate) fn legacy_request_terms_commitment(
+            request_id: RequestId,
+            payment: BalanceOf<T>,
+            validator_fee_bps: u16,
+            treasury_fee_bps: u16,
         ) -> Commitment {
             (request_id, payment, validator_fee_bps, treasury_fee_bps).using_encoded(blake2_256)
         }
@@ -2541,22 +2579,35 @@ pub mod pallet {
 
         fn ensure_request_terms_witness(
             request: &ChainInferenceRequest,
-            terms: &InferenceRequestTerms<BalanceOf<T>>,
+            terms_witness: &InferenceRequestTermsWitness<BalanceOf<T>>,
         ) -> DispatchResult {
+            let terms = &terms_witness.terms;
             ensure!(
                 terms.payment > BalanceOf::<T>::default(),
                 Error::<T>::InvalidPayment
             );
             Self::validate_fee_split(terms.validator_fee_bps, terms.treasury_fee_bps)?;
+            let blinded = Self::request_terms_commitment(
+                request.request_id,
+                terms.payment,
+                terms.validator_fee_bps,
+                terms.treasury_fee_bps,
+                terms_witness.blinding,
+            );
+            let legacy = Self::legacy_request_terms_commitment(
+                request.request_id,
+                terms.payment,
+                terms.validator_fee_bps,
+                terms.treasury_fee_bps,
+            );
+            let terms_match = request.terms_commitment == blinded
+                || (terms_witness.blinding == LEGACY_TERMS_BLINDING
+                    && request.terms_commitment == legacy);
+            ensure!(terms_match, Error::<T>::RequestMismatch);
             ensure!(
-                request.terms_commitment
-                    == Self::request_terms_commitment(
-                        request.request_id,
-                        terms.payment,
-                        terms.validator_fee_bps,
-                        terms.treasury_fee_bps,
-                    ),
-                Error::<T>::RequestMismatch
+                terms_witness.blinding != LEGACY_TERMS_BLINDING
+                    || request.terms_commitment == legacy,
+                Error::<T>::MissingCommitment
             );
             Ok(())
         }
@@ -3137,7 +3188,7 @@ pub mod pallet {
                         old.validator_id,
                     ),
                     input_commitment: old.input_commitment,
-                    terms_commitment: Self::request_terms_commitment(
+                    terms_commitment: Self::legacy_request_terms_commitment(
                         old.request_id,
                         old.payment,
                         old.validator_fee_bps,
@@ -3189,7 +3240,7 @@ pub mod pallet {
                             old.validator_id,
                         ),
                         input_commitment: old.input_commitment,
-                        terms_commitment: Self::request_terms_commitment(
+                        terms_commitment: Self::legacy_request_terms_commitment(
                             old.request_id,
                             old.payment,
                             old.validator_fee_bps,
@@ -3233,7 +3284,7 @@ pub mod pallet {
                         subnet_id: old.subnet_id,
                         assignment_commitment: old.assignment_commitment,
                         input_commitment: old.input_commitment,
-                        terms_commitment: Self::request_terms_commitment(
+                        terms_commitment: Self::legacy_request_terms_commitment(
                             old.request_id,
                             old.payment,
                             old.validator_fee_bps,
@@ -3275,7 +3326,7 @@ pub mod pallet {
                         subnet_id: old.subnet_id,
                         assignment_commitment: old.assignment_commitment,
                         input_commitment: old.input_commitment,
-                        terms_commitment: Self::request_terms_commitment(
+                        terms_commitment: Self::legacy_request_terms_commitment(
                             old.request_id,
                             old.payment,
                             old.validator_fee_bps,
@@ -3572,7 +3623,7 @@ pub mod pallet {
             miner_operator: &T::AccountId,
             validator_operator: &T::AccountId,
             assignment_blinding: Commitment,
-            terms: &InferenceRequestTerms<BalanceOf<T>>,
+            terms_witness: &InferenceRequestTermsWitness<BalanceOf<T>>,
         ) -> Result<(BalanceOf<T>, BalanceOf<T>, BalanceOf<T>), DispatchError> {
             InferenceRequests::<T>::try_mutate(
                 submission.request_id,
@@ -3594,7 +3645,8 @@ pub mod pallet {
                         assignment_blinding,
                     )?;
                     Self::ensure_request_user(request, request_user)?;
-                    Self::ensure_request_terms_witness(request, terms)?;
+                    Self::ensure_request_terms_witness(request, terms_witness)?;
+                    let terms = &terms_witness.terms;
 
                     let miner =
                         Miners::<T>::get(submission.miner_id).ok_or(Error::<T>::UnknownMiner)?;
@@ -3636,7 +3688,7 @@ pub mod pallet {
             submission: &InferenceProofSubmission,
             request_user: &T::AccountId,
             assignment_blinding: Commitment,
-            terms: &InferenceRequestTerms<BalanceOf<T>>,
+            terms_witness: &InferenceRequestTermsWitness<BalanceOf<T>>,
         ) -> Result<BalanceOf<T>, DispatchError> {
             InferenceRequests::<T>::try_mutate(
                 submission.request_id,
@@ -3658,7 +3710,8 @@ pub mod pallet {
                         assignment_blinding,
                     )?;
                     Self::ensure_request_user(request, request_user)?;
-                    Self::ensure_request_terms_witness(request, terms)?;
+                    Self::ensure_request_terms_witness(request, terms_witness)?;
+                    let terms = &terms_witness.terms;
 
                     T::Currency::release(
                         &HoldReason::InferencePayment.into(),

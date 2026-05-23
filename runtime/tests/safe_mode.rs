@@ -14,6 +14,10 @@ fn assignment_blinding() -> [u8; 32] {
     commitment(90)
 }
 
+fn terms_blinding() -> [u8; 32] {
+    commitment(91)
+}
+
 fn proof(seed: u8) -> ProofEnvelope {
     ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
 }
@@ -58,6 +62,14 @@ fn request_terms<Balance: From<u64>>() -> pallet_qubitum::InferenceRequestTerms<
     }
 }
 
+fn request_terms_witness<Balance: From<u64>>()
+-> pallet_qubitum::InferenceRequestTermsWitness<Balance> {
+    pallet_qubitum::InferenceRequestTermsWitness {
+        terms: request_terms(),
+        blinding: terms_blinding(),
+    }
+}
+
 #[test]
 fn qubitum_submit_proof_is_allowed_in_safe_mode() {
     let call = RuntimeCall::Qubitum(pallet_qubitum::Call::submit_proof {
@@ -65,7 +77,7 @@ fn qubitum_submit_proof_is_allowed_in_safe_mode() {
         request_user: account(4),
         miner_operator: account(2),
         assignment_blinding: assignment_blinding(),
-        terms: request_terms(),
+        terms_witness: request_terms_witness(),
     });
 
     assert!(SafeModeWhitelistedCalls::contains(&call));
@@ -78,7 +90,7 @@ fn qubitum_challenge_proof_is_allowed_in_safe_mode() {
         request_user: account(4),
         miner_operator: account(2),
         assignment_blinding: assignment_blinding(),
-        terms: request_terms(),
+        terms_witness: request_terms_witness(),
     });
 
     assert!(SafeModeWhitelistedCalls::contains(&call));
@@ -104,6 +116,7 @@ fn qubitum_request_inference_is_blocked_in_safe_mode() {
             validator_id: 0,
             input_commitment: commitment(1),
             assignment_blinding: assignment_blinding(),
+            terms_blinding: terms_blinding(),
             payment: 1_000u64.into(),
             validator_fee_bps: 250,
             treasury_fee_bps: 50,
@@ -118,6 +131,7 @@ fn qubitum_request_inference_is_blocked_in_safe_mode() {
             subnet_id: 0,
             input_commitment: commitment(1),
             assignment_blinding: assignment_blinding(),
+            terms_blinding: terms_blinding(),
             payment: 1_000u64.into(),
             validator_fee_bps: 250,
             treasury_fee_bps: 50,
@@ -135,7 +149,7 @@ fn qubitum_cancel_inference_is_blocked_in_safe_mode() {
         validator_id: 0,
         assignment_blinding: assignment_blinding(),
         created_at: 0,
-        terms: request_terms(),
+        terms_witness: request_terms_witness(),
     });
 
     assert!(!SafeModeWhitelistedCalls::contains(&call));
@@ -150,7 +164,7 @@ fn qubitum_expire_inference_is_blocked_in_safe_mode() {
         validator_id: 0,
         assignment_blinding: assignment_blinding(),
         created_at: 0,
-        terms: request_terms(),
+        terms_witness: request_terms_witness(),
     });
 
     assert!(!SafeModeWhitelistedCalls::contains(&call));

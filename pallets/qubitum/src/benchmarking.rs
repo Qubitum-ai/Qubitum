@@ -5,8 +5,8 @@
 
 use crate::{
     BalanceOf, Event, InferenceRequestParams, InferenceRequestStatus, InferenceRequestTerms,
-    InferenceRequests, MinerCount, Miners, ProofRecords, SubnetCount, Subnets, TotalBurned,
-    ValidatorCount, Validators, pallet::*,
+    InferenceRequestTermsWitness, InferenceRequests, MinerCount, Miners, ProofRecords, SubnetCount,
+    Subnets, TotalBurned, ValidatorCount, Validators, pallet::*,
 };
 use frame_benchmarking::{account, v2::*};
 use frame_support::traits::{Get, fungible::Mutate};
@@ -25,6 +25,10 @@ fn commitment(seed: u8) -> Commitment {
 
 fn assignment_blinding() -> Commitment {
     commitment(90)
+}
+
+fn terms_blinding() -> Commitment {
+    commitment(91)
 }
 
 fn proof(seed: u8) -> ProofEnvelope {
@@ -127,6 +131,7 @@ fn request_bench_inference<T: Config>(request_id: u64) -> T::AccountId {
             validator_id: 0,
             input_commitment: commitment(1),
             assignment_blinding: assignment_blinding(),
+            terms_blinding: terms_blinding(),
             payment: T::MinMinerBond::get(),
             validator_fee_bps: 250,
             treasury_fee_bps: 50,
@@ -141,6 +146,13 @@ fn bench_request_terms<T: Config>() -> InferenceRequestTerms<BalanceOf<T>> {
         payment: T::MinMinerBond::get(),
         validator_fee_bps: 250,
         treasury_fee_bps: 50,
+    }
+}
+
+fn bench_request_terms_witness<T: Config>() -> InferenceRequestTermsWitness<BalanceOf<T>> {
+    InferenceRequestTermsWitness {
+        terms: bench_request_terms::<T>(),
+        blinding: terms_blinding(),
     }
 }
 
@@ -359,7 +371,7 @@ mod benchmarks {
             user,
             miner,
             assignment_blinding(),
-            bench_request_terms::<T>(),
+            bench_request_terms_witness::<T>(),
         );
 
         let accepted_at = frame_system::Pallet::<T>::block_number().saturated_into();
@@ -426,6 +438,7 @@ mod benchmarks {
                 validator_id: 0,
                 input_commitment: commitment(1),
                 assignment_blinding: assignment_blinding(),
+                terms_blinding: terms_blinding(),
                 payment,
                 validator_fee_bps: 250,
                 treasury_fee_bps: 50,
@@ -464,7 +477,7 @@ mod benchmarks {
             0,
             assignment_blinding(),
             0,
-            bench_request_terms::<T>(),
+            bench_request_terms_witness::<T>(),
         );
 
         let request = InferenceRequests::<T>::get(42).unwrap();
@@ -495,7 +508,7 @@ mod benchmarks {
             0,
             assignment_blinding(),
             0,
-            bench_request_terms::<T>(),
+            bench_request_terms_witness::<T>(),
         );
 
         let request = InferenceRequests::<T>::get(42).unwrap();
