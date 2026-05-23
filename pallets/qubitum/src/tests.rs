@@ -555,6 +555,11 @@ fn protocol_params_expose_runtime_policy() {
         assert_eq!(params.max_verification_latency_ms, TARGET_VERIFICATION_MS);
         assert_eq!(params.max_proof_submission_age_blocks, 10);
         assert_eq!(params.signature_mode, SignatureMode::FullPostQuantum);
+        assert!(!params.shielded_call_payloads);
+        assert!(!params.private_route_selection);
+        assert!(!params.post_quantum_account_signatures);
+        assert!(params.identity_signature_commitment_policy);
+        assert!(!params.identity_signature_verification);
         assert_eq!(params.miner_exit_cooldown_blocks, 20);
         assert_eq!(params.validator_exit_cooldown_blocks, 20);
         assert_eq!(params.request_cancel_delay_blocks, 10);
