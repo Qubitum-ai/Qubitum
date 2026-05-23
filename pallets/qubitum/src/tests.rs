@@ -1280,6 +1280,48 @@ fn request_id_overflow_does_not_escrow_or_increment_pending() {
 #[test]
 fn accounting_overflows_fail_without_state_changes() {
     new_test_ext().execute_with(|| {
+        TotalBurned::<Test>::put(u128::MAX);
+
+        assert_noop!(
+            Qubitum::create_subnet(
+                RuntimeOrigin::signed(1),
+                SubnetDomain::Code,
+                ProofSystem::RiscZeroStark,
+            ),
+            Error::<Test>::ArithmeticOverflow
+        );
+
+        assert_eq!(SubnetCount::<Test>::get(), 0);
+        assert!(Subnets::<Test>::get(0).is_none());
+        assert_eq!(Balances::free_balance(1), 1_000_000_000_000_000);
+        assert_eq!(TotalBurned::<Test>::get(), u128::MAX);
+    });
+
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::Code,
+            ProofSystem::RiscZeroStark,
+        ));
+        TotalBurned::<Test>::put(u128::MAX);
+
+        assert_noop!(
+            Qubitum::register_miner(
+                RuntimeOrigin::signed(2),
+                0,
+                commitment(10),
+                ProofSystem::RiscZeroStark,
+            ),
+            Error::<Test>::ArithmeticOverflow
+        );
+
+        assert_eq!(MinerCount::<Test>::get(), 0);
+        assert!(Miners::<Test>::get(0).is_none());
+        assert_eq!(Balances::free_balance(2), 1_000_000_000_000_000);
+        assert_eq!(TotalBurned::<Test>::get(), u128::MAX);
+    });
+
+    new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         TotalInferenceEscrowed::<Test>::put(u128::MAX);
 

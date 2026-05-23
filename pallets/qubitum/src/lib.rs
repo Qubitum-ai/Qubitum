@@ -3998,6 +3998,7 @@ pub mod pallet {
         }
 
         fn burn_free(who: &T::AccountId, amount: BalanceOf<T>) -> DispatchResult {
+            Self::ensure_burned_can_record(amount)?;
             let burned = T::Currency::burn_from(
                 who,
                 amount,
