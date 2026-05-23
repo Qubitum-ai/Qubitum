@@ -141,7 +141,7 @@ pub mod pallet {
     use frame_support::pallet_prelude::*;
     use frame_system::pallet_prelude::*;
 
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(15);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(16);
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -268,7 +268,17 @@ pub mod pallet {
     #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
-    pub struct ChainSubnet<AccountId, Balance> {
+    pub struct ChainSubnet {
+        pub id: SubnetId,
+        pub owner_commitment: Commitment,
+        pub domain: SubnetDomain,
+        pub proof_system: ProofSystem,
+        pub policy_commitment: Commitment,
+        pub active: bool,
+    }
+
+    #[derive(Decode)]
+    struct ChainSubnetV15<AccountId, Balance> {
         pub id: SubnetId,
         pub owner: AccountId,
         pub domain: SubnetDomain,
@@ -751,8 +761,7 @@ pub mod pallet {
     pub type ValidatorCount<T: Config> = StorageValue<_, ValidatorId, ValueQuery>;
 
     #[pallet::storage]
-    pub type Subnets<T: Config> =
-        StorageMap<_, Twox64Concat, SubnetId, ChainSubnet<T::AccountId, BalanceOf<T>>, OptionQuery>;
+    pub type Subnets<T: Config> = StorageMap<_, Twox64Concat, SubnetId, ChainSubnet, OptionQuery>;
 
     #[pallet::storage]
     pub type Miners<T: Config> = StorageMap<_, Twox64Concat, MinerId, ChainMiner, OptionQuery>;
@@ -856,6 +865,7 @@ pub mod pallet {
             }
 
             let weight = Self::migrate_operator_commitments(on_chain)
+                .saturating_add(Self::migrate_subnet_policy_commitments(on_chain))
                 .saturating_add(Self::migrate_participant_capital_commitments(on_chain))
                 .saturating_add(Self::migrate_request_assignment_commitments(on_chain))
                 .saturating_add(Self::migrate_request_owner_commitments(on_chain))
@@ -1053,13 +1063,10 @@ pub mod pallet {
             let subnet_id = Self::next_subnet_id()?;
             let subnet = ChainSubnet {
                 id: subnet_id,
-                owner: owner.clone(),
+                owner_commitment: Self::account_commitment(&owner),
                 domain,
                 proof_system,
-                creation_burn: T::SubnetCreationBurn::get(),
-                min_miner_bond: T::MinMinerBond::get(),
-                max_miner_bond: T::MaxMinerBond::get(),
-                min_validator_stake: T::MinValidatorStake::get(),
+                policy_commitment: Self::subnet_policy_commitment(subnet_id, domain, proof_system),
                 active: true,
             };
 
@@ -1123,9 +1130,12 @@ pub mod pallet {
                     miner.status == RegistryStatus::Pending,
                     Error::<T>::InvalidMinerStatus
                 );
-                let subnet = Subnets::<T>::get(miner.subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
                 ensure!(
-                    bond >= subnet.min_miner_bond && bond <= subnet.max_miner_bond,
+                    Subnets::<T>::contains_key(miner.subnet_id),
+                    Error::<T>::UnknownSubnet
+                );
+                ensure!(
+                    bond >= T::MinMinerBond::get() && bond <= T::MaxMinerBond::get(),
                     Error::<T>::InvalidBond
                 );
 
@@ -1150,9 +1160,12 @@ pub mod pallet {
             stake: BalanceOf<T>,
         ) -> DispatchResult {
             let operator = ensure_signed(origin)?;
-            let subnet = Subnets::<T>::get(subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
             ensure!(
-                stake >= subnet.min_validator_stake,
+                Subnets::<T>::contains_key(subnet_id),
+                Error::<T>::UnknownSubnet
+            );
+            ensure!(
+                stake >= T::MinValidatorStake::get(),
                 Error::<T>::InvalidStake
             );
             T::Currency::hold(&HoldReason::ValidatorStake.into(), &operator, stake)?;
@@ -2111,6 +2124,26 @@ pub mod pallet {
             amount.using_encoded(blake2_256)
         }
 
+        pub(crate) fn subnet_policy_commitment(
+            subnet_id: SubnetId,
+            domain: SubnetDomain,
+            proof_system: ProofSystem,
+        ) -> Commitment {
+            (
+                subnet_id,
+                domain,
+                proof_system,
+                T::SubnetCreationBurn::get(),
+                T::MinerRegistrationBurn::get(),
+                T::MinMinerBond::get(),
+                T::MaxMinerBond::get(),
+                T::MinValidatorStake::get(),
+                T::MaxActiveMinersPerSubnet::get(),
+                T::MaxActiveValidatorsPerSubnet::get(),
+            )
+                .using_encoded(blake2_256)
+        }
+
         pub(crate) fn request_assignment_commitment(
             request_id: RequestId,
             subnet_id: SubnetId,
@@ -2770,6 +2803,39 @@ pub mod pallet {
             );
 
             let migrated = migrated_miners.saturating_add(migrated_validators);
+            T::DbWeight::get().reads_writes(migrated, migrated)
+        }
+
+        fn migrate_subnet_policy_commitments(on_chain: StorageVersion) -> Weight {
+            if on_chain >= StorageVersion::new(16) {
+                return Weight::zero();
+            }
+
+            let mut migrated = 0_u64;
+            Subnets::<T>::translate::<ChainSubnetV15<T::AccountId, BalanceOf<T>>, _>(|_, old| {
+                migrated = migrated.saturating_add(1);
+                Some(ChainSubnet {
+                    id: old.id,
+                    owner_commitment: Self::account_commitment(&old.owner),
+                    domain: old.domain,
+                    proof_system: old.proof_system,
+                    policy_commitment: (
+                        old.id,
+                        old.domain,
+                        old.proof_system,
+                        old.creation_burn,
+                        T::MinerRegistrationBurn::get(),
+                        old.min_miner_bond,
+                        old.max_miner_bond,
+                        old.min_validator_stake,
+                        T::MaxActiveMinersPerSubnet::get(),
+                        T::MaxActiveValidatorsPerSubnet::get(),
+                    )
+                        .using_encoded(blake2_256),
+                    active: old.active,
+                })
+            });
+
             T::DbWeight::get().reads_writes(migrated, migrated)
         }
 

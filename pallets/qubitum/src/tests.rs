@@ -127,6 +127,19 @@ struct LegacyChainProofRecordV14 {
 }
 
 #[derive(Encode)]
+struct LegacyChainSubnetV15 {
+    id: u16,
+    owner: u64,
+    domain: SubnetDomain,
+    proof_system: ProofSystem,
+    creation_burn: u128,
+    min_miner_bond: u128,
+    max_miner_bond: u128,
+    min_validator_stake: u128,
+    active: bool,
+}
+
+#[derive(Encode)]
 struct LegacyChainMinerV7 {
     id: u64,
     operator: u64,
@@ -318,7 +331,7 @@ fn challenge_proof(
 }
 
 #[test]
-fn create_subnet_burns_qbt_and_stores_policy() {
+fn create_subnet_burns_qbt_and_commits_owner_and_policy() {
     new_test_ext().execute_with(|| {
         assert_ok!(Qubitum::create_subnet(
             RuntimeOrigin::signed(1),
@@ -327,9 +340,22 @@ fn create_subnet_burns_qbt_and_stores_policy() {
         ));
 
         let subnet = Subnets::<Test>::get(0).unwrap();
-        assert_eq!(subnet.owner, 1);
+        assert_eq!(subnet.owner_commitment, Qubitum::account_commitment(&1));
         assert_eq!(subnet.domain, SubnetDomain::Code);
         assert_eq!(subnet.proof_system, ProofSystem::RiscZeroStark);
+        assert_eq!(
+            subnet.policy_commitment,
+            Qubitum::subnet_policy_commitment(0, SubnetDomain::Code, ProofSystem::RiscZeroStark)
+        );
+        assert!(!contains_subsequence(&subnet.encode(), &1_u64.encode()));
+        assert!(!contains_subsequence(
+            &subnet.encode(),
+            &MINER_REGISTRATION_BURN.encode()
+        ));
+        assert!(!contains_subsequence(
+            &subnet.encode(),
+            &MIN_MINER_BOND.encode()
+        ));
         assert_eq!(SubnetCount::<Test>::get(), 1);
         assert_eq!(TotalBurned::<Test>::get(), MINER_REGISTRATION_BURN);
         assert_eq!(
@@ -1388,6 +1414,45 @@ fn public_lifecycle_events_redact_route_payment_and_proof_metadata() {
 }
 
 #[test]
+fn runtime_upgrade_migrates_subnet_owner_and_policy_to_commitments() {
+    new_test_ext().execute_with(|| {
+        let legacy = LegacyChainSubnetV15 {
+            id: 7,
+            owner: 44,
+            domain: SubnetDomain::Code,
+            proof_system: ProofSystem::RiscZeroStark,
+            creation_burn: MINER_REGISTRATION_BURN,
+            min_miner_bond: MIN_MINER_BOND,
+            max_miner_bond: MAX_MINER_BOND,
+            min_validator_stake: MIN_MINER_BOND,
+            active: true,
+        };
+        sp_io::storage::set(&Subnets::<Test>::hashed_key_for(7), &legacy.encode());
+        StorageVersion::new(15).put::<crate::Pallet<Test>>();
+
+        <Qubitum as Hooks<u64>>::on_runtime_upgrade();
+
+        let subnet = Subnets::<Test>::get(7).unwrap();
+        assert_eq!(subnet.id, 7);
+        assert_eq!(subnet.owner_commitment, Qubitum::account_commitment(&44));
+        assert_eq!(
+            subnet.policy_commitment,
+            Qubitum::subnet_policy_commitment(7, SubnetDomain::Code, ProofSystem::RiscZeroStark)
+        );
+        assert!(subnet.active);
+        assert!(!contains_subsequence(&subnet.encode(), &44_u64.encode()));
+        assert!(!contains_subsequence(
+            &subnet.encode(),
+            &MIN_MINER_BOND.encode()
+        ));
+        assert_eq!(
+            StorageVersion::get::<crate::Pallet<Test>>(),
+            StorageVersion::new(16)
+        );
+    });
+}
+
+#[test]
 fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
     new_test_ext().execute_with(|| {
         let legacy = LegacyChainProofRecordV4 {
@@ -1435,7 +1500,7 @@ fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(15)
+            StorageVersion::new(16)
         );
     });
 }
@@ -1491,7 +1556,7 @@ fn runtime_upgrade_migrates_proof_record_routes_to_commitments() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(15)
+            StorageVersion::new(16)
         );
     });
 }
@@ -1551,7 +1616,7 @@ fn runtime_upgrade_migrates_proof_record_details_to_audit_commitments() {
         }
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(15)
+            StorageVersion::new(16)
         );
     });
 }
@@ -1615,7 +1680,7 @@ fn runtime_upgrade_migrates_registry_operators_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(15)
+            StorageVersion::new(16)
         );
     });
 }
@@ -1676,7 +1741,7 @@ fn runtime_upgrade_migrates_participant_capital_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(15)
+            StorageVersion::new(16)
         );
     });
 }
@@ -1728,7 +1793,7 @@ fn runtime_upgrade_migrates_request_users_to_commitments() {
         assert_eq!(PendingValidatorRequests::<Test>::get(9), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(15)
+            StorageVersion::new(16)
         );
     });
 }
@@ -1768,7 +1833,7 @@ fn runtime_upgrade_migrates_request_timing_to_commitments() {
         assert_eq!(request.status, InferenceRequestStatus::Pending);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(15)
+            StorageVersion::new(16)
         );
     });
 }
@@ -1808,7 +1873,7 @@ fn runtime_upgrade_migrates_request_terms_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(15)
+            StorageVersion::new(16)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 123_456);
         assert_eq!(TotalValidatorFees::<Test>::get(), 3_086);
@@ -2388,6 +2453,18 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         request_inference(42);
+        let legacy_subnet = LegacyChainSubnetV15 {
+            id: 0,
+            owner: 1,
+            domain: SubnetDomain::Code,
+            proof_system: ProofSystem::RiscZeroStark,
+            creation_burn: MINER_REGISTRATION_BURN,
+            min_miner_bond: MIN_MINER_BOND,
+            max_miner_bond: MAX_MINER_BOND,
+            min_validator_stake: MIN_MINER_BOND,
+            active: true,
+        };
+        sp_io::storage::set(&Subnets::<Test>::hashed_key_for(0), &legacy_subnet.encode());
         let legacy_request = LegacyChainInferenceRequestV10 {
             request_id: 42,
             user_commitment: Qubitum::account_commitment(&4),
@@ -2427,7 +2504,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(15)
+            StorageVersion::new(16)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
