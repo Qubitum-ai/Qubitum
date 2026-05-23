@@ -3,7 +3,7 @@ use codec::{Decode, DecodeLimit, DecodeWithMemTracking, Encode};
 use frame_support::pallet_prelude::TypeInfo;
 use sp_runtime::impl_tx_ext_default;
 use sp_runtime::traits::{DispatchInfoOf, Implication, TransactionExtension, ValidateResult};
-use sp_runtime::transaction_validity::TransactionSource;
+use sp_runtime::transaction_validity::{TransactionSource, TransactionValidityError};
 use subtensor_macros::freeze_struct;
 use subtensor_runtime_common::CustomTransactionError;
 
@@ -114,7 +114,7 @@ impl TransactionExtension<RuntimeCall> for CheckQubitumShielding {
     type Val = ();
     type Pre = ();
 
-    impl_tx_ext_default!(RuntimeCall; weight prepare);
+    impl_tx_ext_default!(RuntimeCall; weight);
 
     fn validate(
         &self,
@@ -131,6 +131,21 @@ impl TransactionExtension<RuntimeCall> for CheckQubitumShielding {
         }
 
         Ok((Default::default(), (), origin))
+    }
+
+    fn prepare(
+        self,
+        _val: Self::Val,
+        _origin: &RuntimeOrigin,
+        call: &RuntimeCall,
+        _info: &DispatchInfoOf<RuntimeCall>,
+        _len: usize,
+    ) -> Result<Self::Pre, TransactionValidityError> {
+        if let Some(err) = Self::privacy_violation(call) {
+            return Err(err.into());
+        }
+
+        Ok(())
     }
 }
 
@@ -216,6 +231,12 @@ mod tests {
         let info = call.get_dispatch_info();
         ext.validate(origin, call, &info, 0, (), &TxBaseImplication(call), source)
             .map(|_| ())
+    }
+
+    fn prepare_ext(call: &RuntimeCall) -> Result<(), TransactionValidityError> {
+        let ext = CheckQubitumShielding::new();
+        let info = call.get_dispatch_info();
+        ext.prepare((), &RuntimeOrigin::signed(account(1)), call, &info, 0)
     }
 
     fn assert_qubitum_rejected(call: RuntimeCall) {
@@ -584,6 +605,51 @@ mod tests {
                 validate_ext(&direct_qubitum_call(), TransactionSource::InBlock),
                 Err(CustomTransactionError::QubitumCallMustBeShielded.into())
             );
+        });
+    }
+
+    #[test]
+    fn prepare_rejects_unshielded_qubitum_call() {
+        new_test_ext().execute_with(|| {
+            assert_eq!(
+                prepare_ext(&direct_qubitum_call()),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+
+            let wrapped = RuntimeCall::Utility(pallet_subtensor_utility::Call::if_else {
+                main: Box::new(remark_call(14)),
+                fallback: Box::new(direct_qubitum_call()),
+            });
+            assert_eq!(
+                prepare_ext(&wrapped),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+        });
+    }
+
+    #[test]
+    fn prepare_rejects_disabled_store_encrypted_call() {
+        new_test_ext().execute_with(|| {
+            assert_eq!(
+                prepare_ext(&store_encrypted_call(0xB1)),
+                Err(CustomTransactionError::ShieldStoreEncryptedDisabled.into())
+            );
+
+            let wrapped = RuntimeCall::Utility(pallet_subtensor_utility::Call::batch_all {
+                calls: vec![store_encrypted_call(0xB2)],
+            });
+            assert_eq!(
+                prepare_ext(&wrapped),
+                Err(CustomTransactionError::ShieldStoreEncryptedDisabled.into())
+            );
+        });
+    }
+
+    #[test]
+    fn prepare_allows_shield_envelope_and_non_qubitum_calls() {
+        new_test_ext().execute_with(|| {
+            assert!(prepare_ext(&shield_call()).is_ok());
+            assert!(prepare_ext(&remark_call(13)).is_ok());
         });
     }
 
