@@ -947,6 +947,121 @@ fn request_id_overflow_does_not_escrow_or_increment_pending() {
 }
 
 #[test]
+fn accounting_overflows_fail_without_state_changes() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        TotalInferenceEscrowed::<Test>::put(u128::MAX);
+
+        assert_noop!(
+            Qubitum::request_inference(
+                RuntimeOrigin::signed(4),
+                0,
+                InferenceRequestParams {
+                    subnet_id: 0,
+                    miner_id: 0,
+                    validator_id: 0,
+                    input_commitment: commitment(1),
+                    assignment_blinding: assignment_blinding(),
+                    timing_blinding: timing_blinding(),
+                    terms_blinding: terms_blinding(),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::ArithmeticOverflow
+        );
+
+        assert!(InferenceRequests::<Test>::get(0).is_none());
+        assert_eq!(RequestCount::<Test>::get(), 0);
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            0
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), u128::MAX);
+    });
+
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(80);
+        TotalMinerPayouts::<Test>::put(u128::MAX);
+
+        assert_noop!(
+            submit_proof(RuntimeOrigin::signed(3), valid_submission(80)),
+            Error::<Test>::ArithmeticOverflow
+        );
+
+        assert!(ProofRecords::<Test>::get(80).is_none());
+        assert_eq!(
+            InferenceRequests::<Test>::get(80).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            1_000
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(TotalMinerPayouts::<Test>::get(), u128::MAX);
+    });
+
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(81);
+        TotalInferenceRefunded::<Test>::put(u128::MAX);
+        System::set_block_number(10);
+
+        assert_noop!(
+            Qubitum::cancel_inference(
+                RuntimeOrigin::signed(4),
+                81,
+                0,
+                0,
+                assignment_blinding(),
+                timing_witness(0),
+                request_terms_witness()
+            ),
+            Error::<Test>::ArithmeticOverflow
+        );
+
+        assert_eq!(
+            InferenceRequests::<Test>::get(81).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            1_000
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), u128::MAX);
+    });
+
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        TotalBurned::<Test>::put(u128::MAX);
+
+        assert_noop!(
+            Qubitum::slash_miner(RuntimeOrigin::root(), 0, 2, 1_000),
+            Error::<Test>::ArithmeticOverflow
+        );
+
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            MIN_MINER_BOND
+        );
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert_eq!(TotalBurned::<Test>::get(), u128::MAX);
+    });
+}
+
+#[test]
 fn role_commitments_are_domain_separated_with_legacy_authorization() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();

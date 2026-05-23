@@ -1399,6 +1399,7 @@ pub mod pallet {
         /// Slash a miner bond for invalid proof behavior.
         #[pallet::call_index(5)]
         #[pallet::weight(T::WeightInfo::slash_miner())]
+        #[frame_support::transactional]
         pub fn slash_miner(
             origin: OriginFor<T>,
             miner_id: MinerId,
@@ -1557,7 +1558,7 @@ pub mod pallet {
                 InferenceRequestStatus::Pending,
                 InferenceRequestStatus::Cancelled,
             )?;
-            Self::record_inference_refund(payment);
+            Self::record_inference_refund(payment)?;
 
             Self::deposit_event(Event::InferenceCancelled { request_id });
             Ok(())
@@ -1722,6 +1723,7 @@ pub mod pallet {
         /// Slash a validator stake for invalid verification behavior.
         #[pallet::call_index(12)]
         #[pallet::weight(T::WeightInfo::slash_validator())]
+        #[frame_support::transactional]
         pub fn slash_validator(
             origin: OriginFor<T>,
             validator_id: ValidatorId,
@@ -1800,7 +1802,7 @@ pub mod pallet {
                 InferenceRequestStatus::Pending,
                 InferenceRequestStatus::Expired,
             )?;
-            Self::record_inference_refund(payment);
+            Self::record_inference_refund(payment)?;
 
             Self::deposit_event(Event::InferenceExpired { request_id });
             Ok(())
@@ -2092,7 +2094,7 @@ pub mod pallet {
             T::Currency::hold(&HoldReason::InferencePayment.into(), &user, payment)?;
             Self::increment_pending_assignment(miner_id, validator_id)?;
             Self::increment_request_status_count(InferenceRequestStatus::Pending)?;
-            Self::record_inference_escrow(payment);
+            Self::record_inference_escrow(payment)?;
             let created_at = Self::current_block();
             InferenceRequests::<T>::insert(
                 request_id,
@@ -2208,10 +2210,13 @@ pub mod pallet {
             Ok(())
         }
 
-        fn record_inference_escrow(payment: BalanceOf<T>) {
-            TotalInferenceEscrowed::<T>::mutate(|total| {
-                *total = total.saturating_add(payment);
-            });
+        fn record_inference_escrow(payment: BalanceOf<T>) -> DispatchResult {
+            TotalInferenceEscrowed::<T>::try_mutate(|total| -> DispatchResult {
+                *total = total
+                    .checked_add(&payment)
+                    .ok_or(Error::<T>::ArithmeticOverflow)?;
+                Ok(())
+            })
         }
 
         fn increment_request_status_count(status: InferenceRequestStatus) -> DispatchResult {
@@ -2282,22 +2287,34 @@ pub mod pallet {
             miner_payment: BalanceOf<T>,
             validator_fee: BalanceOf<T>,
             treasury_fee: BalanceOf<T>,
-        ) {
-            TotalMinerPayouts::<T>::mutate(|total| {
-                *total = total.saturating_add(miner_payment);
-            });
-            TotalValidatorFees::<T>::mutate(|total| {
-                *total = total.saturating_add(validator_fee);
-            });
-            TotalTreasuryFees::<T>::mutate(|total| {
-                *total = total.saturating_add(treasury_fee);
-            });
+        ) -> DispatchResult {
+            TotalMinerPayouts::<T>::try_mutate(|total| -> DispatchResult {
+                *total = total
+                    .checked_add(&miner_payment)
+                    .ok_or(Error::<T>::ArithmeticOverflow)?;
+                Ok(())
+            })?;
+            TotalValidatorFees::<T>::try_mutate(|total| -> DispatchResult {
+                *total = total
+                    .checked_add(&validator_fee)
+                    .ok_or(Error::<T>::ArithmeticOverflow)?;
+                Ok(())
+            })?;
+            TotalTreasuryFees::<T>::try_mutate(|total| -> DispatchResult {
+                *total = total
+                    .checked_add(&treasury_fee)
+                    .ok_or(Error::<T>::ArithmeticOverflow)?;
+                Ok(())
+            })
         }
 
-        fn record_inference_refund(payment: BalanceOf<T>) {
-            TotalInferenceRefunded::<T>::mutate(|total| {
-                *total = total.saturating_add(payment);
-            });
+        fn record_inference_refund(payment: BalanceOf<T>) -> DispatchResult {
+            TotalInferenceRefunded::<T>::try_mutate(|total| -> DispatchResult {
+                *total = total
+                    .checked_add(&payment)
+                    .ok_or(Error::<T>::ArithmeticOverflow)?;
+                Ok(())
+            })
         }
 
         fn current_block() -> BlockNumber {
@@ -3687,10 +3704,7 @@ pub mod pallet {
                 Precision::Exact,
                 Fortitude::Polite,
             )?;
-            TotalBurned::<T>::mutate(|total| {
-                *total = total.saturating_add(burned);
-            });
-            Ok(())
+            Self::record_burned(burned)
         }
 
         fn ensure_request_assignment(
@@ -3901,7 +3915,7 @@ pub mod pallet {
                         miner_payment,
                         validator_fee,
                         treasury_fee,
-                    );
+                    )?;
 
                     Ok((miner_payment, validator_fee, treasury_fee))
                 },
@@ -3942,7 +3956,7 @@ pub mod pallet {
                         InferenceRequestStatus::Pending,
                         InferenceRequestStatus::Rejected,
                     )?;
-                    Self::record_inference_refund(terms.payment);
+                    Self::record_inference_refund(terms.payment)?;
 
                     Ok(terms.payment)
                 },
@@ -4078,9 +4092,7 @@ pub mod pallet {
                 Ok::<BalanceOf<T>, DispatchError>(burned)
             })?;
 
-            TotalBurned::<T>::mutate(|total| {
-                *total = total.saturating_add(amount);
-            });
+            Self::record_burned(amount)?;
             Ok(amount)
         }
 
@@ -4126,10 +4138,17 @@ pub mod pallet {
                 Ok::<BalanceOf<T>, DispatchError>(burned)
             })?;
 
-            TotalBurned::<T>::mutate(|total| {
-                *total = total.saturating_add(amount);
-            });
+            Self::record_burned(amount)?;
             Ok(amount)
+        }
+
+        fn record_burned(amount: BalanceOf<T>) -> DispatchResult {
+            TotalBurned::<T>::try_mutate(|total| -> DispatchResult {
+                *total = total
+                    .checked_add(&amount)
+                    .ok_or(Error::<T>::ArithmeticOverflow)?;
+                Ok(())
+            })
         }
     }
 }
