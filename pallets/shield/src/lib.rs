@@ -52,6 +52,7 @@ type CheckedOf<T, Context> = <T as Checkable<Context>>::Checked;
 type ApplyableCallOf<T> = <T as Applyable>::Call;
 
 const MAX_EXTRINSIC_DEPTH: u32 = 8;
+const MIN_AEAD_CIPHERTEXT_LEN: usize = 16;
 
 /// Weight for `store_encrypted`, intentionally set higher than the benchmark
 /// to discourage abuse of the encrypted extrinsic queue.
@@ -243,6 +244,8 @@ pub mod pallet {
     pub enum Error<T> {
         /// The announced ML‑KEM encapsulation key length is invalid.
         BadEncKeyLen,
+        /// The submitted shielded ciphertext is malformed or not compatible with ML-KEM-768.
+        BadCiphertext,
         /// Unreachable.
         Unreachable,
         /// Too many pending extrinsics in storage.
@@ -367,6 +370,10 @@ pub mod pallet {
             ciphertext: BoundedVec<u8, ConstU32<8192>>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
+            ensure!(
+                Self::parse_valid_submit_encrypted_ciphertext(&ciphertext).is_some(),
+                Error::<T>::BadCiphertext
+            );
             let id: T::Hash = T::Hashing::hash_of(&(who.clone(), &ciphertext));
 
             Self::deposit_event(Event::EncryptedSubmitted { id, who });
@@ -490,6 +497,15 @@ pub mod pallet {
 }
 
 impl<T: Config> Pallet<T> {
+    pub(crate) fn parse_valid_submit_encrypted_ciphertext(
+        ciphertext: &[u8],
+    ) -> Option<ShieldedTransaction> {
+        let shielded_tx = ShieldedTransaction::parse(ciphertext)?;
+
+        Ciphertext::<MlKem768>::try_from(shielded_tx.kem_ct.as_slice()).ok()?;
+        (shielded_tx.aead_ct.len() >= MIN_AEAD_CIPHERTEXT_LEN).then_some(shielded_tx)
+    }
+
     /// Process pending encrypted extrinsics up to the weight limit.
     /// Returns the total weight consumed.
     pub fn process_pending_extrinsics() -> Weight {
@@ -620,7 +636,7 @@ impl<T: Config> Pallet<T> {
             return None;
         };
 
-        ShieldedTransaction::parse(ciphertext)
+        Self::parse_valid_submit_encrypted_ciphertext(ciphertext)
     }
 
     pub fn is_shielded_using_current_key(key_hash: &[u8; 16]) -> bool {

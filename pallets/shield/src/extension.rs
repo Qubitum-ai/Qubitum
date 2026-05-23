@@ -1,4 +1,4 @@
-use crate::{Call, Config, ShieldedTransaction};
+use crate::{Call, Config};
 use codec::{Decode, DecodeWithMemTracking, Encode};
 use frame_support::pallet_prelude::*;
 use frame_support::traits::IsSubType;
@@ -67,9 +67,9 @@ where
         };
 
         // Reject malformed ciphertext regardless of source.
-        let Some(ShieldedTransaction { .. }) = ShieldedTransaction::parse(ciphertext) else {
+        if crate::Pallet::<T>::parse_valid_submit_encrypted_ciphertext(ciphertext).is_none() {
             return Err(CustomTransactionError::FailedShieldedTxParsing.into());
-        };
+        }
 
         Ok((Default::default(), (), origin))
     }
@@ -94,9 +94,9 @@ where
         };
 
         // Reject malformed ciphertext during block preparation too.
-        let Some(ShieldedTransaction { .. }) = ShieldedTransaction::parse(ciphertext) else {
+        if crate::Pallet::<T>::parse_valid_submit_encrypted_ciphertext(ciphertext).is_none() {
             return Err(CustomTransactionError::FailedShieldedTxParsing.into());
-        };
+        }
 
         Ok(())
     }
@@ -114,7 +114,7 @@ mod tests {
     /// Build wire-format ciphertext with a given key_hash.
     /// Layout: key_hash(16) || kem_ct_len(2 LE) || kem_ct(N) || nonce(24) || aead_ct(rest)
     fn build_ciphertext(key_hash: [u8; 16]) -> BoundedVec<u8, ConstU32<8192>> {
-        let kem_ct = [0xAA; 4];
+        let kem_ct = [0xAA; 1088];
         let nonce = [0xBB; 24];
         let aead_ct = [0xDD; 16];
 

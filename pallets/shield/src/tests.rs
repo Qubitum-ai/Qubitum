@@ -14,12 +14,22 @@ use chacha20poly1305::{
     KeyInit, XChaCha20Poly1305, XNonce,
     aead::{Aead, Payload},
 };
+use frame_support::pallet_prelude::ConstU32;
 use ml_kem::{
     EncodedSizeUser, MlKem768Params,
     kem::{Encapsulate, EncapsulationKey},
 };
 use rand_chacha::{ChaChaRng, rand_core::SeedableRng};
 use stc_shield::MemoryShieldKeystore;
+
+fn valid_submit_ciphertext() -> BoundedVec<u8, ConstU32<8192>> {
+    BoundedVec::truncate_from(build_wire_ciphertext(
+        &[0xAB; 16],
+        &[0xCC; 1088],
+        &[0xDD; 24],
+        &[0xEE; 16],
+    ))
+}
 
 /// Simulates a 3-validator round-robin (authors 1, 2, 3) over 5 blocks.
 /// Each block calls `announce_next_key` and verifies the full pipeline:
@@ -208,7 +218,7 @@ fn submit_encrypted_emits_event() {
     new_test_ext().execute_with(|| {
         System::set_block_number(1);
 
-        let ciphertext = BoundedVec::truncate_from(vec![0xAA; 64]);
+        let ciphertext = valid_submit_ciphertext();
         let who: u64 = 1;
 
         assert_ok!(MevShield::submit_encrypted(
@@ -241,10 +251,56 @@ fn submit_encrypted_rejects_unsigned() {
 }
 
 #[test]
+fn submit_encrypted_rejects_malformed_ciphertext() {
+    new_test_ext().execute_with(|| {
+        let ciphertext = BoundedVec::truncate_from(vec![0u8; 5]);
+
+        assert_noop!(
+            MevShield::submit_encrypted(RuntimeOrigin::signed(1), ciphertext),
+            Error::<Test>::BadCiphertext
+        );
+    });
+}
+
+#[test]
+fn submit_encrypted_rejects_invalid_kem_ciphertext_len() {
+    new_test_ext().execute_with(|| {
+        let ciphertext = BoundedVec::truncate_from(build_wire_ciphertext(
+            &[0xAB; 16],
+            &[0xCC; 32],
+            &[0xDD; 24],
+            &[0xEE; 16],
+        ));
+
+        assert_noop!(
+            MevShield::submit_encrypted(RuntimeOrigin::signed(1), ciphertext),
+            Error::<Test>::BadCiphertext
+        );
+    });
+}
+
+#[test]
+fn submit_encrypted_rejects_missing_aead_tag() {
+    new_test_ext().execute_with(|| {
+        let ciphertext = BoundedVec::truncate_from(build_wire_ciphertext(
+            &[0xAB; 16],
+            &[0xCC; 1088],
+            &[0xDD; 24],
+            &[],
+        ));
+
+        assert_noop!(
+            MevShield::submit_encrypted(RuntimeOrigin::signed(1), ciphertext),
+            Error::<Test>::BadCiphertext
+        );
+    });
+}
+
+#[test]
 fn try_decode_shielded_tx_parses_bare_submit_encrypted() {
     new_test_ext().execute_with(|| {
         let key_hash = [0xAB; 16];
-        let kem_ct = vec![0xCC; 32];
+        let kem_ct = vec![0xCC; 1088];
         let nonce = [0xDD; 24];
         let aead_ct = vec![0xEE; 64];
 
@@ -285,7 +341,8 @@ fn try_decode_shielded_tx_returns_none_for_non_shield_call() {
 #[test]
 fn try_decode_shielded_tx_returns_none_for_bad_signature() {
     new_test_ext().execute_with(|| {
-        let ciphertext = build_wire_ciphertext(&[0xAB; 16], &[0xCC; 32], &[0xDD; 24], &[0xEE; 64]);
+        let ciphertext =
+            build_wire_ciphertext(&[0xAB; 16], &[0xCC; 1088], &[0xDD; 24], &[0xEE; 64]);
         let call = RuntimeCall::MevShield(crate::Call::submit_encrypted {
             ciphertext: BoundedVec::truncate_from(ciphertext),
         });
@@ -317,9 +374,27 @@ fn try_decode_shielded_tx_returns_none_for_malformed_ciphertext() {
 }
 
 #[test]
-fn try_decode_shielded_tx_returns_none_when_depth_exceeded() {
+fn try_decode_shielded_tx_returns_none_for_invalid_kem_ciphertext_len() {
     new_test_ext().execute_with(|| {
         let ciphertext = build_wire_ciphertext(&[0xAB; 16], &[0xCC; 32], &[0xDD; 24], &[0xEE; 64]);
+        let call = RuntimeCall::MevShield(crate::Call::submit_encrypted {
+            ciphertext: BoundedVec::truncate_from(ciphertext),
+        });
+        let uxt = DecodableExtrinsic::new_bare(call);
+
+        let result = crate::Pallet::<Test>::try_decode_shielded_tx::<
+            DecodableBlock,
+            frame_system::ChainContext<Test>,
+        >(uxt);
+        assert!(result.is_none());
+    });
+}
+
+#[test]
+fn try_decode_shielded_tx_returns_none_when_depth_exceeded() {
+    new_test_ext().execute_with(|| {
+        let ciphertext =
+            build_wire_ciphertext(&[0xAB; 16], &[0xCC; 1088], &[0xDD; 24], &[0xEE; 64]);
         let inner = RuntimeCall::MevShield(crate::Call::submit_encrypted {
             ciphertext: BoundedVec::truncate_from(ciphertext),
         });
