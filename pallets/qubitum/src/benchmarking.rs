@@ -5,15 +5,15 @@
 
 use crate::{
     BalanceOf, Event, InferenceRequestParams, InferenceRequestStatus, InferenceRequestTerms,
-    InferenceRequestTermsWitness, InferenceRequests, MinerCount, Miners, ProofRecords, SubnetCount,
-    Subnets, TotalBurned, ValidatorCount, Validators, pallet::*,
+    InferenceRequestTermsWitness, InferenceRequestTimingWitness, InferenceRequests, MinerCount,
+    Miners, ProofRecords, SubnetCount, Subnets, TotalBurned, ValidatorCount, Validators, pallet::*,
 };
 use frame_benchmarking::{account, v2::*};
 use frame_support::traits::{Get, fungible::Mutate};
 use frame_system::RawOrigin;
 use qubitum_protocol::{
-    Commitment, InferenceProofSubmission, ProofEnvelope, ProofSystem, RegistryStatus, SubnetDomain,
-    TARGET_PROOF_SIZE_MIN_BYTES,
+    BlockNumber, Commitment, InferenceProofSubmission, ProofEnvelope, ProofSystem, RegistryStatus,
+    SubnetDomain, TARGET_PROOF_SIZE_MIN_BYTES,
 };
 use sp_runtime::{Saturating, traits::SaturatedConversion};
 
@@ -25,6 +25,10 @@ fn commitment(seed: u8) -> Commitment {
 
 fn assignment_blinding() -> Commitment {
     commitment(90)
+}
+
+fn timing_blinding() -> Commitment {
+    commitment(92)
 }
 
 fn terms_blinding() -> Commitment {
@@ -131,6 +135,7 @@ fn request_bench_inference<T: Config>(request_id: u64) -> T::AccountId {
             validator_id: 0,
             input_commitment: commitment(1),
             assignment_blinding: assignment_blinding(),
+            timing_blinding: timing_blinding(),
             terms_blinding: terms_blinding(),
             payment: T::MinMinerBond::get(),
             validator_fee_bps: 250,
@@ -153,6 +158,13 @@ fn bench_request_terms_witness<T: Config>() -> InferenceRequestTermsWitness<Bala
     InferenceRequestTermsWitness {
         terms: bench_request_terms::<T>(),
         blinding: terms_blinding(),
+    }
+}
+
+fn bench_timing_witness(created_at: BlockNumber) -> InferenceRequestTimingWitness {
+    InferenceRequestTimingWitness {
+        created_at,
+        blinding: timing_blinding(),
     }
 }
 
@@ -438,6 +450,7 @@ mod benchmarks {
                 validator_id: 0,
                 input_commitment: commitment(1),
                 assignment_blinding: assignment_blinding(),
+                timing_blinding: timing_blinding(),
                 terms_blinding: terms_blinding(),
                 payment,
                 validator_fee_bps: 250,
@@ -476,7 +489,7 @@ mod benchmarks {
             0,
             0,
             assignment_blinding(),
-            0,
+            bench_timing_witness(0),
             bench_request_terms_witness::<T>(),
         );
 
@@ -507,7 +520,7 @@ mod benchmarks {
             0,
             0,
             assignment_blinding(),
-            0,
+            bench_timing_witness(0),
             bench_request_terms_witness::<T>(),
         );
 

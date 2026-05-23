@@ -5,13 +5,14 @@ use crate::{
     CancelledInferenceRequestCount, ChainInferenceRequest, ChainPublicInferenceRequest,
     ChainPublicMiner, ChainPublicProofRecord, ChainPublicSubnet, ChainPublicValidator,
     ChainRequestStatusCounts, ChainRouteAvailability, Error, HoldReason, InferenceRequestParams,
-    InferenceRequestStatus, InferenceRequestTerms, InferenceRequestTermsWitness, InferenceRequests,
-    MinerCount, MinerIdentityCommitments, MinerIdentitySignatureBundles, Miners,
-    PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests, ProofRecords,
-    PublicRegistryStatus, RejectedInferenceRequestCount, RequestCount,
-    SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned, TotalInferenceEscrowed,
-    TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees, TotalValidatorFees,
-    ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles, Validators,
+    InferenceRequestStatus, InferenceRequestTerms, InferenceRequestTermsWitness,
+    InferenceRequestTimingWitness, InferenceRequests, MinerCount, MinerIdentityCommitments,
+    MinerIdentitySignatureBundles, Miners, PendingInferenceRequestCount, PendingMinerRequests,
+    PendingValidatorRequests, ProofRecords, PublicRegistryStatus, RejectedInferenceRequestCount,
+    RequestCount, SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned,
+    TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees,
+    TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
+    ValidatorIdentitySignatureBundles, Validators,
     mock::{
         Balances, Qubitum, RuntimeEvent, RuntimeOrigin, System, Test, new_test_ext,
         set_verification_outcome,
@@ -36,6 +37,10 @@ fn commitment(seed: u8) -> [u8; 32] {
 
 fn assignment_blinding() -> [u8; 32] {
     commitment(90)
+}
+
+fn timing_blinding() -> [u8; 32] {
+    commitment(92)
 }
 
 fn terms_blinding() -> [u8; 32] {
@@ -302,6 +307,7 @@ fn request_inference(request_id: u64) {
             validator_id: 0,
             input_commitment: commitment(1),
             assignment_blinding: assignment_blinding(),
+            timing_blinding: timing_blinding(),
             terms_blinding: terms_blinding(),
             payment: 1_000,
             validator_fee_bps: 250,
@@ -316,6 +322,20 @@ fn request_terms() -> InferenceRequestTerms<u128> {
 
 fn request_terms_witness() -> InferenceRequestTermsWitness<u128> {
     terms_witness(request_terms(), terms_blinding())
+}
+
+fn timing_witness(created_at: u64) -> InferenceRequestTimingWitness {
+    InferenceRequestTimingWitness {
+        created_at,
+        blinding: timing_blinding(),
+    }
+}
+
+fn legacy_timing_witness(created_at: u64) -> InferenceRequestTimingWitness {
+    InferenceRequestTimingWitness {
+        created_at,
+        blinding: [0; 32],
+    }
 }
 
 fn inference_terms(
@@ -868,7 +888,7 @@ fn role_commitments_are_domain_separated_with_legacy_authorization() {
             0,
             0,
             assignment_blinding(),
-            0,
+            timing_witness(0),
             request_terms_witness()
         ));
     });
@@ -1308,6 +1328,7 @@ fn public_request_and_proof_views_redact_private_route_payment_and_timing() {
                 validator_id: 0,
                 input_commitment: commitment(1),
                 assignment_blinding: assignment_blinding(),
+                timing_blinding: timing_blinding(),
                 terms_blinding: terms_blinding(),
                 payment: 123_456_789,
                 validator_fee_bps: 777,
@@ -1548,6 +1569,7 @@ fn public_lifecycle_events_redact_route_payment_and_proof_metadata() {
                 subnet_id: 0,
                 input_commitment: commitment(31),
                 assignment_blinding: assignment_blinding(),
+                timing_blinding: timing_blinding(),
                 terms_blinding: terms_blinding(),
                 payment: 123_456_789,
                 validator_fee_bps: 777,
@@ -2040,7 +2062,7 @@ fn runtime_upgrade_migrates_request_users_to_commitments() {
         );
         assert_eq!(
             request.timing_commitment,
-            Qubitum::request_timing_commitment(91, 12)
+            Qubitum::legacy_request_timing_commitment(91, 12)
         );
         assert_eq!(request.status, InferenceRequestStatus::Pending);
         assert!(!contains_subsequence(&request.encode(), &44_u64.encode()));
@@ -2081,7 +2103,7 @@ fn runtime_upgrade_migrates_request_timing_to_commitments() {
         let request = InferenceRequests::<Test>::get(91).unwrap();
         assert_eq!(
             request.timing_commitment,
-            Qubitum::request_timing_commitment(91, 12)
+            Qubitum::legacy_request_timing_commitment(91, 12)
         );
         assert_eq!(
             request.terms_commitment,
@@ -2107,7 +2129,7 @@ fn runtime_upgrade_migrates_request_terms_to_commitments() {
             payment: 123_456,
             validator_fee_bps: 250,
             treasury_fee_bps: 50,
-            timing_commitment: Qubitum::request_timing_commitment(91, 12),
+            timing_commitment: Qubitum::legacy_request_timing_commitment(91, 12),
             status: InferenceRequestStatus::Settled,
         };
         sp_io::storage::set(
@@ -2166,7 +2188,7 @@ fn request_inference_escrows_payment() {
         assert!(!contains_subsequence(&request.encode(), &50_u16.encode()));
         assert_eq!(
             request.timing_commitment,
-            Qubitum::request_timing_commitment(7, 0)
+            Qubitum::request_timing_commitment(7, 0, timing_blinding())
         );
         assert_eq!(request.status, InferenceRequestStatus::Pending);
         assert_eq!(
@@ -2219,6 +2241,7 @@ fn request_storage_commits_route_assignment_without_raw_participant_ids() {
                 validator_id: assignment.validator_id,
                 input_commitment: commitment(1),
                 assignment_blinding: assignment_blinding(),
+                timing_blinding: timing_blinding(),
                 terms_blinding: terms_blinding(),
                 payment: 1_000,
                 validator_fee_bps: 250,
@@ -2265,6 +2288,35 @@ fn request_inference_requires_nonzero_assignment_blinding() {
                     validator_id: 0,
                     input_commitment: commitment(1),
                     assignment_blinding: [0; 32],
+                    timing_blinding: timing_blinding(),
+                    terms_blinding: terms_blinding(),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::MissingCommitment
+        );
+    });
+}
+
+#[test]
+fn request_inference_requires_nonzero_timing_blinding() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        RequestCount::<Test>::put(13);
+
+        assert_noop!(
+            Qubitum::request_inference(
+                RuntimeOrigin::signed(4),
+                13,
+                InferenceRequestParams {
+                    subnet_id: 0,
+                    miner_id: 0,
+                    validator_id: 0,
+                    input_commitment: commitment(1),
+                    assignment_blinding: assignment_blinding(),
+                    timing_blinding: [0; 32],
                     terms_blinding: terms_blinding(),
                     payment: 1_000,
                     validator_fee_bps: 250,
@@ -2292,6 +2344,7 @@ fn request_inference_requires_nonzero_terms_blinding() {
                     validator_id: 0,
                     input_commitment: commitment(1),
                     assignment_blinding: assignment_blinding(),
+                    timing_blinding: timing_blinding(),
                     terms_blinding: [0; 32],
                     payment: 1_000,
                     validator_fee_bps: 250,
@@ -2430,6 +2483,59 @@ fn legacy_assignment_witness_preserves_legacy_proof_record_binding() {
 }
 
 #[test]
+fn timing_blinding_prevents_created_at_dictionary_witness() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(7);
+
+        let request = InferenceRequests::<Test>::get(7).unwrap();
+        assert_eq!(
+            request.timing_commitment,
+            Qubitum::request_timing_commitment(7, 0, timing_blinding())
+        );
+        assert_ne!(
+            request.timing_commitment,
+            Qubitum::legacy_request_timing_commitment(7, 0)
+        );
+
+        System::set_block_number(10);
+        assert_noop!(
+            Qubitum::cancel_inference(
+                RuntimeOrigin::signed(4),
+                7,
+                0,
+                0,
+                assignment_blinding(),
+                legacy_timing_witness(0),
+                request_terms_witness()
+            ),
+            Error::<Test>::RequestMismatch
+        );
+        assert_noop!(
+            Qubitum::cancel_inference(
+                RuntimeOrigin::signed(4),
+                7,
+                0,
+                0,
+                assignment_blinding(),
+                timing_witness(1),
+                request_terms_witness()
+            ),
+            Error::<Test>::RequestMismatch
+        );
+        assert_ok!(Qubitum::cancel_inference(
+            RuntimeOrigin::signed(4),
+            7,
+            0,
+            0,
+            assignment_blinding(),
+            timing_witness(0),
+            request_terms_witness()
+        ));
+    });
+}
+
+#[test]
 fn legacy_terms_witness_preserves_migrated_request_settlement() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
@@ -2450,6 +2556,33 @@ fn legacy_terms_witness_preserves_migrated_request_settlement() {
         assert_eq!(
             InferenceRequests::<Test>::get(7).unwrap().status,
             InferenceRequestStatus::Settled
+        );
+    });
+}
+
+#[test]
+fn legacy_timing_witness_preserves_migrated_request_cancellation() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(7);
+        let legacy_timing = Qubitum::legacy_request_timing_commitment(7, 0);
+        InferenceRequests::<Test>::mutate(7, |maybe_request| {
+            maybe_request.as_mut().unwrap().timing_commitment = legacy_timing;
+        });
+
+        System::set_block_number(10);
+        assert_ok!(Qubitum::cancel_inference(
+            RuntimeOrigin::signed(4),
+            7,
+            0,
+            0,
+            assignment_blinding(),
+            legacy_timing_witness(0),
+            request_terms_witness()
+        ));
+        assert_eq!(
+            InferenceRequests::<Test>::get(7).unwrap().status,
+            InferenceRequestStatus::Cancelled
         );
     });
 }
@@ -2515,6 +2648,7 @@ fn request_inference_rejects_non_next_request_id() {
                     validator_id: assignment.validator_id,
                     input_commitment: commitment(1),
                     assignment_blinding: assignment_blinding(),
+                    timing_blinding: timing_blinding(),
                     terms_blinding: terms_blinding(),
                     payment: 1_000,
                     validator_fee_bps: 250,
@@ -2546,6 +2680,7 @@ fn request_inference_requires_active_assigned_participants() {
                     validator_id: 0,
                     input_commitment: commitment(1),
                     assignment_blinding: assignment_blinding(),
+                    timing_blinding: timing_blinding(),
                     terms_blinding: terms_blinding(),
                     payment: 1_000,
                     validator_fee_bps: 250,
@@ -2577,6 +2712,7 @@ fn request_inference_requires_active_assigned_participants() {
                     validator_id: 0,
                     input_commitment: commitment(1),
                     assignment_blinding: assignment_blinding(),
+                    timing_blinding: timing_blinding(),
                     terms_blinding: terms_blinding(),
                     payment: 1_000,
                     validator_fee_bps: 250,
@@ -2633,6 +2769,7 @@ fn next_route_assignment_uses_chain_next_request_id() {
                 validator_id: assignment.validator_id,
                 input_commitment: commitment(1),
                 assignment_blinding: assignment_blinding(),
+                timing_blinding: timing_blinding(),
                 terms_blinding: terms_blinding(),
                 payment: 1_000,
                 validator_fee_bps: 250,
@@ -2730,6 +2867,7 @@ fn route_assignment_rejects_self_validation_operator() {
                     validator_id: 0,
                     input_commitment: commitment(1),
                     assignment_blinding: assignment_blinding(),
+                    timing_blinding: timing_blinding(),
                     terms_blinding: terms_blinding(),
                     payment: 1_000,
                     validator_fee_bps: 250,
@@ -2784,6 +2922,7 @@ fn route_assignment_skips_self_validation_validator_when_alternative_exists() {
                 validator_id: assignment.validator_id,
                 input_commitment: commitment(1),
                 assignment_blinding: assignment_blinding(),
+                timing_blinding: timing_blinding(),
                 terms_blinding: terms_blinding(),
                 payment: 1_000,
                 validator_fee_bps: 250,
@@ -2840,6 +2979,7 @@ fn route_assignment_scans_past_sixteen_self_validation_conflicts() {
                 validator_id: assignment.validator_id,
                 input_commitment: commitment(1),
                 assignment_blinding: assignment_blinding(),
+                timing_blinding: timing_blinding(),
                 terms_blinding: terms_blinding(),
                 payment: 1_000,
                 validator_fee_bps: 250,
@@ -2930,7 +3070,7 @@ fn submit_proof_rejects_self_validation_assignment() {
                     50,
                     terms_blinding(),
                 ),
-                timing_commitment: Qubitum::request_timing_commitment(88, 0),
+                timing_commitment: Qubitum::request_timing_commitment(88, 0, timing_blinding()),
                 status: InferenceRequestStatus::Pending,
             },
         );
@@ -3051,6 +3191,7 @@ fn request_inference_rejects_non_canonical_assignment() {
                     validator_id: assignment.validator_id,
                     input_commitment: commitment(1),
                     assignment_blinding: assignment_blinding(),
+                    timing_blinding: timing_blinding(),
                     terms_blinding: terms_blinding(),
                     payment: 1_000,
                     validator_fee_bps: 250,
@@ -3077,6 +3218,7 @@ fn auto_route_request_computes_assignment_without_caller_supplied_participants()
                 subnet_id: 0,
                 input_commitment: commitment(1),
                 assignment_blinding: assignment_blinding(),
+                timing_blinding: timing_blinding(),
                 terms_blinding: terms_blinding(),
                 payment: 1_000,
                 validator_fee_bps: 250,
@@ -3124,7 +3266,7 @@ fn cancel_inference_releases_pending_escrow() {
                 0,
                 0,
                 assignment_blinding(),
-                0,
+                timing_witness(0),
                 request_terms_witness()
             ),
             Error::<Test>::RequestCancelUnavailable
@@ -3138,7 +3280,7 @@ fn cancel_inference_releases_pending_escrow() {
                 1,
                 0,
                 assignment_blinding(),
-                0,
+                timing_witness(0),
                 request_terms_witness()
             ),
             Error::<Test>::AssignmentMismatch
@@ -3150,7 +3292,7 @@ fn cancel_inference_releases_pending_escrow() {
                 0,
                 0,
                 assignment_blinding(),
-                1,
+                timing_witness(1),
                 request_terms_witness()
             ),
             Error::<Test>::RequestMismatch
@@ -3161,7 +3303,7 @@ fn cancel_inference_releases_pending_escrow() {
             0,
             0,
             assignment_blinding(),
-            0,
+            timing_witness(0),
             request_terms_witness()
         ));
 
@@ -3201,7 +3343,7 @@ fn expire_inference_releases_stale_request_for_any_signed_caller() {
                 0,
                 0,
                 assignment_blinding(),
-                0,
+                timing_witness(0),
                 request_terms_witness()
             ),
             Error::<Test>::RequestCancelUnavailable
@@ -3216,7 +3358,7 @@ fn expire_inference_releases_stale_request_for_any_signed_caller() {
                 0,
                 1,
                 assignment_blinding(),
-                0,
+                timing_witness(0),
                 request_terms_witness()
             ),
             Error::<Test>::AssignmentMismatch
@@ -3229,7 +3371,7 @@ fn expire_inference_releases_stale_request_for_any_signed_caller() {
                 0,
                 0,
                 assignment_blinding(),
-                1,
+                timing_witness(1),
                 request_terms_witness()
             ),
             Error::<Test>::RequestMismatch
@@ -3241,7 +3383,7 @@ fn expire_inference_releases_stale_request_for_any_signed_caller() {
             0,
             0,
             assignment_blinding(),
-            0,
+            timing_witness(0),
             request_terms_witness()
         ));
 
@@ -3316,7 +3458,7 @@ fn request_terms_witness_gates_payment_transitions() {
                 0,
                 0,
                 assignment_blinding(),
-                0,
+                timing_witness(0),
                 terms_witness(inference_terms(1_000, 251, 50), terms_blinding())
             ),
             Error::<Test>::RequestMismatch
@@ -3328,7 +3470,7 @@ fn request_terms_witness_gates_payment_transitions() {
                 0,
                 0,
                 assignment_blinding(),
-                0,
+                timing_witness(0),
                 terms_witness(inference_terms(1_000, 9_000, 2_000), terms_blinding())
             ),
             Error::<Test>::InvalidFeeSplit
@@ -3339,7 +3481,7 @@ fn request_terms_witness_gates_payment_transitions() {
             0,
             0,
             assignment_blinding(),
-            0,
+            timing_witness(0),
             request_terms_witness()
         ));
 
@@ -3353,7 +3495,7 @@ fn request_terms_witness_gates_payment_transitions() {
                 0,
                 0,
                 assignment_blinding(),
-                10,
+                timing_witness(10),
                 terms_witness(inference_terms(1_001, 250, 50), terms_blinding())
             ),
             Error::<Test>::RequestMismatch
@@ -3365,7 +3507,7 @@ fn request_terms_witness_gates_payment_transitions() {
             0,
             0,
             assignment_blinding(),
-            10,
+            timing_witness(10),
             request_terms_witness()
         ));
     });
@@ -3464,7 +3606,7 @@ fn request_user_witness_gates_settlement_challenge_and_expiry() {
                 0,
                 0,
                 assignment_blinding(),
-                0,
+                timing_witness(0),
                 request_terms_witness()
             ),
             Error::<Test>::NotRequestOwner
@@ -3480,7 +3622,7 @@ fn request_user_witness_gates_settlement_challenge_and_expiry() {
             0,
             0,
             assignment_blinding(),
-            0,
+            timing_witness(0),
             request_terms_witness()
         ));
         assert_eq!(
@@ -3503,7 +3645,7 @@ fn cancel_inference_rejects_non_owner_or_settled_request() {
                 0,
                 0,
                 assignment_blinding(),
-                0,
+                timing_witness(0),
                 request_terms_witness()
             ),
             Error::<Test>::NotRequestOwner
@@ -3517,7 +3659,7 @@ fn cancel_inference_rejects_non_owner_or_settled_request() {
                 0,
                 0,
                 assignment_blinding(),
-                0,
+                timing_witness(0),
                 request_terms_witness()
             ),
             Error::<Test>::RequestAlreadySettled

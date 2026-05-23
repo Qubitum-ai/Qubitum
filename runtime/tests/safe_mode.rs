@@ -14,6 +14,10 @@ fn assignment_blinding() -> [u8; 32] {
     commitment(90)
 }
 
+fn timing_blinding() -> [u8; 32] {
+    commitment(92)
+}
+
 fn terms_blinding() -> [u8; 32] {
     commitment(91)
 }
@@ -70,6 +74,13 @@ fn request_terms_witness<Balance: From<u64>>()
     }
 }
 
+fn timing_witness(created_at: u64) -> pallet_qubitum::InferenceRequestTimingWitness {
+    pallet_qubitum::InferenceRequestTimingWitness {
+        created_at,
+        blinding: timing_blinding(),
+    }
+}
+
 #[test]
 fn qubitum_submit_proof_is_allowed_in_safe_mode() {
     let call = RuntimeCall::Qubitum(pallet_qubitum::Call::submit_proof {
@@ -116,6 +127,7 @@ fn qubitum_request_inference_is_blocked_in_safe_mode() {
             validator_id: 0,
             input_commitment: commitment(1),
             assignment_blinding: assignment_blinding(),
+            timing_blinding: timing_blinding(),
             terms_blinding: terms_blinding(),
             payment: 1_000u64.into(),
             validator_fee_bps: 250,
@@ -131,6 +143,7 @@ fn qubitum_request_inference_is_blocked_in_safe_mode() {
             subnet_id: 0,
             input_commitment: commitment(1),
             assignment_blinding: assignment_blinding(),
+            timing_blinding: timing_blinding(),
             terms_blinding: terms_blinding(),
             payment: 1_000u64.into(),
             validator_fee_bps: 250,
@@ -148,7 +161,7 @@ fn qubitum_cancel_inference_is_blocked_in_safe_mode() {
         miner_id: 0,
         validator_id: 0,
         assignment_blinding: assignment_blinding(),
-        created_at: 0,
+        timing_witness: timing_witness(0),
         terms_witness: request_terms_witness(),
     });
 
@@ -163,7 +176,7 @@ fn qubitum_expire_inference_is_blocked_in_safe_mode() {
         miner_id: 0,
         validator_id: 0,
         assignment_blinding: assignment_blinding(),
-        created_at: 0,
+        timing_witness: timing_witness(0),
         terms_witness: request_terms_witness(),
     });
 

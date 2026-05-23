@@ -142,6 +142,7 @@ pub mod pallet {
     use frame_system::pallet_prelude::*;
 
     const LEGACY_ASSIGNMENT_BLINDING: Commitment = [0; 32];
+    const LEGACY_TIMING_BLINDING: Commitment = [0; 32];
     const LEGACY_TERMS_BLINDING: Commitment = [0; 32];
     const STORAGE_VERSION: StorageVersion = StorageVersion::new(16);
     #[pallet::pallet]
@@ -733,6 +734,7 @@ pub mod pallet {
         pub validator_id: ValidatorId,
         pub input_commitment: Commitment,
         pub assignment_blinding: Commitment,
+        pub timing_blinding: Commitment,
         pub terms_blinding: Commitment,
         pub payment: Balance,
         pub validator_fee_bps: u16,
@@ -746,6 +748,7 @@ pub mod pallet {
         pub subnet_id: SubnetId,
         pub input_commitment: Commitment,
         pub assignment_blinding: Commitment,
+        pub timing_blinding: Commitment,
         pub terms_blinding: Commitment,
         pub payment: Balance,
         pub validator_fee_bps: u16,
@@ -766,6 +769,23 @@ pub mod pallet {
     )]
     pub struct InferenceRequestTermsWitness<Balance> {
         pub terms: InferenceRequestTerms<Balance>,
+        pub blinding: Commitment,
+    }
+
+    #[derive(
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        TypeInfo,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Debug,
+        MaxEncodedLen,
+    )]
+    pub struct InferenceRequestTimingWitness {
+        pub created_at: BlockNumber,
         pub blinding: Commitment,
     }
 
@@ -1379,6 +1399,7 @@ pub mod pallet {
                 params.subnet_id,
                 params.input_commitment,
                 params.assignment_blinding,
+                params.timing_blinding,
                 params.terms_blinding,
                 params.payment,
                 params.validator_fee_bps,
@@ -1399,6 +1420,7 @@ pub mod pallet {
                 params.validator_id,
                 params.input_commitment,
                 params.assignment_blinding,
+                params.timing_blinding,
                 params.terms_blinding,
                 params.payment,
                 params.validator_fee_bps,
@@ -1421,6 +1443,7 @@ pub mod pallet {
                 params.subnet_id,
                 params.input_commitment,
                 params.assignment_blinding,
+                params.timing_blinding,
                 params.terms_blinding,
                 params.payment,
                 params.validator_fee_bps,
@@ -1436,6 +1459,7 @@ pub mod pallet {
                 assignment.validator_id,
                 params.input_commitment,
                 params.assignment_blinding,
+                params.timing_blinding,
                 params.terms_blinding,
                 params.payment,
                 params.validator_fee_bps,
@@ -1453,7 +1477,7 @@ pub mod pallet {
             miner_id: MinerId,
             validator_id: ValidatorId,
             assignment_blinding: Commitment,
-            created_at: BlockNumber,
+            timing_witness: InferenceRequestTimingWitness,
             terms_witness: InferenceRequestTermsWitness<BalanceOf<T>>,
         ) -> DispatchResult {
             let user = ensure_signed(origin)?;
@@ -1468,13 +1492,14 @@ pub mod pallet {
                         validator_id,
                         assignment_blinding,
                     )?;
-                    Self::ensure_request_timing_witness(request, created_at)?;
+                    Self::ensure_request_timing_witness(request, timing_witness)?;
                     Self::ensure_request_terms_witness(request, &terms_witness)?;
                     ensure!(
                         request.status == InferenceRequestStatus::Pending,
                         Error::<T>::RequestAlreadySettled
                     );
-                    let cancel_available_at = created_at
+                    let cancel_available_at = timing_witness
+                        .created_at
                         .checked_add(T::RequestCancelDelayBlocks::get())
                         .ok_or(Error::<T>::ArithmeticOverflow)?;
                     ensure!(
@@ -1695,7 +1720,7 @@ pub mod pallet {
             miner_id: MinerId,
             validator_id: ValidatorId,
             assignment_blinding: Commitment,
-            created_at: BlockNumber,
+            timing_witness: InferenceRequestTimingWitness,
             terms_witness: InferenceRequestTermsWitness<BalanceOf<T>>,
         ) -> DispatchResult {
             let _keeper = ensure_signed(origin)?;
@@ -1710,13 +1735,14 @@ pub mod pallet {
                         validator_id,
                         assignment_blinding,
                     )?;
-                    Self::ensure_request_timing_witness(request, created_at)?;
+                    Self::ensure_request_timing_witness(request, timing_witness)?;
                     Self::ensure_request_terms_witness(request, &terms_witness)?;
                     ensure!(
                         request.status == InferenceRequestStatus::Pending,
                         Error::<T>::RequestAlreadySettled
                     );
-                    let cancel_available_at = created_at
+                    let cancel_available_at = timing_witness
+                        .created_at
                         .checked_add(T::RequestCancelDelayBlocks::get())
                         .ok_or(Error::<T>::ArithmeticOverflow)?;
                     ensure!(
@@ -1954,6 +1980,7 @@ pub mod pallet {
             subnet_id: SubnetId,
             input_commitment: Commitment,
             assignment_blinding: Commitment,
+            timing_blinding: Commitment,
             terms_blinding: Commitment,
             payment: BalanceOf<T>,
             validator_fee_bps: u16,
@@ -1961,6 +1988,7 @@ pub mod pallet {
         ) -> DispatchResult {
             ensure_commitment::<T>(input_commitment)?;
             ensure_commitment::<T>(assignment_blinding)?;
+            ensure_commitment::<T>(timing_blinding)?;
             ensure_commitment::<T>(terms_blinding)?;
             ensure!(
                 !InferenceRequests::<T>::contains_key(request_id),
@@ -1985,6 +2013,7 @@ pub mod pallet {
             validator_id: ValidatorId,
             input_commitment: Commitment,
             assignment_blinding: Commitment,
+            timing_blinding: Commitment,
             terms_blinding: Commitment,
             payment: BalanceOf<T>,
             validator_fee_bps: u16,
@@ -2019,7 +2048,11 @@ pub mod pallet {
                         treasury_fee_bps,
                         terms_blinding,
                     ),
-                    timing_commitment: Self::request_timing_commitment(request_id, created_at),
+                    timing_commitment: Self::request_timing_commitment(
+                        request_id,
+                        created_at,
+                        timing_blinding,
+                    ),
                     status: InferenceRequestStatus::Pending,
                 },
             );
@@ -2314,6 +2347,20 @@ pub mod pallet {
         pub(crate) fn request_timing_commitment(
             request_id: RequestId,
             created_at: BlockNumber,
+            timing_blinding: Commitment,
+        ) -> Commitment {
+            (
+                b"qubitum.request.timing.v1",
+                request_id,
+                created_at,
+                timing_blinding,
+            )
+                .using_encoded(blake2_256)
+        }
+
+        pub(crate) fn legacy_request_timing_commitment(
+            request_id: RequestId,
+            created_at: BlockNumber,
         ) -> Commitment {
             (request_id, created_at).using_encoded(blake2_256)
         }
@@ -2567,12 +2614,25 @@ pub mod pallet {
 
         fn ensure_request_timing_witness(
             request: &ChainInferenceRequest,
-            created_at: BlockNumber,
+            timing_witness: InferenceRequestTimingWitness,
         ) -> DispatchResult {
+            let blinded = Self::request_timing_commitment(
+                request.request_id,
+                timing_witness.created_at,
+                timing_witness.blinding,
+            );
+            let legacy = Self::legacy_request_timing_commitment(
+                request.request_id,
+                timing_witness.created_at,
+            );
+            let timing_matches = request.timing_commitment == blinded
+                || (timing_witness.blinding == LEGACY_TIMING_BLINDING
+                    && request.timing_commitment == legacy);
+            ensure!(timing_matches, Error::<T>::RequestMismatch);
             ensure!(
-                request.timing_commitment
-                    == Self::request_timing_commitment(request.request_id, created_at),
-                Error::<T>::RequestMismatch
+                timing_witness.blinding != LEGACY_TIMING_BLINDING
+                    || request.timing_commitment == legacy,
+                Error::<T>::MissingCommitment
             );
             Ok(())
         }
@@ -3194,7 +3254,7 @@ pub mod pallet {
                         old.validator_fee_bps,
                         old.treasury_fee_bps,
                     ),
-                    timing_commitment: Self::request_timing_commitment(
+                    timing_commitment: Self::legacy_request_timing_commitment(
                         old.request_id,
                         old.created_at,
                     ),
@@ -3246,7 +3306,7 @@ pub mod pallet {
                             old.validator_fee_bps,
                             old.treasury_fee_bps,
                         ),
-                        timing_commitment: Self::request_timing_commitment(
+                        timing_commitment: Self::legacy_request_timing_commitment(
                             old.request_id,
                             old.created_at,
                         ),
@@ -3290,7 +3350,7 @@ pub mod pallet {
                             old.validator_fee_bps,
                             old.treasury_fee_bps,
                         ),
-                        timing_commitment: Self::request_timing_commitment(
+                        timing_commitment: Self::legacy_request_timing_commitment(
                             old.request_id,
                             old.created_at,
                         ),
