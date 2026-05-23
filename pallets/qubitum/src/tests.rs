@@ -3690,6 +3690,7 @@ fn rejected_proof_refund_requires_terms_witness() {
         register_active_miner_and_validator();
         request_inference(63);
         set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
+        let burned_before = TotalBurned::<Test>::get();
 
         assert_noop!(
             Qubitum::submit_proof(
@@ -3711,6 +3712,23 @@ fn rejected_proof_refund_requires_terms_witness() {
             Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
             1_000
         );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            MIN_MINER_BOND
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            MIN_MINER_BOND
+        );
+        assert_eq!(TotalBurned::<Test>::get(), burned_before);
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
 
         assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(63)));
         assert_eq!(
@@ -3718,6 +3736,56 @@ fn rejected_proof_refund_requires_terms_witness() {
             InferenceRequestStatus::Rejected
         );
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 1_000);
+    });
+}
+
+#[test]
+fn invalid_proof_challenge_preflight_blocks_slash_side_effects() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(64);
+        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
+        let burned_before = TotalBurned::<Test>::get();
+
+        assert_noop!(
+            Qubitum::challenge_proof(
+                RuntimeOrigin::signed(5),
+                valid_submission(64),
+                5,
+                2,
+                assignment_blinding(),
+                request_terms_witness()
+            ),
+            Error::<Test>::NotRequestOwner
+        );
+
+        assert_eq!(
+            InferenceRequests::<Test>::get(64).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            1_000
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            MIN_MINER_BOND
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            MIN_MINER_BOND
+        );
+        assert_eq!(TotalBurned::<Test>::get(), burned_before);
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
     });
 }
 

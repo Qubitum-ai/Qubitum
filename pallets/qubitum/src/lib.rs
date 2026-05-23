@@ -1279,6 +1279,12 @@ pub mod pallet {
             match T::ProofVerifier::verify(&submission, policy)? {
                 VerificationOutcome::Valid => {}
                 VerificationOutcome::Invalid { slash_bps } => {
+                    Self::ensure_rejected_request_refundable(
+                        &submission,
+                        &request_user,
+                        assignment_blinding,
+                        &terms_witness,
+                    )?;
                     Self::slash_miner_bond(submission.miner_id, &miner_operator, slash_bps)?;
                     Self::slash_validator_stake(
                         submission.validator_id,
@@ -1357,6 +1363,12 @@ pub mod pallet {
 
             match T::ProofVerifier::verify(&submission, policy)? {
                 VerificationOutcome::Invalid { slash_bps } => {
+                    Self::ensure_rejected_request_refundable(
+                        &submission,
+                        &request_user,
+                        assignment_blinding,
+                        &terms_witness,
+                    )?;
                     Self::slash_miner_bond(submission.miner_id, &miner_operator, slash_bps)?;
                     Self::refund_rejected_request(
                         &submission,
@@ -3891,23 +3903,13 @@ pub mod pallet {
                 submission.request_id,
                 |maybe_request| -> Result<BalanceOf<T>, DispatchError> {
                     let request = maybe_request.as_mut().ok_or(Error::<T>::UnknownRequest)?;
-                    ensure!(
-                        request.status == InferenceRequestStatus::Pending,
-                        Error::<T>::RequestAlreadySettled
-                    );
-                    ensure!(
-                        request.subnet_id == submission.subnet_id
-                            && request.input_commitment == submission.input_commitment,
-                        Error::<T>::RequestMismatch
-                    );
-                    Self::ensure_request_assignment_witness(
+                    Self::ensure_rejected_request_witnesses(
                         request,
-                        submission.miner_id,
-                        submission.validator_id,
+                        submission,
+                        request_user,
                         assignment_blinding,
+                        terms_witness,
                     )?;
-                    Self::ensure_request_user(request, request_user)?;
-                    Self::ensure_request_terms_witness(request, terms_witness)?;
                     let terms = &terms_witness.terms;
 
                     T::Currency::release(
@@ -3930,6 +3932,49 @@ pub mod pallet {
                     Ok(terms.payment)
                 },
             )
+        }
+
+        fn ensure_rejected_request_refundable(
+            submission: &InferenceProofSubmission,
+            request_user: &T::AccountId,
+            assignment_blinding: Commitment,
+            terms_witness: &InferenceRequestTermsWitness<BalanceOf<T>>,
+        ) -> DispatchResult {
+            let request = InferenceRequests::<T>::get(submission.request_id)
+                .ok_or(Error::<T>::UnknownRequest)?;
+            Self::ensure_rejected_request_witnesses(
+                &request,
+                submission,
+                request_user,
+                assignment_blinding,
+                terms_witness,
+            )
+        }
+
+        fn ensure_rejected_request_witnesses(
+            request: &ChainInferenceRequest,
+            submission: &InferenceProofSubmission,
+            request_user: &T::AccountId,
+            assignment_blinding: Commitment,
+            terms_witness: &InferenceRequestTermsWitness<BalanceOf<T>>,
+        ) -> DispatchResult {
+            ensure!(
+                request.status == InferenceRequestStatus::Pending,
+                Error::<T>::RequestAlreadySettled
+            );
+            ensure!(
+                request.subnet_id == submission.subnet_id
+                    && request.input_commitment == submission.input_commitment,
+                Error::<T>::RequestMismatch
+            );
+            Self::ensure_request_assignment_witness(
+                request,
+                submission.miner_id,
+                submission.validator_id,
+                assignment_blinding,
+            )?;
+            Self::ensure_request_user(request, request_user)?;
+            Self::ensure_request_terms_witness(request, terms_witness)
         }
 
         fn validate_fee_split(validator_fee_bps: u16, treasury_fee_bps: u16) -> DispatchResult {
