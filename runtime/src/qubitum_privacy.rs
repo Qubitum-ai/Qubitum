@@ -18,75 +18,75 @@ impl CheckQubitumShielding {
         Self
     }
 
-    fn contains_qubitum_call(call: &RuntimeCall) -> bool {
-        Self::contains_qubitum_call_at_depth(call, 0)
+    fn privacy_violation(call: &RuntimeCall) -> Option<CustomTransactionError> {
+        Self::privacy_violation_at_depth(call, 0)
     }
 
-    fn encoded_bytes_contain_qubitum_call(bytes: &[u8], depth: u8) -> bool {
+    fn encoded_bytes_privacy_violation(bytes: &[u8], depth: u8) -> Option<CustomTransactionError> {
         let mut input = bytes;
         match RuntimeCall::decode(&mut input) {
-            Ok(call) if input.is_empty() => Self::contains_qubitum_call_at_depth(&call, depth),
-            _ => false,
+            Ok(call) if input.is_empty() => Self::privacy_violation_at_depth(&call, depth),
+            _ => None,
         }
     }
 
-    fn contains_qubitum_call_at_depth(call: &RuntimeCall, depth: u8) -> bool {
+    fn privacy_violation_at_depth(call: &RuntimeCall, depth: u8) -> Option<CustomTransactionError> {
         if depth >= MAX_CALL_SCAN_DEPTH {
-            return true;
+            return Some(CustomTransactionError::QubitumCallMustBeShielded);
         }
 
         match call {
-            RuntimeCall::Qubitum(_) => true,
+            RuntimeCall::Qubitum(_) => Some(CustomTransactionError::QubitumCallMustBeShielded),
             RuntimeCall::Utility(inner) => match inner {
                 pallet_subtensor_utility::Call::batch { calls }
                 | pallet_subtensor_utility::Call::batch_all { calls }
                 | pallet_subtensor_utility::Call::force_batch { calls } => calls
                     .iter()
-                    .any(|call| Self::contains_qubitum_call_at_depth(call, depth + 1)),
+                    .find_map(|call| Self::privacy_violation_at_depth(call, depth + 1)),
                 pallet_subtensor_utility::Call::as_derivative { call, .. }
                 | pallet_subtensor_utility::Call::dispatch_as { call, .. }
                 | pallet_subtensor_utility::Call::with_weight { call, .. }
                 | pallet_subtensor_utility::Call::dispatch_as_fallible { call, .. } => {
-                    Self::contains_qubitum_call_at_depth(call, depth + 1)
+                    Self::privacy_violation_at_depth(call, depth + 1)
                 }
                 pallet_subtensor_utility::Call::if_else { main, fallback } => {
-                    Self::contains_qubitum_call_at_depth(main, depth + 1)
-                        || Self::contains_qubitum_call_at_depth(fallback, depth + 1)
+                    Self::privacy_violation_at_depth(main, depth + 1)
+                        .or_else(|| Self::privacy_violation_at_depth(fallback, depth + 1))
                 }
-                _ => false,
+                _ => None,
             },
             RuntimeCall::Proxy(
                 pallet_subtensor_proxy::Call::proxy { call, .. }
                 | pallet_subtensor_proxy::Call::proxy_announced { call, .. },
-            ) => Self::contains_qubitum_call_at_depth(call, depth + 1),
-            RuntimeCall::Proxy(_) => false,
+            ) => Self::privacy_violation_at_depth(call, depth + 1),
+            RuntimeCall::Proxy(_) => None,
             RuntimeCall::Sudo(
                 pallet_sudo::Call::sudo { call }
                 | pallet_sudo::Call::sudo_unchecked_weight { call, .. }
                 | pallet_sudo::Call::sudo_as { call, .. },
-            ) => Self::contains_qubitum_call_at_depth(call, depth + 1),
-            RuntimeCall::Sudo(_) => false,
+            ) => Self::privacy_violation_at_depth(call, depth + 1),
+            RuntimeCall::Sudo(_) => None,
             RuntimeCall::Multisig(
                 pallet_multisig::Call::as_multi_threshold_1 { call, .. }
                 | pallet_multisig::Call::as_multi { call, .. },
-            ) => Self::contains_qubitum_call_at_depth(call, depth + 1),
-            RuntimeCall::Multisig(_) => false,
+            ) => Self::privacy_violation_at_depth(call, depth + 1),
+            RuntimeCall::Multisig(_) => None,
             RuntimeCall::Scheduler(
                 pallet_scheduler::Call::schedule { call, .. }
                 | pallet_scheduler::Call::schedule_named { call, .. }
                 | pallet_scheduler::Call::schedule_after { call, .. }
                 | pallet_scheduler::Call::schedule_named_after { call, .. },
-            ) => Self::contains_qubitum_call_at_depth(call, depth + 1),
-            RuntimeCall::Scheduler(_) => false,
+            ) => Self::privacy_violation_at_depth(call, depth + 1),
+            RuntimeCall::Scheduler(_) => None,
             RuntimeCall::Preimage(pallet_preimage::Call::note_preimage { bytes }) => {
-                Self::encoded_bytes_contain_qubitum_call(bytes, depth + 1)
+                Self::encoded_bytes_privacy_violation(bytes, depth + 1)
             }
-            RuntimeCall::Preimage(_) => false,
-            RuntimeCall::MevShield(pallet_shield::Call::store_encrypted { encrypted_call }) => {
-                Self::encoded_bytes_contain_qubitum_call(encrypted_call, depth + 1)
+            RuntimeCall::Preimage(_) => None,
+            RuntimeCall::MevShield(pallet_shield::Call::store_encrypted { .. }) => {
+                Some(CustomTransactionError::ShieldStoreEncryptedDisabled)
             }
-            RuntimeCall::MevShield(_) => false,
-            _ => false,
+            RuntimeCall::MevShield(_) => None,
+            _ => None,
         }
     }
 }
@@ -122,8 +122,8 @@ impl TransactionExtension<RuntimeCall> for CheckQubitumShielding {
         _inherited_implication: &impl Implication,
         _source: TransactionSource,
     ) -> ValidateResult<Self::Val, RuntimeCall> {
-        if Self::contains_qubitum_call(call) {
-            return Err(CustomTransactionError::QubitumCallMustBeShielded.into());
+        if let Some(err) = Self::privacy_violation(call) {
+            return Err(err.into());
         }
 
         Ok((Default::default(), (), origin))
@@ -315,7 +315,7 @@ mod tests {
     }
 
     #[test]
-    fn store_encrypted_encoded_qubitum_call_must_be_shielded() {
+    fn store_encrypted_is_disabled_in_public_runtime() {
         new_test_ext().execute_with(|| {
             let call = RuntimeCall::MevShield(pallet_shield::Call::store_encrypted {
                 encrypted_call:
@@ -325,13 +325,13 @@ mod tests {
             });
             assert_eq!(
                 validate_ext(&call, TransactionSource::External),
-                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+                Err(CustomTransactionError::ShieldStoreEncryptedDisabled.into())
             );
         });
     }
 
     #[test]
-    fn store_encrypted_ciphertext_bytes_pass() {
+    fn store_encrypted_ciphertext_bytes_are_disabled_in_public_runtime() {
         new_test_ext().execute_with(|| {
             let call = RuntimeCall::MevShield(pallet_shield::Call::store_encrypted {
                 encrypted_call:
@@ -340,7 +340,30 @@ mod tests {
                         64
                     ]),
             });
-            assert!(validate_ext(&call, TransactionSource::External).is_ok());
+            assert_eq!(
+                validate_ext(&call, TransactionSource::External),
+                Err(CustomTransactionError::ShieldStoreEncryptedDisabled.into())
+            );
+        });
+    }
+
+    #[test]
+    fn utility_wrapped_store_encrypted_is_disabled_in_public_runtime() {
+        new_test_ext().execute_with(|| {
+            let call = RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                calls: vec![RuntimeCall::MevShield(
+                    pallet_shield::Call::store_encrypted {
+                        encrypted_call:
+                            BoundedVec::<u8, pallet_shield::MaxEncryptedCallSize>::truncate_from(
+                                vec![0xAA; 64],
+                            ),
+                    },
+                )],
+            });
+            assert_eq!(
+                validate_ext(&call, TransactionSource::External),
+                Err(CustomTransactionError::ShieldStoreEncryptedDisabled.into())
+            );
         });
     }
 

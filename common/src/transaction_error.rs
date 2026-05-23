@@ -31,6 +31,7 @@ pub enum CustomTransactionError {
     FailedShieldedTxParsing,
     InvalidShieldedTxPubKeyHash,
     QubitumCallMustBeShielded,
+    ShieldStoreEncryptedDisabled,
 }
 
 impl From<CustomTransactionError> for u8 {
@@ -64,6 +65,7 @@ impl From<CustomTransactionError> for u8 {
             CustomTransactionError::FailedShieldedTxParsing => 23,
             CustomTransactionError::InvalidShieldedTxPubKeyHash => 24,
             CustomTransactionError::QubitumCallMustBeShielded => 25,
+            CustomTransactionError::ShieldStoreEncryptedDisabled => 26,
         }
     }
 }
