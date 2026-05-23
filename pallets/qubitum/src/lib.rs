@@ -1840,6 +1840,12 @@ pub mod pallet {
                 MinerIdentitySignatureBundles::<T>::insert(miner_id, signature_bundle);
                 MinerIdentitySignatureChallenges::<T>::insert(miner_id, challenge_commitment);
             } else {
+                if MinerIdentityCommitments::<T>::contains_key(miner_id)
+                    || MinerIdentitySignatureBundles::<T>::contains_key(miner_id)
+                    || MinerIdentitySignatureChallenges::<T>::contains_key(miner_id)
+                {
+                    Self::ensure_signature_bundle(signature_bundle)?;
+                }
                 MinerIdentityCommitments::<T>::remove(miner_id);
                 MinerIdentitySignatureBundles::<T>::remove(miner_id);
                 MinerIdentitySignatureChallenges::<T>::remove(miner_id);
@@ -1887,6 +1893,12 @@ pub mod pallet {
                     challenge_commitment,
                 );
             } else {
+                if ValidatorIdentityCommitments::<T>::contains_key(validator_id)
+                    || ValidatorIdentitySignatureBundles::<T>::contains_key(validator_id)
+                    || ValidatorIdentitySignatureChallenges::<T>::contains_key(validator_id)
+                {
+                    Self::ensure_signature_bundle(signature_bundle)?;
+                }
                 ValidatorIdentityCommitments::<T>::remove(validator_id);
                 ValidatorIdentitySignatureBundles::<T>::remove(validator_id);
                 ValidatorIdentitySignatureChallenges::<T>::remove(validator_id);

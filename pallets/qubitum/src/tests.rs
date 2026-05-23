@@ -1193,12 +1193,25 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         assert!(MinerIdentityCommitments::<Test>::get(0).is_none());
         assert!(MinerIdentitySignatureBundles::<Test>::get(0).is_none());
         assert!(MinerIdentitySignatureChallenges::<Test>::get(0).is_none());
+        assert_noop!(
+            Qubitum::set_validator_identity_commitments(
+                RuntimeOrigin::signed(3),
+                0,
+                None,
+                None,
+                zero_signature_bundle(),
+            ),
+            Error::<Test>::InvalidSignatureBundle
+        );
+        assert!(ValidatorIdentityCommitments::<Test>::get(0).is_some());
+        assert!(ValidatorIdentitySignatureBundles::<Test>::get(0).is_some());
+        assert!(ValidatorIdentitySignatureChallenges::<Test>::get(0).is_some());
         assert_ok!(Qubitum::set_validator_identity_commitments(
             RuntimeOrigin::signed(3),
             0,
             None,
             None,
-            zero_signature_bundle(),
+            post_quantum_signature_bundle(),
         ));
         assert!(ValidatorIdentityCommitments::<Test>::get(0).is_none());
         assert!(ValidatorIdentitySignatureBundles::<Test>::get(0).is_none());
@@ -1269,6 +1282,26 @@ fn failed_identity_commitment_updates_do_not_clobber_existing_state() {
                 0,
                 Some(commitment(26)),
                 Some(commitment(27)),
+                zero_signature_bundle(),
+            ),
+            Error::<Test>::InvalidSignatureBundle
+        );
+        assert_noop!(
+            Qubitum::set_miner_identity_commitments(
+                RuntimeOrigin::signed(2),
+                0,
+                None,
+                None,
+                classical_signature_bundle(),
+            ),
+            Error::<Test>::InvalidSignatureBundle
+        );
+        assert_noop!(
+            Qubitum::set_validator_identity_commitments(
+                RuntimeOrigin::signed(3),
+                0,
+                None,
+                None,
                 zero_signature_bundle(),
             ),
             Error::<Test>::InvalidSignatureBundle
