@@ -45,16 +45,51 @@ pub struct ProofVerificationPolicy {
 
 /// Runtime adapter for proof verification.
 pub trait VerifyProof {
+    fn mode() -> ProofVerifierMode;
+
     fn verify(
         submission: &InferenceProofSubmission,
         policy: ProofVerificationPolicy,
     ) -> Result<VerificationOutcome, DispatchError>;
 }
 
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    TypeInfo,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Debug,
+    MaxEncodedLen,
+)]
+pub enum ProofVerifierMode {
+    FailClosed,
+    ShapeOnly,
+    ProductionZk,
+    TestOnly,
+}
+
+impl ProofVerifierMode {
+    pub fn proof_settlement_enabled(self) -> bool {
+        !matches!(self, Self::FailClosed)
+    }
+
+    pub fn production_zk_verifier(self) -> bool {
+        matches!(self, Self::ProductionZk)
+    }
+}
+
 /// Fail-closed verifier for production runtimes until a concrete zkVM verifier is wired in.
 pub struct FailClosedProofVerifier;
 
 impl VerifyProof for FailClosedProofVerifier {
+    fn mode() -> ProofVerifierMode {
+        ProofVerifierMode::FailClosed
+    }
+
     fn verify(
         _submission: &InferenceProofSubmission,
         _policy: ProofVerificationPolicy,
@@ -67,6 +102,10 @@ impl VerifyProof for FailClosedProofVerifier {
 pub struct ShapeProofVerifier;
 
 impl VerifyProof for ShapeProofVerifier {
+    fn mode() -> ProofVerifierMode {
+        ProofVerifierMode::ShapeOnly
+    }
+
     fn verify(
         submission: &InferenceProofSubmission,
         policy: ProofVerificationPolicy,
@@ -752,6 +791,9 @@ pub mod pallet {
         pub max_proof_size_bytes: u32,
         pub max_verification_latency_ms: u32,
         pub max_proof_submission_age_blocks: BlockNumber,
+        pub proof_verifier_mode: ProofVerifierMode,
+        pub proof_settlement_enabled: bool,
+        pub production_zk_verifier: bool,
         pub signature_mode: SignatureMode,
         pub committed_request_payloads: bool,
         pub shielded_call_payloads: bool,
@@ -2078,6 +2120,9 @@ pub mod pallet {
                 max_proof_size_bytes: T::MaxProofSizeBytes::get(),
                 max_verification_latency_ms: T::MaxVerificationLatencyMs::get(),
                 max_proof_submission_age_blocks: T::MaxProofSubmissionAgeBlocks::get(),
+                proof_verifier_mode: T::ProofVerifier::mode(),
+                proof_settlement_enabled: T::ProofVerifier::mode().proof_settlement_enabled(),
+                production_zk_verifier: T::ProofVerifier::mode().production_zk_verifier(),
                 signature_mode: T::SignatureMode::get(),
                 committed_request_payloads: false,
                 shielded_call_payloads: false,

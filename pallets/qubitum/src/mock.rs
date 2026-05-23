@@ -1,7 +1,7 @@
 #![allow(clippy::arithmetic_side_effects, clippy::unwrap_used)]
 
 use crate as pallet_qubitum;
-use crate::{ProofVerificationPolicy, VerifyProof};
+use crate::{ProofVerificationPolicy, ProofVerifierMode, VerifyProof};
 use frame_support::{derive_impl, parameter_types};
 use qubitum_protocol::VerificationOutcome;
 use sp_runtime::{
@@ -22,6 +22,10 @@ thread_local! {
 pub struct TestProofVerifier;
 
 impl VerifyProof for TestProofVerifier {
+    fn mode() -> ProofVerifierMode {
+        ProofVerifierMode::TestOnly
+    }
+
     fn verify(
         _submission: &qubitum_protocol::InferenceProofSubmission,
         _policy: ProofVerificationPolicy,

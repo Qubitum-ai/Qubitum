@@ -11,12 +11,12 @@ use crate::{
     LegacyCapitalRecordMigrationFailures, LegacyRoutingIndexMigrationFailures, MinerCount,
     MinerIdentityCommitments, MinerIdentitySignatureBundles, MinerIdentitySignatureChallenges,
     MinerLockedBond, Miners, PendingInferenceRequestCount, PendingMinerRequests,
-    PendingValidatorRequests, ProofRecords, ProofVerificationPolicy, PublicRegistryStatus,
-    RejectedInferenceRequestCount, RequestCount, SettledInferenceRequestCount, SubnetCount,
-    Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
-    TotalTreasuryFees, TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
-    ValidatorIdentitySignatureBundles, ValidatorIdentitySignatureChallenges, ValidatorLockedStake,
-    Validators, VerifyProof,
+    PendingValidatorRequests, ProofRecords, ProofVerificationPolicy, ProofVerifierMode,
+    PublicRegistryStatus, RejectedInferenceRequestCount, RequestCount,
+    SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned, TotalInferenceEscrowed,
+    TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees, TotalValidatorFees,
+    ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles,
+    ValidatorIdentitySignatureChallenges, ValidatorLockedStake, Validators, VerifyProof,
     mock::{
         Balances, Qubitum, RuntimeEvent, RuntimeOrigin, System, Test, new_test_ext,
         set_verification_outcome,
@@ -612,6 +612,9 @@ fn protocol_params_expose_runtime_policy() {
         assert_eq!(params.max_proof_size_bytes, TARGET_PROOF_SIZE_MAX_BYTES);
         assert_eq!(params.max_verification_latency_ms, TARGET_VERIFICATION_MS);
         assert_eq!(params.max_proof_submission_age_blocks, 10);
+        assert_eq!(params.proof_verifier_mode, ProofVerifierMode::TestOnly);
+        assert!(params.proof_settlement_enabled);
+        assert!(!params.production_zk_verifier);
         assert_eq!(params.signature_mode, SignatureMode::FullPostQuantum);
         assert!(!params.committed_request_payloads);
         assert!(!params.shielded_call_payloads);
