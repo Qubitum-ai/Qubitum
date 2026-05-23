@@ -272,7 +272,7 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     //   `spec_version`, and `authoring_version` are the same between Wasm and native.
     // This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
     //   the compatible custom types.
-    spec_version: 463,
+    spec_version: 464,
     impl_version: 1,
     apis: RUNTIME_API_VERSIONS,
     transaction_version: 6,
@@ -2663,6 +2663,10 @@ impl_runtime_apis! {
 
         fn qubitum_accounting() -> pallet_qubitum::ChainAccounting<TaoBalance> {
             pallet_qubitum::Pallet::<Runtime>::accounting()
+        }
+
+        fn qubitum_migration_health() -> pallet_qubitum::ChainMigrationHealth {
+            pallet_qubitum::Pallet::<Runtime>::migration_health()
         }
 
         fn qubitum_protocol_params() -> pallet_qubitum::ChainProtocolParams<TaoBalance> {

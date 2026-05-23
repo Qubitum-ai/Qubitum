@@ -716,6 +716,23 @@ pub mod pallet {
     }
 
     #[derive(
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        TypeInfo,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Debug,
+        MaxEncodedLen,
+    )]
+    pub struct ChainMigrationHealth {
+        pub legacy_accounting_failures: u32,
+        pub legacy_routing_index_failures: u32,
+    }
+
+    #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
     pub struct ChainProtocolParams<Balance> {
@@ -937,6 +954,9 @@ pub mod pallet {
 
     #[pallet::storage]
     pub type LegacyAccountingMigrationFailures<T: Config> = StorageValue<_, u32, ValueQuery>;
+
+    #[pallet::storage]
+    pub type LegacyRoutingIndexMigrationFailures<T: Config> = StorageValue<_, u32, ValueQuery>;
 
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
@@ -1944,6 +1964,13 @@ pub mod pallet {
                 total_treasury_fees: TotalTreasuryFees::<T>::get(),
                 total_inference_refunded: TotalInferenceRefunded::<T>::get(),
                 legacy_migration_failures: LegacyAccountingMigrationFailures::<T>::get(),
+            }
+        }
+
+        pub fn migration_health() -> ChainMigrationHealth {
+            ChainMigrationHealth {
+                legacy_accounting_failures: LegacyAccountingMigrationFailures::<T>::get(),
+                legacy_routing_index_failures: LegacyRoutingIndexMigrationFailures::<T>::get(),
             }
         }
 
@@ -3016,6 +3043,9 @@ pub mod pallet {
             let mut miner_writes = 0_u64;
             let mut validator_reads = 0_u64;
             let mut validator_writes = 0_u64;
+            let mut overflow_miners = sp_std::vec::Vec::new();
+            let mut overflow_validators = sp_std::vec::Vec::new();
+            let mut migration_failures = 0_u32;
 
             for (subnet_id, _) in ActiveMinersBySubnet::<T>::iter() {
                 ActiveMinersBySubnet::<T>::remove(subnet_id);
@@ -3031,12 +3061,18 @@ pub mod pallet {
             for (miner_id, miner) in Miners::<T>::iter() {
                 miner_reads = miner_reads.saturating_add(1);
                 if miner.status == RegistryStatus::Active {
-                    let inserted = ActiveMinersBySubnet::<T>::try_mutate(miner.subnet_id, |ids| {
+                    match ActiveMinersBySubnet::<T>::try_mutate(miner.subnet_id, |ids| {
                         Self::insert_sorted_miner_id(ids, miner_id)
-                    })
-                    .unwrap_or(false);
-                    if inserted {
-                        miner_writes = miner_writes.saturating_add(1);
+                    }) {
+                        Ok(inserted) => {
+                            if inserted {
+                                miner_writes = miner_writes.saturating_add(1);
+                            }
+                        }
+                        Err(_) => {
+                            overflow_miners.push(miner_id);
+                            migration_failures = migration_failures.saturating_add(1);
+                        }
                     }
                 }
             }
@@ -3044,20 +3080,70 @@ pub mod pallet {
             for (validator_id, validator) in Validators::<T>::iter() {
                 validator_reads = validator_reads.saturating_add(1);
                 if validator.status == RegistryStatus::Active {
-                    let inserted =
-                        ActiveValidatorsBySubnet::<T>::try_mutate(validator.subnet_id, |ids| {
-                            Self::insert_sorted_validator_id(ids, validator_id)
-                        })
-                        .unwrap_or(false);
-                    if inserted {
-                        validator_writes = validator_writes.saturating_add(1);
+                    match ActiveValidatorsBySubnet::<T>::try_mutate(validator.subnet_id, |ids| {
+                        Self::insert_sorted_validator_id(ids, validator_id)
+                    }) {
+                        Ok(inserted) => {
+                            if inserted {
+                                validator_writes = validator_writes.saturating_add(1);
+                            }
+                        }
+                        Err(_) => {
+                            overflow_validators.push(validator_id);
+                            migration_failures = migration_failures.saturating_add(1);
+                        }
                     }
                 }
             }
 
+            let miner_exit_available_at =
+                Self::current_block().saturating_add(T::MinerExitCooldownBlocks::get());
+            for miner_id in overflow_miners {
+                Miners::<T>::mutate(miner_id, |maybe_miner| {
+                    if let Some(miner) = maybe_miner
+                        && miner.status == RegistryStatus::Active
+                    {
+                        miner.status = RegistryStatus::Exiting {
+                            exit_available_at: miner_exit_available_at,
+                        };
+                        miner.bond_commitment = Self::miner_bond_commitment(
+                            miner_id,
+                            miner.operator_commitment,
+                            miner.status,
+                        );
+                    }
+                });
+                miner_reads = miner_reads.saturating_add(1);
+                miner_writes = miner_writes.saturating_add(1);
+            }
+
+            let validator_exit_available_at =
+                Self::current_block().saturating_add(T::ValidatorExitCooldownBlocks::get());
+            for validator_id in overflow_validators {
+                Validators::<T>::mutate(validator_id, |maybe_validator| {
+                    if let Some(validator) = maybe_validator
+                        && validator.status == RegistryStatus::Active
+                    {
+                        validator.status = RegistryStatus::Exiting {
+                            exit_available_at: validator_exit_available_at,
+                        };
+                        validator.stake_commitment = Self::validator_stake_commitment(
+                            validator_id,
+                            validator.operator_commitment,
+                            validator.status,
+                        );
+                    }
+                });
+                validator_reads = validator_reads.saturating_add(1);
+                validator_writes = validator_writes.saturating_add(1);
+            }
+            LegacyRoutingIndexMigrationFailures::<T>::put(migration_failures);
+
             T::DbWeight::get().reads_writes(
                 miner_reads.saturating_add(validator_reads),
-                miner_writes.saturating_add(validator_writes),
+                miner_writes
+                    .saturating_add(validator_writes)
+                    .saturating_add(1),
             )
         }
 

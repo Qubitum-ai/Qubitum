@@ -2,19 +2,20 @@
 
 use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, AutoRouteInferenceRequestParams,
-    CancelledInferenceRequestCount, ChainInferenceRequest, ChainPublicIdentity,
+    CancelledInferenceRequestCount, ChainInferenceRequest, ChainMiner, ChainPublicIdentity,
     ChainPublicInferenceRequest, ChainPublicMiner, ChainPublicProofRecord, ChainPublicSubnet,
-    ChainPublicValidator, ChainRequestStatusCounts, ChainRouteAvailability, Error,
+    ChainPublicValidator, ChainRequestStatusCounts, ChainRouteAvailability, ChainValidator, Error,
     FailClosedProofVerifier, HoldReason, InferenceRequestParams, InferenceRequestStatus,
     InferenceRequestTerms, InferenceRequestTermsWitness, InferenceRequestTimingWitness,
-    InferenceRequests, LegacyAccountingMigrationFailures, MinerCount, MinerIdentityCommitments,
-    MinerIdentitySignatureBundles, MinerIdentitySignatureChallenges, Miners,
-    PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests, ProofRecords,
-    ProofVerificationPolicy, PublicRegistryStatus, RejectedInferenceRequestCount, RequestCount,
-    SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned, TotalInferenceEscrowed,
-    TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees, TotalValidatorFees,
-    ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles,
-    ValidatorIdentitySignatureChallenges, Validators, VerifyProof,
+    InferenceRequests, LegacyAccountingMigrationFailures, LegacyRoutingIndexMigrationFailures,
+    MinerCount, MinerIdentityCommitments, MinerIdentitySignatureBundles,
+    MinerIdentitySignatureChallenges, Miners, PendingInferenceRequestCount, PendingMinerRequests,
+    PendingValidatorRequests, ProofRecords, ProofVerificationPolicy, PublicRegistryStatus,
+    RejectedInferenceRequestCount, RequestCount, SettledInferenceRequestCount, SubnetCount,
+    Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
+    TotalTreasuryFees, TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
+    ValidatorIdentitySignatureBundles, ValidatorIdentitySignatureChallenges, Validators,
+    VerifyProof,
     mock::{
         Balances, Qubitum, RuntimeEvent, RuntimeOrigin, System, Test, new_test_ext,
         set_verification_outcome,
@@ -3825,6 +3826,152 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
             }
         );
         assert!(Qubitum::route_assignment(0, 42).is_some());
+    });
+}
+
+#[test]
+fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_health() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::General,
+            ProofSystem::RiscZeroStark
+        ));
+
+        let miner_limit = <Test as crate::Config>::MaxActiveMinersPerSubnet::get();
+        for index in 0..=miner_limit {
+            let miner_id = u64::from(index);
+            let operator_commitment = Qubitum::operator_commitment(&2);
+            Miners::<Test>::insert(
+                miner_id,
+                ChainMiner {
+                    id: miner_id,
+                    operator_commitment,
+                    subnet_id: 0,
+                    model_commitment: commitment((index.saturating_add(10) % 250) as u8),
+                    proof_system: ProofSystem::RiscZeroStark,
+                    bond_commitment: Qubitum::miner_bond_commitment(
+                        miner_id,
+                        operator_commitment,
+                        RegistryStatus::Active,
+                    ),
+                    status: RegistryStatus::Active,
+                },
+            );
+        }
+
+        let validator_limit = <Test as crate::Config>::MaxActiveValidatorsPerSubnet::get();
+        for index in 0..=validator_limit {
+            let validator_id = u64::from(index);
+            let operator_commitment = Qubitum::operator_commitment(&3);
+            Validators::<Test>::insert(
+                validator_id,
+                ChainValidator {
+                    id: validator_id,
+                    operator_commitment,
+                    subnet_id: 0,
+                    stake_commitment: Qubitum::validator_stake_commitment(
+                        validator_id,
+                        operator_commitment,
+                        RegistryStatus::Active,
+                    ),
+                    status: RegistryStatus::Active,
+                },
+            );
+        }
+        StorageVersion::new(16).put::<crate::Pallet<Test>>();
+
+        <Qubitum as Hooks<u64>>::on_runtime_upgrade();
+
+        assert_eq!(
+            ActiveMinersBySubnet::<Test>::get(0).len(),
+            miner_limit as usize
+        );
+        assert_eq!(
+            ActiveValidatorsBySubnet::<Test>::get(0).len(),
+            validator_limit as usize
+        );
+        for miner_id in ActiveMinersBySubnet::<Test>::get(0) {
+            assert_eq!(
+                Miners::<Test>::get(miner_id).unwrap().status,
+                RegistryStatus::Active
+            );
+        }
+        for validator_id in ActiveValidatorsBySubnet::<Test>::get(0) {
+            assert_eq!(
+                Validators::<Test>::get(validator_id).unwrap().status,
+                RegistryStatus::Active
+            );
+        }
+
+        let exiting_miners: Vec<_> = (0..=miner_limit)
+            .map(u64::from)
+            .filter(|miner_id| {
+                matches!(
+                    Miners::<Test>::get(miner_id).unwrap().status,
+                    RegistryStatus::Exiting {
+                        exit_available_at: 20
+                    }
+                )
+            })
+            .collect();
+        let exiting_validators: Vec<_> = (0..=validator_limit)
+            .map(u64::from)
+            .filter(|validator_id| {
+                matches!(
+                    Validators::<Test>::get(validator_id).unwrap().status,
+                    RegistryStatus::Exiting {
+                        exit_available_at: 20
+                    }
+                )
+            })
+            .collect();
+
+        assert_eq!(exiting_miners.len(), 1);
+        assert_eq!(exiting_validators.len(), 1);
+        let exiting_miner_id = *exiting_miners.first().unwrap();
+        let exiting_validator_id = *exiting_validators.first().unwrap();
+        assert_eq!(
+            Miners::<Test>::get(exiting_miner_id)
+                .unwrap()
+                .bond_commitment,
+            expected_miner_bond_commitment(
+                exiting_miner_id,
+                2,
+                RegistryStatus::Exiting {
+                    exit_available_at: 20
+                }
+            )
+        );
+        assert_eq!(
+            Validators::<Test>::get(exiting_validator_id)
+                .unwrap()
+                .stake_commitment,
+            expected_validator_stake_commitment(
+                exiting_validator_id,
+                3,
+                RegistryStatus::Exiting {
+                    exit_available_at: 20
+                }
+            )
+        );
+        assert_eq!(LegacyRoutingIndexMigrationFailures::<Test>::get(), 2);
+        assert_eq!(Qubitum::migration_health().legacy_routing_index_failures, 2);
+        assert_eq!(Qubitum::migration_health().legacy_accounting_failures, 0);
+        assert_eq!(
+            Qubitum::public_miner(exiting_miner_id).unwrap().status,
+            PublicRegistryStatus::Exiting
+        );
+        assert_eq!(
+            Qubitum::public_validator(exiting_validator_id)
+                .unwrap()
+                .status,
+            PublicRegistryStatus::Exiting
+        );
+        assert_eq!(
+            StorageVersion::get::<crate::Pallet<Test>>(),
+            StorageVersion::new(17)
+        );
     });
 }
 

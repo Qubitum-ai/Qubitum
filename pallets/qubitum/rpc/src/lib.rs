@@ -67,6 +67,9 @@ pub trait QubitumRpcApi<BlockHash> {
     #[method(name = "qubitum_getAccounting")]
     fn get_accounting(&self, at: Option<BlockHash>) -> RpcResult<Vec<u8>>;
 
+    #[method(name = "qubitum_getMigrationHealth")]
+    fn get_migration_health(&self, at: Option<BlockHash>) -> RpcResult<Vec<u8>>;
+
     #[method(name = "qubitum_getProtocolParams")]
     fn get_protocol_params(&self, at: Option<BlockHash>) -> RpcResult<Vec<u8>>;
 
@@ -276,6 +279,17 @@ where
             .map(|result| result.encode())
             .map_err(|e| {
                 Error::RuntimeError(format!("Unable to get Qubitum accounting: {e:?}")).into()
+            })
+    }
+
+    fn get_migration_health(&self, at: Option<<Block as BlockT>::Hash>) -> RpcResult<Vec<u8>> {
+        let api = self.client.runtime_api();
+        let at = self.at_or_best(at);
+
+        api.qubitum_migration_health(at)
+            .map(|result| result.encode())
+            .map_err(|e| {
+                Error::RuntimeError(format!("Unable to get Qubitum migration health: {e:?}")).into()
             })
     }
 

@@ -1,9 +1,9 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 use pallet_qubitum::{
-    ChainAccounting, ChainProtocolParams, ChainPublicIdentity, ChainPublicInferenceRequest,
-    ChainPublicMiner, ChainPublicProofRecord, ChainPublicSubnet, ChainPublicValidator,
-    ChainRequestStatusCounts, ChainRouteAvailability,
+    ChainAccounting, ChainMigrationHealth, ChainProtocolParams, ChainPublicIdentity,
+    ChainPublicInferenceRequest, ChainPublicMiner, ChainPublicProofRecord, ChainPublicSubnet,
+    ChainPublicValidator, ChainRequestStatusCounts, ChainRouteAvailability,
 };
 use qubitum_protocol::{MinerId, RequestId, SubnetId, ValidatorId};
 use subtensor_runtime_common::TaoBalance;
@@ -22,6 +22,7 @@ sp_api::decl_runtime_apis! {
         fn qubitum_counts() -> (SubnetId, MinerId, ValidatorId);
         fn qubitum_total_burned() -> TaoBalance;
         fn qubitum_accounting() -> ChainAccounting<TaoBalance>;
+        fn qubitum_migration_health() -> ChainMigrationHealth;
         fn qubitum_protocol_params() -> ChainProtocolParams<TaoBalance>;
         fn qubitum_request_status_counts() -> ChainRequestStatusCounts;
     }
