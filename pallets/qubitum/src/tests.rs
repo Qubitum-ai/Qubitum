@@ -7,11 +7,11 @@ use crate::{
     ChainPublicValidator, ChainRequestStatusCounts, ChainRouteAvailability, ChainValidator, Error,
     FailClosedProofVerifier, HoldReason, InferenceRequestParams, InferenceRequestStatus,
     InferenceRequestTerms, InferenceRequestTermsWitness, InferenceRequestTimingWitness,
-    InferenceRequests, LegacyAccountingMigrationFailures, LegacyRoutingIndexMigrationFailures,
-    MinerCount, MinerIdentityCommitments, MinerIdentitySignatureBundles,
-    MinerIdentitySignatureChallenges, MinerLockedBond, Miners, PendingInferenceRequestCount,
-    PendingMinerRequests, PendingValidatorRequests, ProofRecords, ProofVerificationPolicy,
-    PublicRegistryStatus, RejectedInferenceRequestCount, RequestCount,
+    InferenceRequests, LegacyAccountingMigrationFailures, LegacyCapitalRecordMigrationFailures,
+    LegacyRoutingIndexMigrationFailures, MinerCount, MinerIdentityCommitments,
+    MinerIdentitySignatureBundles, MinerIdentitySignatureChallenges, MinerLockedBond, Miners,
+    PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests, ProofRecords,
+    ProofVerificationPolicy, PublicRegistryStatus, RejectedInferenceRequestCount, RequestCount,
     SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned, TotalInferenceEscrowed,
     TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees, TotalValidatorFees,
     ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles,
@@ -2453,7 +2453,7 @@ fn runtime_upgrade_migrates_subnet_owner_and_policy_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(17)
+            StorageVersion::new(18)
         );
     });
 }
@@ -2506,7 +2506,7 @@ fn runtime_upgrade_migrates_identity_signature_challenges() {
         );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(17)
+            StorageVersion::new(18)
         );
     });
 }
@@ -2572,7 +2572,7 @@ fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(17)
+            StorageVersion::new(18)
         );
     });
 }
@@ -2641,7 +2641,7 @@ fn runtime_upgrade_migrates_proof_record_routes_to_commitments() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(17)
+            StorageVersion::new(18)
         );
     });
 }
@@ -2714,7 +2714,7 @@ fn runtime_upgrade_migrates_proof_record_details_to_audit_commitments() {
         }
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(17)
+            StorageVersion::new(18)
         );
     });
 }
@@ -2778,7 +2778,7 @@ fn runtime_upgrade_migrates_registry_operators_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(17)
+            StorageVersion::new(18)
         );
     });
 }
@@ -2847,7 +2847,7 @@ fn runtime_upgrade_migrates_participant_capital_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(17)
+            StorageVersion::new(18)
         );
     });
 }
@@ -2902,7 +2902,7 @@ fn runtime_upgrade_migrates_request_users_to_commitments() {
         assert_eq!(PendingValidatorRequests::<Test>::get(9), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(17)
+            StorageVersion::new(18)
         );
     });
 }
@@ -2942,7 +2942,7 @@ fn runtime_upgrade_migrates_request_timing_to_commitments() {
         assert_eq!(request.status, InferenceRequestStatus::Pending);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(17)
+            StorageVersion::new(18)
         );
     });
 }
@@ -2982,7 +2982,7 @@ fn runtime_upgrade_migrates_request_terms_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(17)
+            StorageVersion::new(18)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 123_456);
         assert_eq!(TotalValidatorFees::<Test>::get(), 3_086);
@@ -3047,7 +3047,7 @@ fn runtime_upgrade_records_legacy_accounting_failures_without_saturated_totals()
         );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(17)
+            StorageVersion::new(18)
         );
     });
 
@@ -4054,7 +4054,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(17)
+            StorageVersion::new(18)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
@@ -4213,7 +4213,99 @@ fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_healt
         );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(17)
+            StorageVersion::new(18)
+        );
+    });
+}
+
+#[test]
+fn runtime_upgrade_reports_missing_legacy_capital_records() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::General,
+            ProofSystem::RiscZeroStark
+        ));
+
+        let miner_operator_commitment = Qubitum::operator_commitment(&2);
+        Miners::<Test>::insert(
+            0,
+            ChainMiner {
+                id: 0,
+                operator_commitment: miner_operator_commitment,
+                subnet_id: 0,
+                model_commitment: commitment(10),
+                proof_system: ProofSystem::RiscZeroStark,
+                bond_commitment: Qubitum::miner_bond_commitment(
+                    0,
+                    miner_operator_commitment,
+                    RegistryStatus::Active,
+                ),
+                status: RegistryStatus::Active,
+            },
+        );
+        Miners::<Test>::insert(
+            1,
+            ChainMiner {
+                id: 1,
+                operator_commitment: miner_operator_commitment,
+                subnet_id: 0,
+                model_commitment: commitment(11),
+                proof_system: ProofSystem::RiscZeroStark,
+                bond_commitment: Qubitum::miner_bond_commitment(
+                    1,
+                    miner_operator_commitment,
+                    RegistryStatus::Disabled,
+                ),
+                status: RegistryStatus::Disabled,
+            },
+        );
+
+        let validator_operator_commitment = Qubitum::operator_commitment(&3);
+        Validators::<Test>::insert(
+            0,
+            ChainValidator {
+                id: 0,
+                operator_commitment: validator_operator_commitment,
+                subnet_id: 0,
+                stake_commitment: Qubitum::validator_stake_commitment(
+                    0,
+                    validator_operator_commitment,
+                    RegistryStatus::Active,
+                ),
+                status: RegistryStatus::Active,
+            },
+        );
+        Validators::<Test>::insert(
+            1,
+            ChainValidator {
+                id: 1,
+                operator_commitment: validator_operator_commitment,
+                subnet_id: 0,
+                stake_commitment: Qubitum::validator_stake_commitment(
+                    1,
+                    validator_operator_commitment,
+                    RegistryStatus::Pending,
+                ),
+                status: RegistryStatus::Pending,
+            },
+        );
+        StorageVersion::new(17).put::<crate::Pallet<Test>>();
+
+        <Qubitum as Hooks<u64>>::on_runtime_upgrade();
+
+        assert_eq!(LegacyCapitalRecordMigrationFailures::<Test>::get(), 2);
+        assert_eq!(
+            Qubitum::migration_health().legacy_capital_record_failures,
+            2
+        );
+        assert_eq!(Qubitum::migration_health().legacy_accounting_failures, 0);
+        assert_eq!(Qubitum::migration_health().legacy_routing_index_failures, 0);
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert_eq!(
+            StorageVersion::get::<crate::Pallet<Test>>(),
+            StorageVersion::new(18)
         );
     });
 }

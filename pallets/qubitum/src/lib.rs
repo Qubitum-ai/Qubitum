@@ -156,7 +156,7 @@ pub mod pallet {
     const LEGACY_ASSIGNMENT_BLINDING: Commitment = [0; 32];
     const LEGACY_TIMING_BLINDING: Commitment = [0; 32];
     const LEGACY_TERMS_BLINDING: Commitment = [0; 32];
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(17);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(18);
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -730,6 +730,7 @@ pub mod pallet {
     pub struct ChainMigrationHealth {
         pub legacy_accounting_failures: u32,
         pub legacy_routing_index_failures: u32,
+        pub legacy_capital_record_failures: u32,
     }
 
     #[derive(
@@ -966,6 +967,9 @@ pub mod pallet {
     #[pallet::storage]
     pub type LegacyRoutingIndexMigrationFailures<T: Config> = StorageValue<_, u32, ValueQuery>;
 
+    #[pallet::storage]
+    pub type LegacyCapitalRecordMigrationFailures<T: Config> = StorageValue<_, u32, ValueQuery>;
+
     #[pallet::hooks]
     impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
         fn on_runtime_upgrade() -> Weight {
@@ -982,6 +986,7 @@ pub mod pallet {
                 .saturating_add(Self::migrate_request_timing_commitments(on_chain))
                 .saturating_add(Self::migrate_request_terms_commitments(on_chain))
                 .saturating_add(Self::rebuild_active_routing_indexes())
+                .saturating_add(Self::migrate_participant_capital_records(on_chain))
                 .saturating_add(Self::rebuild_request_status_counts())
                 .saturating_add(Self::migrate_proof_record_timestamps(on_chain))
                 .saturating_add(Self::migrate_proof_record_assignment_commitments(on_chain))
@@ -1985,6 +1990,7 @@ pub mod pallet {
             ChainMigrationHealth {
                 legacy_accounting_failures: LegacyAccountingMigrationFailures::<T>::get(),
                 legacy_routing_index_failures: LegacyRoutingIndexMigrationFailures::<T>::get(),
+                legacy_capital_record_failures: LegacyCapitalRecordMigrationFailures::<T>::get(),
             }
         }
 
@@ -3221,6 +3227,39 @@ pub mod pallet {
                     .saturating_add(validator_writes)
                     .saturating_add(1),
             )
+        }
+
+        fn migrate_participant_capital_records(on_chain: StorageVersion) -> Weight {
+            if on_chain >= StorageVersion::new(18) {
+                return Weight::zero();
+            }
+
+            let mut miner_reads = 0_u64;
+            let mut validator_reads = 0_u64;
+            let mut missing = 0_u32;
+
+            for (miner_id, miner) in Miners::<T>::iter() {
+                miner_reads = miner_reads.saturating_add(1);
+                if Self::capital_bearing_status(miner.status) {
+                    miner_reads = miner_reads.saturating_add(1);
+                    if !MinerLockedBond::<T>::contains_key(miner_id) {
+                        missing = missing.saturating_add(1);
+                    }
+                }
+            }
+
+            for (validator_id, validator) in Validators::<T>::iter() {
+                validator_reads = validator_reads.saturating_add(1);
+                if Self::capital_bearing_status(validator.status) {
+                    validator_reads = validator_reads.saturating_add(1);
+                    if !ValidatorLockedStake::<T>::contains_key(validator_id) {
+                        missing = missing.saturating_add(1);
+                    }
+                }
+            }
+
+            LegacyCapitalRecordMigrationFailures::<T>::put(missing);
+            T::DbWeight::get().reads_writes(miner_reads.saturating_add(validator_reads), 1)
         }
 
         fn clear_pending_assignment_counters() -> Weight {
