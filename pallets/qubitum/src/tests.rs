@@ -3619,11 +3619,13 @@ fn request_commitment_call_hides_assignment_and_terms_blindings() {
         );
         let terms_commitment =
             Qubitum::request_terms_commitment(88, 1_000, 250, 50, terms_blinding());
+        let timing_commitment = Qubitum::request_timing_commitment(88, 0, timing_blinding());
         let params = InferenceRequestCommitmentParams {
             subnet_id: 0,
             input_commitment: commitment(1),
             assignment_commitment,
-            timing_blinding: timing_blinding(),
+            created_at: 0,
+            timing_commitment,
             terms_commitment,
             payment: 1_000,
             validator_fee_bps: 250,
@@ -3643,7 +3645,7 @@ fn request_commitment_call_hides_assignment_and_terms_blindings() {
             &encoded_call,
             &terms_blinding().encode()
         ));
-        assert!(contains_subsequence(
+        assert!(!contains_subsequence(
             &encoded_call,
             &timing_blinding().encode()
         ));
@@ -3656,10 +3658,7 @@ fn request_commitment_call_hides_assignment_and_terms_blindings() {
         let request = InferenceRequests::<Test>::get(88).unwrap();
         assert_eq!(request.assignment_commitment, assignment_commitment);
         assert_eq!(request.terms_commitment, terms_commitment);
-        assert_eq!(
-            request.timing_commitment,
-            Qubitum::request_timing_commitment(88, 0, timing_blinding())
-        );
+        assert_eq!(request.timing_commitment, timing_commitment);
         assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(88)));
         assert_eq!(
             InferenceRequests::<Test>::get(88).unwrap().status,

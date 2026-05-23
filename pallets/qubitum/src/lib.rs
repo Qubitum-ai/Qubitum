@@ -819,7 +819,8 @@ pub mod pallet {
         pub subnet_id: SubnetId,
         pub input_commitment: Commitment,
         pub assignment_commitment: Commitment,
-        pub timing_blinding: Commitment,
+        pub created_at: BlockNumber,
+        pub timing_commitment: Commitment,
         pub terms_commitment: Commitment,
         pub payment: Balance,
         pub validator_fee_bps: u16,
@@ -1603,7 +1604,8 @@ pub mod pallet {
                 params.subnet_id,
                 params.input_commitment,
                 params.assignment_commitment,
-                params.timing_blinding,
+                params.created_at,
+                params.timing_commitment,
                 params.terms_commitment,
                 params.payment,
                 params.validator_fee_bps,
@@ -1611,11 +1613,6 @@ pub mod pallet {
             )?;
             let assignment = Self::route_assignment(params.subnet_id, request_id)
                 .ok_or(Error::<T>::NoRouteAvailable)?;
-            let timing_commitment = Self::request_timing_commitment(
-                request_id,
-                Self::current_block(),
-                params.timing_blinding,
-            );
             Self::open_inference_request_with_commitments(
                 user,
                 request_id,
@@ -1625,7 +1622,7 @@ pub mod pallet {
                 params.input_commitment,
                 params.assignment_commitment,
                 params.terms_commitment,
-                timing_commitment,
+                params.timing_commitment,
                 params.payment,
                 params.validator_fee_bps,
                 params.treasury_fee_bps,
@@ -2264,7 +2261,8 @@ pub mod pallet {
             subnet_id: SubnetId,
             input_commitment: Commitment,
             assignment_commitment: Commitment,
-            timing_blinding: Commitment,
+            created_at: BlockNumber,
+            timing_commitment: Commitment,
             terms_commitment: Commitment,
             payment: BalanceOf<T>,
             validator_fee_bps: u16,
@@ -2272,8 +2270,12 @@ pub mod pallet {
         ) -> DispatchResult {
             ensure_commitment::<T>(input_commitment)?;
             ensure_commitment::<T>(assignment_commitment)?;
-            ensure_commitment::<T>(timing_blinding)?;
+            ensure_commitment::<T>(timing_commitment)?;
             ensure_commitment::<T>(terms_commitment)?;
+            ensure!(
+                created_at == Self::current_block(),
+                Error::<T>::RequestMismatch
+            );
             ensure!(
                 !InferenceRequests::<T>::contains_key(request_id),
                 Error::<T>::DuplicateRequest
