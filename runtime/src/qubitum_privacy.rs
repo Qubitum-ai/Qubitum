@@ -82,6 +82,10 @@ impl CheckQubitumShielding {
                 Self::encoded_bytes_contain_qubitum_call(bytes, depth + 1)
             }
             RuntimeCall::Preimage(_) => false,
+            RuntimeCall::MevShield(pallet_shield::Call::store_encrypted { encrypted_call }) => {
+                Self::encoded_bytes_contain_qubitum_call(encrypted_call, depth + 1)
+            }
+            RuntimeCall::MevShield(_) => false,
             _ => false,
         }
     }
@@ -309,6 +313,36 @@ mod tests {
                     remark: commitment(7).to_vec(),
                 })
                 .encode(),
+            });
+            assert!(validate_ext(&call, TransactionSource::External).is_ok());
+        });
+    }
+
+    #[test]
+    fn store_encrypted_encoded_qubitum_call_must_be_shielded() {
+        new_test_ext().execute_with(|| {
+            let call = RuntimeCall::MevShield(pallet_shield::Call::store_encrypted {
+                encrypted_call:
+                    BoundedVec::<u8, pallet_shield::MaxEncryptedCallSize>::truncate_from(
+                        direct_qubitum_call().encode(),
+                    ),
+            });
+            assert_eq!(
+                validate_ext(&call, TransactionSource::External),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+        });
+    }
+
+    #[test]
+    fn store_encrypted_ciphertext_bytes_pass() {
+        new_test_ext().execute_with(|| {
+            let call = RuntimeCall::MevShield(pallet_shield::Call::store_encrypted {
+                encrypted_call:
+                    BoundedVec::<u8, pallet_shield::MaxEncryptedCallSize>::truncate_from(vec![
+                        0xAA;
+                        64
+                    ]),
             });
             assert!(validate_ext(&call, TransactionSource::External).is_ok());
         });
