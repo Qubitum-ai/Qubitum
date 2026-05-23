@@ -24,6 +24,14 @@ impl CheckQubitumShielding {
         Self::contains_qubitum_call_at_depth(call, 0)
     }
 
+    fn encoded_bytes_contain_qubitum_call(bytes: &[u8], depth: u8) -> bool {
+        let mut input = bytes;
+        match RuntimeCall::decode(&mut input) {
+            Ok(call) if input.is_empty() => Self::contains_qubitum_call_at_depth(&call, depth),
+            _ => false,
+        }
+    }
+
     fn contains_qubitum_call_at_depth(call: &RuntimeCall, depth: u8) -> bool {
         if depth >= MAX_CALL_SCAN_DEPTH {
             return true;
@@ -54,6 +62,28 @@ impl CheckQubitumShielding {
                 | pallet_subtensor_proxy::Call::proxy_announced { call, .. },
             ) => Self::contains_qubitum_call_at_depth(call, depth + 1),
             RuntimeCall::Proxy(_) => false,
+            RuntimeCall::Sudo(
+                pallet_sudo::Call::sudo { call }
+                | pallet_sudo::Call::sudo_unchecked_weight { call, .. }
+                | pallet_sudo::Call::sudo_as { call, .. },
+            ) => Self::contains_qubitum_call_at_depth(call, depth + 1),
+            RuntimeCall::Sudo(_) => false,
+            RuntimeCall::Multisig(
+                pallet_multisig::Call::as_multi_threshold_1 { call, .. }
+                | pallet_multisig::Call::as_multi { call, .. },
+            ) => Self::contains_qubitum_call_at_depth(call, depth + 1),
+            RuntimeCall::Multisig(_) => false,
+            RuntimeCall::Scheduler(
+                pallet_scheduler::Call::schedule { call, .. }
+                | pallet_scheduler::Call::schedule_named { call, .. }
+                | pallet_scheduler::Call::schedule_after { call, .. }
+                | pallet_scheduler::Call::schedule_named_after { call, .. },
+            ) => Self::contains_qubitum_call_at_depth(call, depth + 1),
+            RuntimeCall::Scheduler(_) => false,
+            RuntimeCall::Preimage(pallet_preimage::Call::note_preimage { bytes }) => {
+                Self::encoded_bytes_contain_qubitum_call(bytes, depth + 1)
+            }
+            RuntimeCall::Preimage(_) => false,
             _ => false,
         }
     }
@@ -202,6 +232,75 @@ mod tests {
                 validate_ext(&call, TransactionSource::External),
                 Err(CustomTransactionError::QubitumCallMustBeShielded.into())
             );
+        });
+    }
+
+    #[test]
+    fn sudo_wrapped_external_qubitum_call_must_be_shielded() {
+        new_test_ext().execute_with(|| {
+            let call = RuntimeCall::Sudo(pallet_sudo::Call::sudo {
+                call: Box::new(direct_qubitum_call()),
+            });
+            assert_eq!(
+                validate_ext(&call, TransactionSource::External),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+        });
+    }
+
+    #[test]
+    fn multisig_wrapped_external_qubitum_call_must_be_shielded() {
+        new_test_ext().execute_with(|| {
+            let call = RuntimeCall::Multisig(pallet_multisig::Call::as_multi_threshold_1 {
+                other_signatories: vec![account(2)],
+                call: Box::new(direct_qubitum_call()),
+            });
+            assert_eq!(
+                validate_ext(&call, TransactionSource::External),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+        });
+    }
+
+    #[test]
+    fn scheduler_wrapped_external_qubitum_call_must_be_shielded() {
+        new_test_ext().execute_with(|| {
+            let call = RuntimeCall::Scheduler(pallet_scheduler::Call::schedule {
+                when: 2,
+                maybe_periodic: None,
+                priority: 0,
+                call: Box::new(direct_qubitum_call()),
+            });
+            assert_eq!(
+                validate_ext(&call, TransactionSource::External),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+        });
+    }
+
+    #[test]
+    fn encoded_preimage_qubitum_call_must_be_shielded() {
+        new_test_ext().execute_with(|| {
+            let call = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: direct_qubitum_call().encode(),
+            });
+            assert_eq!(
+                validate_ext(&call, TransactionSource::External),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+        });
+    }
+
+    #[test]
+    fn encoded_preimage_non_qubitum_call_passes() {
+        new_test_ext().execute_with(|| {
+            let call = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: RuntimeCall::System(frame_system::Call::remark {
+                    remark: commitment(7).to_vec(),
+                })
+                .encode(),
+            });
+            assert!(validate_ext(&call, TransactionSource::External).is_ok());
         });
     }
 
