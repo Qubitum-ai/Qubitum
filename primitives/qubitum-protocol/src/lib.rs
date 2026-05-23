@@ -91,6 +91,7 @@ pub enum ProtocolError {
     UnknownSubnet,
     UnknownValidator,
     VerifierError,
+    ClassicalSignatureDisallowed,
 }
 
 /// Execution proof system used by a subnet or proof submission.

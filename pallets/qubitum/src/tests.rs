@@ -75,6 +75,13 @@ fn post_quantum_signature_bundle() -> SignatureBundle {
     }
 }
 
+fn dual_signature_bundle() -> SignatureBundle {
+    SignatureBundle {
+        classical: Some(signature(SignatureAlgorithm::Ecdsa, 30)),
+        post_quantum: Some(signature(SignatureAlgorithm::Dilithium3, 40)),
+    }
+}
+
 fn zero_signature_bundle() -> SignatureBundle {
     SignatureBundle {
         classical: Some(SignatureCommitment {
@@ -971,6 +978,16 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
                 Some(commitment(22)),
                 Some(commitment(23)),
                 zero_signature_bundle(),
+            ),
+            Error::<Test>::InvalidSignatureBundle
+        );
+        assert_noop!(
+            Qubitum::set_miner_identity_commitments(
+                RuntimeOrigin::signed(2),
+                0,
+                Some(commitment(20)),
+                Some(commitment(21)),
+                dual_signature_bundle(),
             ),
             Error::<Test>::InvalidSignatureBundle
         );

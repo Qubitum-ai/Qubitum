@@ -96,18 +96,17 @@ impl SignaturePolicy {
     }
 
     pub fn validate(self, bundle: SignatureBundle) -> Result<SignatureBundle, ProtocolError> {
-        validate_optional_classical(bundle.classical)?;
-        validate_optional_post_quantum(bundle.post_quantum)?;
-
         match self.mode {
             SignatureMode::ClassicalEcdsa => {
                 require_classical(bundle.classical)?;
+                validate_optional_post_quantum(bundle.post_quantum)?;
             }
             SignatureMode::HybridDilithium => {
                 require_classical(bundle.classical)?;
                 require_post_quantum(bundle.post_quantum)?;
             }
             SignatureMode::FullPostQuantum => {
+                reject_classical(bundle.classical)?;
                 require_post_quantum(bundle.post_quantum)?;
             }
         }
@@ -126,13 +125,12 @@ fn require_post_quantum(signature: Option<SignatureCommitment>) -> Result<(), Pr
     validate_post_quantum(signature)
 }
 
-fn validate_optional_classical(
-    signature: Option<SignatureCommitment>,
-) -> Result<(), ProtocolError> {
-    if let Some(signature) = signature {
-        validate_classical(signature)?;
+fn reject_classical(signature: Option<SignatureCommitment>) -> Result<(), ProtocolError> {
+    if signature.is_some() {
+        Err(ProtocolError::ClassicalSignatureDisallowed)
+    } else {
+        Ok(())
     }
-    Ok(())
 }
 
 fn validate_optional_post_quantum(
@@ -263,7 +261,20 @@ mod tests {
 
         assert_eq!(
             SignaturePolicy::new(SignatureMode::FullPostQuantum).validate(bundle),
-            Err(ProtocolError::MissingPostQuantumSignature)
+            Err(ProtocolError::ClassicalSignatureDisallowed)
+        );
+    }
+
+    #[test]
+    fn full_post_quantum_phase_rejects_dual_signature_after_classical_sunset() {
+        let bundle = SignatureBundle {
+            classical: Some(sig(SignatureAlgorithm::Ecdsa, 1)),
+            post_quantum: Some(sig(SignatureAlgorithm::Dilithium3, 3)),
+        };
+
+        assert_eq!(
+            SignaturePolicy::new(SignatureMode::FullPostQuantum).validate(bundle),
+            Err(ProtocolError::ClassicalSignatureDisallowed)
         );
     }
 
@@ -317,7 +328,7 @@ mod tests {
         };
         assert_eq!(
             SignaturePolicy::new(SignatureMode::FullPostQuantum).validate(malformed_extra_slot),
-            Err(ProtocolError::MissingCommitment)
+            Err(ProtocolError::ClassicalSignatureDisallowed)
         );
     }
 
