@@ -340,6 +340,7 @@ pub mod pallet {
         pub subnet_id: SubnetId,
         pub model_commitment: Commitment,
         pub proof_system: ProofSystem,
+        #[allow(dead_code)]
         pub bond: Balance,
         pub status: RegistryStatus,
     }
@@ -349,6 +350,7 @@ pub mod pallet {
         pub id: ValidatorId,
         pub operator: AccountId,
         pub subnet_id: SubnetId,
+        #[allow(dead_code)]
         pub stake: Balance,
         pub status: RegistryStatus,
     }
@@ -360,6 +362,7 @@ pub mod pallet {
         pub subnet_id: SubnetId,
         pub model_commitment: Commitment,
         pub proof_system: ProofSystem,
+        #[allow(dead_code)]
         pub bond: Balance,
         pub status: RegistryStatus,
     }
@@ -369,6 +372,7 @@ pub mod pallet {
         pub id: ValidatorId,
         pub operator_commitment: Commitment,
         pub subnet_id: SubnetId,
+        #[allow(dead_code)]
         pub stake: Balance,
         pub status: RegistryStatus,
     }
@@ -1095,14 +1099,16 @@ pub mod pallet {
 
             Self::burn_free(&operator, T::MinerRegistrationBurn::get())?;
             let miner_id = Self::next_miner_id()?;
+            let operator_commitment = Self::operator_commitment(&operator);
+            let status = RegistryStatus::Pending;
             let miner = ChainMiner {
                 id: miner_id,
-                operator_commitment: Self::operator_commitment(&operator),
+                operator_commitment,
                 subnet_id,
                 model_commitment,
                 proof_system,
-                bond_commitment: Self::balance_commitment(BalanceOf::<T>::default()),
-                status: RegistryStatus::Pending,
+                bond_commitment: Self::miner_bond_commitment(miner_id, operator_commitment, status),
+                status,
             };
 
             Miners::<T>::insert(miner_id, miner);
@@ -1141,8 +1147,9 @@ pub mod pallet {
 
                 T::Currency::hold(&HoldReason::MinerBond.into(), &operator, bond)?;
                 Self::insert_active_miner(miner.subnet_id, miner_id)?;
-                miner.bond_commitment = Self::balance_commitment(bond);
                 miner.status = RegistryStatus::Active;
+                miner.bond_commitment =
+                    Self::miner_bond_commitment(miner_id, miner.operator_commitment, miner.status);
                 Ok(())
             })?;
 
@@ -1171,12 +1178,18 @@ pub mod pallet {
             T::Currency::hold(&HoldReason::ValidatorStake.into(), &operator, stake)?;
 
             let validator_id = Self::next_validator_id()?;
+            let operator_commitment = Self::operator_commitment(&operator);
+            let status = RegistryStatus::Active;
             let validator = ChainValidator {
                 id: validator_id,
-                operator_commitment: Self::operator_commitment(&operator),
+                operator_commitment,
                 subnet_id,
-                stake_commitment: Self::balance_commitment(stake),
-                status: RegistryStatus::Active,
+                stake_commitment: Self::validator_stake_commitment(
+                    validator_id,
+                    operator_commitment,
+                    status,
+                ),
+                status,
             };
 
             Self::insert_active_validator(subnet_id, validator_id)?;
@@ -1467,6 +1480,8 @@ pub mod pallet {
                 );
                 Self::remove_active_miner(miner.subnet_id, miner_id);
                 miner.status = RegistryStatus::Exiting { exit_available_at };
+                miner.bond_commitment =
+                    Self::miner_bond_commitment(miner_id, miner.operator_commitment, miner.status);
                 Ok(())
             })?;
 
@@ -1500,8 +1515,9 @@ pub mod pallet {
                         Precision::Exact,
                     )?;
                 }
-                miner.bond_commitment = Self::balance_commitment(BalanceOf::<T>::default());
                 miner.status = RegistryStatus::Disabled;
+                miner.bond_commitment =
+                    Self::miner_bond_commitment(miner_id, miner.operator_commitment, miner.status);
                 Ok(())
             })?;
 
@@ -1539,6 +1555,11 @@ pub mod pallet {
                 );
                 Self::remove_active_validator(validator.subnet_id, validator_id);
                 validator.status = RegistryStatus::Exiting { exit_available_at };
+                validator.stake_commitment = Self::validator_stake_commitment(
+                    validator_id,
+                    validator.operator_commitment,
+                    validator.status,
+                );
                 Ok(())
             })?;
 
@@ -1577,8 +1598,12 @@ pub mod pallet {
                         Precision::Exact,
                     )?;
                 }
-                validator.stake_commitment = Self::balance_commitment(BalanceOf::<T>::default());
                 validator.status = RegistryStatus::Disabled;
+                validator.stake_commitment = Self::validator_stake_commitment(
+                    validator_id,
+                    validator.operator_commitment,
+                    validator.status,
+                );
                 Ok(())
             })?;
 
@@ -2136,8 +2161,44 @@ pub mod pallet {
             (domain, who).using_encoded(blake2_256)
         }
 
+        #[cfg(test)]
         pub(crate) fn balance_commitment(amount: BalanceOf<T>) -> Commitment {
             amount.using_encoded(blake2_256)
+        }
+
+        pub(crate) fn miner_bond_commitment(
+            miner_id: MinerId,
+            operator_commitment: Commitment,
+            status: RegistryStatus,
+        ) -> Commitment {
+            Self::participant_capital_commitment(
+                b"qubitum.miner.bond.state.v1",
+                miner_id,
+                operator_commitment,
+                status,
+            )
+        }
+
+        pub(crate) fn validator_stake_commitment(
+            validator_id: ValidatorId,
+            operator_commitment: Commitment,
+            status: RegistryStatus,
+        ) -> Commitment {
+            Self::participant_capital_commitment(
+                b"qubitum.validator.stake.state.v1",
+                validator_id,
+                operator_commitment,
+                status,
+            )
+        }
+
+        fn participant_capital_commitment(
+            domain: &'static [u8],
+            participant_id: u64,
+            operator_commitment: Commitment,
+            status: RegistryStatus,
+        ) -> Commitment {
+            (domain, participant_id, operator_commitment, status).using_encoded(blake2_256)
         }
 
         pub(crate) fn subnet_policy_commitment(
@@ -2809,13 +2870,18 @@ pub mod pallet {
             let mut migrated_miners = 0_u64;
             Miners::<T>::translate::<ChainMinerV7<T::AccountId, BalanceOf<T>>, _>(|_, old| {
                 migrated_miners = migrated_miners.saturating_add(1);
+                let operator_commitment = Self::operator_commitment(&old.operator);
                 Some(ChainMiner {
                     id: old.id,
-                    operator_commitment: Self::operator_commitment(&old.operator),
+                    operator_commitment,
                     subnet_id: old.subnet_id,
                     model_commitment: old.model_commitment,
                     proof_system: old.proof_system,
-                    bond_commitment: Self::balance_commitment(old.bond),
+                    bond_commitment: Self::miner_bond_commitment(
+                        old.id,
+                        operator_commitment,
+                        old.status,
+                    ),
                     status: old.status,
                 })
             });
@@ -2824,11 +2890,16 @@ pub mod pallet {
             Validators::<T>::translate::<ChainValidatorV7<T::AccountId, BalanceOf<T>>, _>(
                 |_, old| {
                     migrated_validators = migrated_validators.saturating_add(1);
+                    let operator_commitment = Self::operator_commitment(&old.operator);
                     Some(ChainValidator {
                         id: old.id,
-                        operator_commitment: Self::operator_commitment(&old.operator),
+                        operator_commitment,
                         subnet_id: old.subnet_id,
-                        stake_commitment: Self::balance_commitment(old.stake),
+                        stake_commitment: Self::validator_stake_commitment(
+                            old.id,
+                            operator_commitment,
+                            old.status,
+                        ),
                         status: old.status,
                     })
                 },
@@ -2885,7 +2956,11 @@ pub mod pallet {
                     subnet_id: old.subnet_id,
                     model_commitment: old.model_commitment,
                     proof_system: old.proof_system,
-                    bond_commitment: Self::balance_commitment(old.bond),
+                    bond_commitment: Self::miner_bond_commitment(
+                        old.id,
+                        old.operator_commitment,
+                        old.status,
+                    ),
                     status: old.status,
                 })
             });
@@ -2897,7 +2972,11 @@ pub mod pallet {
                     id: old.id,
                     operator_commitment: old.operator_commitment,
                     subnet_id: old.subnet_id,
-                    stake_commitment: Self::balance_commitment(old.stake),
+                    stake_commitment: Self::validator_stake_commitment(
+                        old.id,
+                        old.operator_commitment,
+                        old.status,
+                    ),
                     status: old.status,
                 })
             });
@@ -3550,13 +3629,14 @@ pub mod pallet {
                 let remaining_bond = current_bond
                     .checked_sub(&burned)
                     .ok_or(Error::<T>::ArithmeticOverflow)?;
-                miner.bond_commitment = Self::balance_commitment(remaining_bond);
                 if remaining_bond < T::MinMinerBond::get()
                     && !matches!(miner.status, RegistryStatus::Exiting { .. })
                 {
                     Self::remove_active_miner(miner.subnet_id, miner_id);
                     miner.status = RegistryStatus::Slashed;
                 }
+                miner.bond_commitment =
+                    Self::miner_bond_commitment(miner_id, miner.operator_commitment, miner.status);
                 Ok::<BalanceOf<T>, DispatchError>(burned)
             })?;
 
@@ -3594,13 +3674,17 @@ pub mod pallet {
                 let remaining_stake = current_stake
                     .checked_sub(&burned)
                     .ok_or(Error::<T>::ArithmeticOverflow)?;
-                validator.stake_commitment = Self::balance_commitment(remaining_stake);
                 if remaining_stake < T::MinValidatorStake::get()
                     && !matches!(validator.status, RegistryStatus::Exiting { .. })
                 {
                     Self::remove_active_validator(validator.subnet_id, validator_id);
                     validator.status = RegistryStatus::Slashed;
                 }
+                validator.stake_commitment = Self::validator_stake_commitment(
+                    validator_id,
+                    validator.operator_commitment,
+                    validator.status,
+                );
                 Ok::<BalanceOf<T>, DispatchError>(burned)
             })?;
 

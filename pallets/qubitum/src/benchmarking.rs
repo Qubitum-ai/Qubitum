@@ -186,7 +186,11 @@ mod benchmarks {
         assert_eq!(registered_miner.proof_system, ProofSystem::RiscZeroStark);
         assert_eq!(
             registered_miner.bond_commitment,
-            Pallet::<T>::balance_commitment(BalanceOf::<T>::default())
+            Pallet::<T>::miner_bond_commitment(
+                0,
+                registered_miner.operator_commitment,
+                registered_miner.status,
+            )
         );
         assert_eq!(registered_miner.status, RegistryStatus::Pending);
         assert_last_event::<T>(
@@ -244,7 +248,11 @@ mod benchmarks {
         assert_eq!(registered_miner.status, RegistryStatus::Disabled);
         assert_eq!(
             registered_miner.bond_commitment,
-            Pallet::<T>::balance_commitment(BalanceOf::<T>::default())
+            Pallet::<T>::miner_bond_commitment(
+                0,
+                registered_miner.operator_commitment,
+                registered_miner.status,
+            )
         );
         assert_last_event::<T>(Event::<T>::MinerBondWithdrawn { miner_id: 0 }.into());
     }
@@ -272,7 +280,11 @@ mod benchmarks {
         assert_eq!(registered_validator.subnet_id, 0);
         assert_eq!(
             registered_validator.stake_commitment,
-            Pallet::<T>::balance_commitment(stake)
+            Pallet::<T>::validator_stake_commitment(
+                0,
+                registered_validator.operator_commitment,
+                registered_validator.status,
+            )
         );
         assert_eq!(registered_validator.status, RegistryStatus::Active);
         assert_last_event::<T>(
@@ -318,7 +330,11 @@ mod benchmarks {
         assert_eq!(registered_validator.status, RegistryStatus::Disabled);
         assert_eq!(
             registered_validator.stake_commitment,
-            Pallet::<T>::balance_commitment(BalanceOf::<T>::default())
+            Pallet::<T>::validator_stake_commitment(
+                0,
+                registered_validator.operator_commitment,
+                registered_validator.status,
+            )
         );
         assert_last_event::<T>(Event::<T>::ValidatorStakeWithdrawn { validator_id: 0 }.into());
     }
