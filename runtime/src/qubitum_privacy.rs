@@ -2,9 +2,7 @@ use crate::{RuntimeCall, RuntimeOrigin};
 use codec::{Decode, DecodeWithMemTracking, Encode};
 use frame_support::pallet_prelude::TypeInfo;
 use sp_runtime::impl_tx_ext_default;
-use sp_runtime::traits::{
-    AsSystemOriginSigner, DispatchInfoOf, Implication, TransactionExtension, ValidateResult,
-};
+use sp_runtime::traits::{DispatchInfoOf, Implication, TransactionExtension, ValidateResult};
 use sp_runtime::transaction_validity::TransactionSource;
 use subtensor_macros::freeze_struct;
 use subtensor_runtime_common::CustomTransactionError;
@@ -120,12 +118,10 @@ impl TransactionExtension<RuntimeCall> for CheckQubitumShielding {
         _inherited_implication: &impl Implication,
         source: TransactionSource,
     ) -> ValidateResult<Self::Val, RuntimeCall> {
-        if origin.as_system_origin_signer().is_some()
-            && matches!(
-                source,
-                TransactionSource::External | TransactionSource::Local
-            )
-            && Self::contains_qubitum_call(call)
+        if matches!(
+            source,
+            TransactionSource::External | TransactionSource::Local
+        ) && Self::contains_qubitum_call(call)
         {
             return Err(CustomTransactionError::QubitumCallMustBeShielded.into());
         }
@@ -183,18 +179,18 @@ mod tests {
         call: &RuntimeCall,
         source: TransactionSource,
     ) -> Result<(), TransactionValidityError> {
+        validate_ext_with_origin(RuntimeOrigin::signed(account(1)), call, source)
+    }
+
+    fn validate_ext_with_origin(
+        origin: RuntimeOrigin,
+        call: &RuntimeCall,
+        source: TransactionSource,
+    ) -> Result<(), TransactionValidityError> {
         let ext = CheckQubitumShielding::new();
         let info = call.get_dispatch_info();
-        ext.validate(
-            RuntimeOrigin::signed(account(1)),
-            call,
-            &info,
-            0,
-            (),
-            &TxBaseImplication(call),
-            source,
-        )
-        .map(|_| ())
+        ext.validate(origin, call, &info, 0, (), &TxBaseImplication(call), source)
+            .map(|_| ())
     }
 
     #[test]
@@ -202,6 +198,20 @@ mod tests {
         new_test_ext().execute_with(|| {
             assert_eq!(
                 validate_ext(&direct_qubitum_call(), TransactionSource::External),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+        });
+    }
+
+    #[test]
+    fn unsigned_external_qubitum_call_must_be_shielded() {
+        new_test_ext().execute_with(|| {
+            assert_eq!(
+                validate_ext_with_origin(
+                    RuntimeOrigin::none(),
+                    &direct_qubitum_call(),
+                    TransactionSource::External
+                ),
                 Err(CustomTransactionError::QubitumCallMustBeShielded.into())
             );
         });
