@@ -1,9 +1,7 @@
-use codec::{Decode, DecodeWithMemTracking, Encode};
+use codec::{Decode, DecodeLimit, DecodeWithMemTracking, Encode};
 use core::marker::PhantomData;
 use frame_support::pallet_prelude::TypeInfo;
-use frame_support::traits::IsSubType;
 use frame_system::CheckMortality as CheckMortalitySubstrate;
-use pallet_shield::Call as ShieldCall;
 use sp_runtime::{
     generic::Era,
     traits::{DispatchInfoOf, Dispatchable, Implication, TransactionExtension, ValidateResult},
@@ -17,6 +15,80 @@ use subtensor_macros::freeze_struct;
 /// Limiting encrypted txs to this value ensures stuck transactions evict from
 /// the fork-aware tx pool within a handful of blocks.
 const MAX_SHIELD_ERA_PERIOD: u64 = 8;
+const MAX_SHIELD_CALL_SCAN_DEPTH: u8 = 8;
+
+pub trait ContainsShieldSubmitEncrypted {
+    fn contains_shield_submit_encrypted(&self) -> bool;
+}
+
+impl ContainsShieldSubmitEncrypted for crate::RuntimeCall {
+    fn contains_shield_submit_encrypted(&self) -> bool {
+        shield_submit_encrypted_at_depth(self, 0)
+    }
+}
+
+fn encoded_runtime_call_contains_shield_submit(bytes: &[u8], depth: u8) -> bool {
+    if depth >= MAX_SHIELD_CALL_SCAN_DEPTH {
+        return true;
+    }
+
+    let remaining_depth = u32::from(MAX_SHIELD_CALL_SCAN_DEPTH - depth);
+    match crate::RuntimeCall::decode_all_with_depth_limit(remaining_depth, &mut &bytes[..]) {
+        Ok(call) => shield_submit_encrypted_at_depth(&call, depth),
+        Err(_) => false,
+    }
+}
+
+fn shield_submit_encrypted_at_depth(call: &crate::RuntimeCall, depth: u8) -> bool {
+    if depth >= MAX_SHIELD_CALL_SCAN_DEPTH {
+        return true;
+    }
+
+    match call {
+        crate::RuntimeCall::MevShield(pallet_shield::Call::submit_encrypted { .. }) => true,
+        crate::RuntimeCall::Utility(inner) => match inner {
+            pallet_subtensor_utility::Call::batch { calls }
+            | pallet_subtensor_utility::Call::batch_all { calls }
+            | pallet_subtensor_utility::Call::force_batch { calls } => calls
+                .iter()
+                .any(|call| shield_submit_encrypted_at_depth(call, depth + 1)),
+            pallet_subtensor_utility::Call::as_derivative { call, .. }
+            | pallet_subtensor_utility::Call::dispatch_as { call, .. }
+            | pallet_subtensor_utility::Call::with_weight { call, .. }
+            | pallet_subtensor_utility::Call::dispatch_as_fallible { call, .. } => {
+                shield_submit_encrypted_at_depth(call, depth + 1)
+            }
+            pallet_subtensor_utility::Call::if_else { main, fallback } => {
+                shield_submit_encrypted_at_depth(main, depth + 1)
+                    || shield_submit_encrypted_at_depth(fallback, depth + 1)
+            }
+            _ => false,
+        },
+        crate::RuntimeCall::Proxy(
+            pallet_subtensor_proxy::Call::proxy { call, .. }
+            | pallet_subtensor_proxy::Call::proxy_announced { call, .. },
+        ) => shield_submit_encrypted_at_depth(call, depth + 1),
+        crate::RuntimeCall::Sudo(
+            pallet_sudo::Call::sudo { call }
+            | pallet_sudo::Call::sudo_unchecked_weight { call, .. }
+            | pallet_sudo::Call::sudo_as { call, .. },
+        ) => shield_submit_encrypted_at_depth(call, depth + 1),
+        crate::RuntimeCall::Multisig(
+            pallet_multisig::Call::as_multi_threshold_1 { call, .. }
+            | pallet_multisig::Call::as_multi { call, .. },
+        ) => shield_submit_encrypted_at_depth(call, depth + 1),
+        crate::RuntimeCall::Scheduler(
+            pallet_scheduler::Call::schedule { call, .. }
+            | pallet_scheduler::Call::schedule_named { call, .. }
+            | pallet_scheduler::Call::schedule_after { call, .. }
+            | pallet_scheduler::Call::schedule_named_after { call, .. },
+        ) => shield_submit_encrypted_at_depth(call, depth + 1),
+        crate::RuntimeCall::Preimage(pallet_preimage::Call::note_preimage { bytes }) => {
+            encoded_runtime_call_contains_shield_submit(bytes, depth + 1)
+        }
+        _ => false,
+    }
+}
 
 /// A transparent wrapper around [`frame_system::CheckMortality`] that additionally
 /// enforces a short Era period for [`pallet_shield::Call::submit_encrypted`] transactions.
@@ -55,8 +127,7 @@ impl<T: frame_system::Config + Send + Sync> core::fmt::Debug for CheckMortality<
 impl<T: frame_system::Config + Send + Sync + TypeInfo>
     TransactionExtension<<T as frame_system::Config>::RuntimeCall> for CheckMortality<T>
 where
-    <T as frame_system::Config>::RuntimeCall: Dispatchable + IsSubType<ShieldCall<T>>,
-    T: pallet_shield::Config,
+    <T as frame_system::Config>::RuntimeCall: ContainsShieldSubmitEncrypted + Dispatchable,
 {
     const IDENTIFIER: &'static str = "CheckMortality";
 
@@ -88,9 +159,7 @@ where
         inherited_implication: &impl Implication,
         source: TransactionSource,
     ) -> ValidateResult<Self::Val, <T as frame_system::Config>::RuntimeCall> {
-        if let Some(ShieldCall::submit_encrypted { .. }) =
-            IsSubType::<ShieldCall<T>>::is_sub_type(call)
-        {
+        if call.contains_shield_submit_encrypted() {
             let era_too_long = match self.0 {
                 Era::Immortal => true,
                 Era::Mortal(period, _) => period > MAX_SHIELD_ERA_PERIOD,
@@ -132,7 +201,7 @@ mod tests {
 
     use sp_runtime::transaction_validity::InvalidTransaction;
 
-    use crate::{Runtime, RuntimeCall, System};
+    use crate::{RuntimeCall, System};
     use sp_runtime::BuildStorage;
 
     fn new_test_ext() -> sp_io::TestExternalities {
@@ -153,6 +222,19 @@ mod tests {
         })
     }
 
+    fn utility_wrapped_submit_encrypted_call() -> RuntimeCall {
+        RuntimeCall::Utility(pallet_subtensor_utility::Call::if_else {
+            main: Box::new(remark_call()),
+            fallback: Box::new(submit_encrypted_call()),
+        })
+    }
+
+    fn preimage_wrapped_submit_encrypted_call() -> RuntimeCall {
+        RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+            bytes: utility_wrapped_submit_encrypted_call().encode(),
+        })
+    }
+
     fn remark_call() -> RuntimeCall {
         RuntimeCall::System(frame_system::Call::remark { remark: vec![] })
     }
@@ -160,9 +242,7 @@ mod tests {
     /// Only tests the early-return path (era check). Does NOT call into
     /// CheckMortalitySubstrate which needs real block hashes.
     fn validate_era_check(era: Era, call: &RuntimeCall) -> Result<(), TransactionValidityError> {
-        if let Some(ShieldCall::submit_encrypted { .. }) =
-            IsSubType::<ShieldCall<Runtime>>::is_sub_type(call)
-        {
+        if call.contains_shield_submit_encrypted() {
             let era_too_long = match era {
                 Era::Immortal => true,
                 Era::Mortal(period, _) => period > MAX_SHIELD_ERA_PERIOD,
@@ -196,9 +276,36 @@ mod tests {
     }
 
     #[test]
+    fn wrapped_shield_tx_with_immortal_era_rejected() {
+        new_test_ext().execute_with(|| {
+            assert_eq!(
+                validate_era_check(Era::Immortal, &utility_wrapped_submit_encrypted_call()),
+                Err(InvalidTransaction::Stale.into())
+            );
+        });
+    }
+
+    #[test]
+    fn encoded_preimage_shield_tx_with_long_era_rejected() {
+        new_test_ext().execute_with(|| {
+            assert_eq!(
+                validate_era_check(
+                    Era::mortal(16, 1),
+                    &preimage_wrapped_submit_encrypted_call()
+                ),
+                Err(InvalidTransaction::Stale.into())
+            );
+        });
+    }
+
+    #[test]
     fn shield_tx_with_max_allowed_era_accepted() {
         new_test_ext().execute_with(|| {
             assert!(validate_era_check(Era::mortal(8, 1), &submit_encrypted_call()).is_ok());
+            assert!(
+                validate_era_check(Era::mortal(8, 1), &utility_wrapped_submit_encrypted_call())
+                    .is_ok()
+            );
         });
     }
 
