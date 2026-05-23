@@ -613,7 +613,7 @@ fn protocol_params_expose_runtime_policy() {
         assert_eq!(params.max_verification_latency_ms, TARGET_VERIFICATION_MS);
         assert_eq!(params.max_proof_submission_age_blocks, 10);
         assert_eq!(params.signature_mode, SignatureMode::FullPostQuantum);
-        assert!(params.committed_request_payloads);
+        assert!(!params.committed_request_payloads);
         assert!(!params.shielded_call_payloads);
         assert!(!params.private_route_selection);
         assert!(!params.post_quantum_account_signatures);
@@ -3759,7 +3759,7 @@ fn request_storage_commits_route_assignment_without_raw_participant_ids() {
 }
 
 #[test]
-fn request_commitment_call_hides_assignment_and_terms_blindings() {
+fn request_commitment_call_rejects_unverifiable_committed_payloads_without_state_changes() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         RequestCount::<Test>::put(88);
@@ -3804,25 +3804,26 @@ fn request_commitment_call_hides_assignment_and_terms_blindings() {
             &timing_blinding().encode()
         ));
 
-        assert_ok!(Qubitum::request_inference_commitments(
-            RuntimeOrigin::signed(4),
-            88,
-            params
-        ));
-        let request = InferenceRequests::<Test>::get(88).unwrap();
-        assert_eq!(request.assignment_commitment, assignment_commitment);
-        assert_eq!(request.terms_commitment, terms_commitment);
-        assert_eq!(request.timing_commitment, timing_commitment);
-        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(88)));
-        assert_eq!(
-            InferenceRequests::<Test>::get(88).unwrap().status,
-            InferenceRequestStatus::Settled
+        assert_noop!(
+            Qubitum::request_inference_commitments(RuntimeOrigin::signed(4), 88, params),
+            Error::<Test>::UnsupportedCommittedRequestPayload
         );
+        assert!(InferenceRequests::<Test>::get(88).is_none());
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            0
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(assignment.miner_id), 0);
+        assert_eq!(
+            PendingValidatorRequests::<Test>::get(assignment.validator_id),
+            0
+        );
+        assert_eq!(RequestCount::<Test>::get(), 88);
     });
 }
 
 #[test]
-fn request_commitment_call_rejects_non_current_created_at() {
+fn request_commitment_call_rejects_before_validating_created_at() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         RequestCount::<Test>::put(89);
@@ -3857,7 +3858,7 @@ fn request_commitment_call_rejects_non_current_created_at() {
                     treasury_fee_bps: 50,
                 },
             ),
-            Error::<Test>::RequestMismatch
+            Error::<Test>::UnsupportedCommittedRequestPayload
         );
         assert!(InferenceRequests::<Test>::get(89).is_none());
         assert_eq!(

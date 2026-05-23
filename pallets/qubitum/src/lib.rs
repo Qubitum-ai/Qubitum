@@ -1167,6 +1167,8 @@ pub mod pallet {
         InvalidFeeSplit,
         /// Public request calldata must not include miner or validator assignment IDs.
         RouteAssignmentMustBeHidden,
+        /// Committed request payloads are disabled until their openings can be verified pre-state.
+        UnsupportedCommittedRequestPayload,
         /// Proof size metadata is outside accepted bounds.
         InvalidProofSize,
         /// Verification latency exceeds policy.
@@ -1601,35 +1603,9 @@ pub mod pallet {
             request_id: RequestId,
             params: InferenceRequestCommitmentParams<BalanceOf<T>>,
         ) -> DispatchResult {
-            let user = ensure_signed(origin)?;
-            Self::ensure_inference_request_commitments_openable(
-                request_id,
-                params.subnet_id,
-                params.input_commitment,
-                params.assignment_commitment,
-                params.created_at,
-                params.timing_commitment,
-                params.terms_commitment,
-                params.payment,
-                params.validator_fee_bps,
-                params.treasury_fee_bps,
-            )?;
-            let assignment = Self::route_assignment(params.subnet_id, request_id)
-                .ok_or(Error::<T>::NoRouteAvailable)?;
-            Self::open_inference_request_with_commitments(
-                user,
-                request_id,
-                params.subnet_id,
-                assignment.miner_id,
-                assignment.validator_id,
-                params.input_commitment,
-                params.assignment_commitment,
-                params.terms_commitment,
-                params.timing_commitment,
-                params.payment,
-                params.validator_fee_bps,
-                params.treasury_fee_bps,
-            )
+            let _user = ensure_signed(origin)?;
+            let _ = (request_id, params);
+            Err(Error::<T>::UnsupportedCommittedRequestPayload.into())
         }
 
         /// Cancel a pending inference request and release escrowed QBT.
@@ -2103,7 +2079,7 @@ pub mod pallet {
                 max_verification_latency_ms: T::MaxVerificationLatencyMs::get(),
                 max_proof_submission_age_blocks: T::MaxProofSubmissionAgeBlocks::get(),
                 signature_mode: T::SignatureMode::get(),
-                committed_request_payloads: true,
+                committed_request_payloads: false,
                 shielded_call_payloads: false,
                 private_route_selection: false,
                 post_quantum_account_signatures: false,
@@ -2281,41 +2257,6 @@ pub mod pallet {
             ensure_commitment::<T>(assignment_blinding)?;
             ensure_commitment::<T>(timing_blinding)?;
             ensure_commitment::<T>(terms_blinding)?;
-            ensure!(
-                !InferenceRequests::<T>::contains_key(request_id),
-                Error::<T>::DuplicateRequest
-            );
-            ensure!(
-                payment > BalanceOf::<T>::default(),
-                Error::<T>::InvalidPayment
-            );
-            Self::validate_fee_split(validator_fee_bps, treasury_fee_bps)?;
-            let subnet = Subnets::<T>::get(subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
-            ensure!(subnet.active, Error::<T>::NotActive);
-            Ok(())
-        }
-
-        #[allow(clippy::too_many_arguments)]
-        fn ensure_inference_request_commitments_openable(
-            request_id: RequestId,
-            subnet_id: SubnetId,
-            input_commitment: Commitment,
-            assignment_commitment: Commitment,
-            created_at: BlockNumber,
-            timing_commitment: Commitment,
-            terms_commitment: Commitment,
-            payment: BalanceOf<T>,
-            validator_fee_bps: u16,
-            treasury_fee_bps: u16,
-        ) -> DispatchResult {
-            ensure_commitment::<T>(input_commitment)?;
-            ensure_commitment::<T>(assignment_commitment)?;
-            ensure_commitment::<T>(timing_commitment)?;
-            ensure_commitment::<T>(terms_commitment)?;
-            ensure!(
-                created_at == Self::current_block(),
-                Error::<T>::RequestMismatch
-            );
             ensure!(
                 !InferenceRequests::<T>::contains_key(request_id),
                 Error::<T>::DuplicateRequest
