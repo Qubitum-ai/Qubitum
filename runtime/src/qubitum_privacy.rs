@@ -176,7 +176,8 @@ mod tests {
     use frame_support::pallet_prelude::{BoundedVec, ConstU32};
     use frame_support::weights::Weight;
     use qubitum_protocol::{
-        InferenceProofSubmission, ProofEnvelope, ProofSystem, TARGET_PROOF_SIZE_MIN_BYTES,
+        InferenceProofSubmission, ProofEnvelope, ProofSystem, SignatureAlgorithm, SignatureBundle,
+        SignatureCommitment, TARGET_PROOF_SIZE_MIN_BYTES,
     };
     use sp_runtime::AccountId32;
     use sp_runtime::BuildStorage;
@@ -201,6 +202,21 @@ mod tests {
 
     fn commitment(seed: u8) -> [u8; 32] {
         [seed; 32]
+    }
+
+    fn signature(seed: u8) -> SignatureCommitment {
+        SignatureCommitment {
+            algorithm: SignatureAlgorithm::Dilithium3,
+            public_key_commitment: commitment(seed),
+            signature_commitment: commitment(seed.saturating_add(1)),
+        }
+    }
+
+    fn post_quantum_signature_bundle(seed: u8) -> SignatureBundle {
+        SignatureBundle {
+            classical: None,
+            post_quantum: Some(signature(seed)),
+        }
     }
 
     fn direct_qubitum_call() -> RuntimeCall {
@@ -329,6 +345,24 @@ mod tests {
             assignment_blinding: commitment(90),
             timing_witness: timing_witness(),
             terms_witness: request_terms_witness(),
+        })
+    }
+
+    fn set_miner_identity_commitments_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::set_miner_identity_commitments {
+            miner_id: 0,
+            shielded_identity_commitment: Some(commitment(120)),
+            endpoint_commitment: Some(commitment(121)),
+            signature_bundle: post_quantum_signature_bundle(40),
+        })
+    }
+
+    fn set_validator_identity_commitments_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::set_validator_identity_commitments {
+            validator_id: 0,
+            shielded_identity_commitment: Some(commitment(122)),
+            endpoint_commitment: Some(commitment(123)),
+            signature_bundle: post_quantum_signature_bundle(42),
         })
     }
 
@@ -537,6 +571,37 @@ mod tests {
             let encoded_batch = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
                 bytes: RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
                     calls: vec![cancel_inference_call(), expire_inference_call()],
+                })
+                .encode(),
+            });
+            assert_qubitum_rejected(encoded_batch);
+        });
+    }
+
+    #[test]
+    fn identity_commitment_calls_must_be_shielded_even_when_commitment_only() {
+        new_test_ext().execute_with(|| {
+            for call in [
+                set_miner_identity_commitments_call(),
+                set_validator_identity_commitments_call(),
+            ] {
+                assert_qubitum_rejected(call);
+            }
+
+            let wrapped = RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                calls: vec![
+                    set_miner_identity_commitments_call(),
+                    set_validator_identity_commitments_call(),
+                ],
+            });
+            assert_qubitum_rejected(wrapped);
+
+            let encoded_batch = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                    calls: vec![
+                        set_miner_identity_commitments_call(),
+                        set_validator_identity_commitments_call(),
+                    ],
                 })
                 .encode(),
             });
@@ -1028,6 +1093,35 @@ mod tests {
             let encoded_batch = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
                 bytes: RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
                     calls: vec![cancel_inference_call(), expire_inference_call()],
+                })
+                .encode(),
+            });
+            assert_eq!(
+                prepare_ext(&encoded_batch),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+        });
+    }
+
+    #[test]
+    fn prepare_rejects_identity_commitment_calls_even_when_commitment_only() {
+        new_test_ext().execute_with(|| {
+            for call in [
+                set_miner_identity_commitments_call(),
+                set_validator_identity_commitments_call(),
+            ] {
+                assert_eq!(
+                    prepare_ext(&call),
+                    Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+                );
+            }
+
+            let encoded_batch = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                    calls: vec![
+                        set_miner_identity_commitments_call(),
+                        set_validator_identity_commitments_call(),
+                    ],
                 })
                 .encode(),
             });
