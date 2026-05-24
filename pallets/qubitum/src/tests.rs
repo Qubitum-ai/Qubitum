@@ -3042,6 +3042,37 @@ fn public_registry_views_redact_operator_capital_and_model_commitments() {
 }
 
 #[test]
+fn public_qubitum_events_remain_payloadless() {
+    let public_events: [crate::Event<Test>; 20] = [
+        crate::Event::SubnetCreated,
+        crate::Event::MinerRegistered,
+        crate::Event::MinerActivated,
+        crate::Event::MinerExitStarted,
+        crate::Event::MinerBondWithdrawn,
+        crate::Event::ValidatorRegistered,
+        crate::Event::ValidatorExitStarted,
+        crate::Event::ValidatorStakeWithdrawn,
+        crate::Event::MinerIdentityCommitmentsUpdated,
+        crate::Event::ValidatorIdentityCommitmentsUpdated,
+        crate::Event::InferenceRequested,
+        crate::Event::ProofAccepted,
+        crate::Event::ProofChallengeAccepted,
+        crate::Event::InferenceSettled,
+        crate::Event::InferenceCancelled,
+        crate::Event::InferenceRefunded,
+        crate::Event::InferenceExpired,
+        crate::Event::ProofRejected,
+        crate::Event::MinerSlashed,
+        crate::Event::ValidatorSlashed,
+    ];
+
+    for event in public_events {
+        let encoded = event.encode();
+        assert_eq!(encoded.len(), 1);
+    }
+}
+
+#[test]
 fn public_registry_events_redact_operator_capital_model_and_exit_schedule() {
     new_test_ext().execute_with(|| {
         System::set_block_number(7);
