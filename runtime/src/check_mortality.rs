@@ -95,6 +95,23 @@ fn shield_submit_encrypted_at_depth(call: &crate::RuntimeCall, depth: u8) -> boo
     }
 }
 
+fn ensure_shield_submit_mortal_era<Call: ContainsShieldSubmitEncrypted>(
+    era: Era,
+    call: &Call,
+) -> Result<(), TransactionValidityError> {
+    if call.contains_shield_submit_encrypted() {
+        let era_too_long = match era {
+            Era::Immortal => true,
+            Era::Mortal(period, _) => period > MAX_SHIELD_ERA_PERIOD,
+        };
+        if era_too_long {
+            return Err(InvalidTransaction::Stale.into());
+        }
+    }
+
+    Ok(())
+}
+
 /// A transparent wrapper around [`frame_system::CheckMortality`] that additionally
 /// enforces a short Era period for [`pallet_shield::Call::submit_encrypted`] transactions.
 ///
@@ -164,15 +181,7 @@ where
         inherited_implication: &impl Implication,
         source: TransactionSource,
     ) -> ValidateResult<Self::Val, <T as frame_system::Config>::RuntimeCall> {
-        if call.contains_shield_submit_encrypted() {
-            let era_too_long = match self.0 {
-                Era::Immortal => true,
-                Era::Mortal(period, _) => period > MAX_SHIELD_ERA_PERIOD,
-            };
-            if era_too_long {
-                return Err(InvalidTransaction::Stale.into());
-            }
-        }
+        ensure_shield_submit_mortal_era(self.0, call)?;
 
         CheckMortalitySubstrate::<T>::from(self.0).validate(
             origin,
@@ -193,6 +202,8 @@ where
         info: &DispatchInfoOf<<T as frame_system::Config>::RuntimeCall>,
         len: usize,
     ) -> Result<Self::Pre, TransactionValidityError> {
+        ensure_shield_submit_mortal_era(self.0, call)?;
+
         CheckMortalitySubstrate::<T>::from(self.0).prepare(val, origin, call, info, len)
     }
 }
@@ -202,11 +213,12 @@ where
 mod tests {
     use super::*;
 
+    use frame_support::dispatch::GetDispatchInfo;
     use frame_support::pallet_prelude::{BoundedVec, ConstU32};
 
     use sp_runtime::transaction_validity::InvalidTransaction;
 
-    use crate::{RuntimeCall, System};
+    use crate::{Runtime, RuntimeCall, RuntimeOrigin, System};
     use sp_runtime::BuildStorage;
 
     fn new_test_ext() -> sp_io::TestExternalities {
@@ -259,16 +271,7 @@ mod tests {
     /// Only tests the early-return path (era check). Does NOT call into
     /// CheckMortalitySubstrate which needs real block hashes.
     fn validate_era_check(era: Era, call: &RuntimeCall) -> Result<(), TransactionValidityError> {
-        if call.contains_shield_submit_encrypted() {
-            let era_too_long = match era {
-                Era::Immortal => true,
-                Era::Mortal(period, _) => period > MAX_SHIELD_ERA_PERIOD,
-            };
-            if era_too_long {
-                return Err(InvalidTransaction::Stale.into());
-            }
-        }
-        Ok(())
+        ensure_shield_submit_mortal_era(era, call)
     }
 
     #[test]
@@ -276,6 +279,20 @@ mod tests {
         new_test_ext().execute_with(|| {
             assert_eq!(
                 validate_era_check(Era::Immortal, &submit_encrypted_call()),
+                Err(InvalidTransaction::Stale.into())
+            );
+        });
+    }
+
+    #[test]
+    fn prepare_rejects_shield_tx_with_immortal_era_before_substrate_mortality() {
+        new_test_ext().execute_with(|| {
+            let call = submit_encrypted_call();
+            let info = call.get_dispatch_info();
+            let ext = CheckMortality::<Runtime>::from(Era::Immortal);
+
+            assert_eq!(
+                ext.prepare((), &RuntimeOrigin::none(), &call, &info, 0),
                 Err(InvalidTransaction::Stale.into())
             );
         });
