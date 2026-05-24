@@ -4596,6 +4596,47 @@ fn request_storage_commits_route_assignment_without_raw_participant_ids() {
 }
 
 #[test]
+fn public_request_call_payload_exposes_witnesses_until_shielded_calls_land() {
+    new_test_ext().execute_with(|| {
+        let params = Qubitum::protocol_params();
+        assert!(!params.committed_request_payloads);
+        assert!(!params.shielded_call_payloads);
+        assert!(params.readiness_blockers.committed_request_payloads_missing);
+        assert!(params.readiness_blockers.shielded_call_payloads_missing);
+
+        let call_params = InferenceRequestParams {
+            subnet_id: 0,
+            miner_id: 0,
+            validator_id: 0,
+            input_commitment: commitment(1),
+            assignment_blinding: assignment_blinding(),
+            timing_blinding: timing_blinding(),
+            terms_blinding: terms_blinding(),
+            payment: 1_000,
+            validator_fee_bps: 250,
+            treasury_fee_bps: 50,
+        };
+        let encoded_call = crate::Call::<Test>::request_inference {
+            request_id: 88,
+            params: call_params,
+        }
+        .encode();
+
+        for exposed in [
+            commitment(1).encode(),
+            assignment_blinding().encode(),
+            timing_blinding().encode(),
+            terms_blinding().encode(),
+            1_000_u128.encode(),
+            250_u16.encode(),
+            50_u16.encode(),
+        ] {
+            assert!(contains_subsequence(&encoded_call, &exposed));
+        }
+    });
+}
+
+#[test]
 fn request_commitment_call_rejects_unverifiable_committed_payloads_without_state_changes() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
