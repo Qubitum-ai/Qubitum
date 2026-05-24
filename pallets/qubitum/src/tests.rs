@@ -668,6 +668,72 @@ fn protocol_params_expose_runtime_policy() {
 }
 
 #[test]
+fn protocol_params_are_policy_only_across_state_transitions() {
+    new_test_ext().execute_with(|| {
+        let baseline = Qubitum::protocol_params();
+
+        register_active_miner_and_validator();
+        assert_eq!(Qubitum::protocol_params(), baseline);
+
+        request_inference(73);
+        assert_eq!(Qubitum::protocol_params(), baseline);
+
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(73)));
+        assert_eq!(Qubitum::protocol_params(), baseline);
+    });
+
+    new_test_ext().execute_with(|| {
+        let baseline = Qubitum::protocol_params();
+
+        register_active_miner_and_validator();
+        request_inference(74);
+        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(74)));
+
+        assert_eq!(Qubitum::protocol_params(), baseline);
+    });
+
+    new_test_ext().execute_with(|| {
+        let baseline = Qubitum::protocol_params();
+
+        register_active_miner_and_validator();
+        request_inference(75);
+        System::set_block_number(10);
+        assert_ok!(Qubitum::cancel_inference(
+            RuntimeOrigin::signed(4),
+            75,
+            0,
+            0,
+            assignment_blinding(),
+            timing_witness(0),
+            request_terms_witness()
+        ));
+
+        assert_eq!(Qubitum::protocol_params(), baseline);
+    });
+
+    new_test_ext().execute_with(|| {
+        let baseline = Qubitum::protocol_params();
+
+        register_active_miner_and_validator();
+        request_inference(76);
+        System::set_block_number(10);
+        assert_ok!(Qubitum::expire_inference(
+            RuntimeOrigin::signed(5),
+            76,
+            4,
+            0,
+            0,
+            assignment_blinding(),
+            timing_witness(0),
+            request_terms_witness()
+        ));
+
+        assert_eq!(Qubitum::protocol_params(), baseline);
+    });
+}
+
+#[test]
 fn routing_requires_post_quantum_identity_bundles() {
     new_test_ext().execute_with(|| {
         assert_ok!(Qubitum::create_subnet(
