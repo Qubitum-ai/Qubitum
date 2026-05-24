@@ -630,6 +630,7 @@ fn protocol_params_expose_runtime_policy() {
         assert!(!params.account_commitment_blinding);
         assert!(!params.private_routing_indexes);
         assert!(!params.private_capital_accounting);
+        assert!(!params.private_event_metadata);
         assert!(!params.post_quantum_account_signatures);
         assert!(!params.privacy_complete);
         assert!(!params.post_quantum_complete);
@@ -650,6 +651,7 @@ fn protocol_params_expose_runtime_policy() {
                 account_commitment_blinding_missing: true,
                 private_routing_indexes_missing: true,
                 private_capital_accounting_missing: true,
+                private_event_metadata_missing: true,
                 signature_mode_not_full_post_quantum: false,
                 post_quantum_account_signatures_missing: true,
                 identity_signature_verification_missing: true,
@@ -688,6 +690,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
         assert!(!params.account_commitment_blinding);
         assert!(!params.private_routing_indexes);
         assert!(!params.private_capital_accounting);
+        assert!(!params.private_event_metadata);
         assert!(
             params
                 .readiness_blockers
@@ -701,6 +704,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
         );
         assert!(params.readiness_blockers.private_routing_indexes_missing);
         assert!(params.readiness_blockers.private_capital_accounting_missing);
+        assert!(params.readiness_blockers.private_event_metadata_missing);
         assert!(params.readiness_blockers.privacy_blocked());
 
         assert_eq!(
