@@ -5731,6 +5731,89 @@ fn fail_closed_verifier_never_accepts_shape_only_proofs() {
 }
 
 #[test]
+fn verifier_error_fails_closed_without_settlement_slash_or_refund_side_effects() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(51);
+        let burned_before = TotalBurned::<Test>::get();
+
+        set_verification_outcome(VerificationOutcome::Error);
+        assert_noop!(
+            submit_proof(RuntimeOrigin::signed(3), valid_submission(51)),
+            Error::<Test>::VerifierError
+        );
+
+        assert!(ProofRecords::<Test>::get(51).is_none());
+        assert_eq!(
+            InferenceRequests::<Test>::get(51).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            1_000
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(MinerLockedBond::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
+        assert_eq!(TotalMinerPayouts::<Test>::get(), 0);
+        assert_eq!(TotalValidatorFees::<Test>::get(), 0);
+        assert_eq!(TotalTreasuryFees::<Test>::get(), 0);
+        assert_eq!(TotalBurned::<Test>::get(), burned_before);
+    });
+
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(52);
+        let burned_before = TotalBurned::<Test>::get();
+
+        set_verification_outcome(VerificationOutcome::Error);
+        assert_noop!(
+            challenge_proof(RuntimeOrigin::signed(4), valid_submission(52)),
+            Error::<Test>::VerifierError
+        );
+
+        assert!(ProofRecords::<Test>::get(52).is_none());
+        assert_eq!(
+            InferenceRequests::<Test>::get(52).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            1_000
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(MinerLockedBond::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
+        assert_eq!(TotalMinerPayouts::<Test>::get(), 0);
+        assert_eq!(TotalValidatorFees::<Test>::get(), 0);
+        assert_eq!(TotalTreasuryFees::<Test>::get(), 0);
+        assert_eq!(TotalBurned::<Test>::get(), burned_before);
+    });
+}
+
+#[test]
 fn submit_proof_rejects_future_or_expired_timestamp() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
