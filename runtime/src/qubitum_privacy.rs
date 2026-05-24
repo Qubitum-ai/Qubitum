@@ -175,7 +175,9 @@ mod tests {
     use frame_support::dispatch::GetDispatchInfo;
     use frame_support::pallet_prelude::{BoundedVec, ConstU32};
     use frame_support::weights::Weight;
-    use qubitum_protocol::ProofSystem;
+    use qubitum_protocol::{
+        InferenceProofSubmission, ProofEnvelope, ProofSystem, TARGET_PROOF_SIZE_MIN_BYTES,
+    };
     use sp_runtime::AccountId32;
     use sp_runtime::BuildStorage;
     use sp_runtime::traits::TxBaseImplication;
@@ -205,6 +207,67 @@ mod tests {
         RuntimeCall::Qubitum(pallet_qubitum::Call::create_subnet {
             domain: qubitum_protocol::SubnetDomain::Code,
             proof_system: ProofSystem::RiscZeroStark,
+        })
+    }
+
+    fn proof(seed: u8) -> ProofEnvelope {
+        ProofEnvelope::risc_zero_v1(
+            commitment(seed),
+            commitment(seed.saturating_add(1)),
+            commitment(seed.saturating_add(2)),
+        )
+    }
+
+    fn proof_submission(request_id: u64) -> InferenceProofSubmission {
+        InferenceProofSubmission {
+            request_id,
+            subnet_id: 0,
+            miner_id: 0,
+            validator_id: 0,
+            input_commitment: commitment(1),
+            output_commitment: commitment(2),
+            model_commitment: commitment(3),
+            proof: proof(4),
+            proof_system: ProofSystem::RiscZeroStark,
+            proof_size_bytes: TARGET_PROOF_SIZE_MIN_BYTES,
+            verification_latency_ms: 10,
+            submitted_at: 1,
+        }
+    }
+
+    fn request_terms<Balance: From<u64>>() -> pallet_qubitum::InferenceRequestTerms<Balance> {
+        pallet_qubitum::InferenceRequestTerms {
+            payment: 1_000u64.into(),
+            validator_fee_bps: 250,
+            treasury_fee_bps: 50,
+        }
+    }
+
+    fn request_terms_witness<Balance: From<u64>>()
+    -> pallet_qubitum::InferenceRequestTermsWitness<Balance> {
+        pallet_qubitum::InferenceRequestTermsWitness {
+            terms: request_terms(),
+            blinding: commitment(91),
+        }
+    }
+
+    fn proof_submission_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::submit_proof {
+            submission: proof_submission(1),
+            request_user: account(4),
+            miner_operator: account(2),
+            assignment_blinding: commitment(90),
+            terms_witness: request_terms_witness(),
+        })
+    }
+
+    fn proof_challenge_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::challenge_proof {
+            submission: proof_submission(2),
+            request_user: account(4),
+            miner_operator: account(2),
+            assignment_blinding: commitment(90),
+            terms_witness: request_terms_witness(),
         })
     }
 
@@ -328,6 +391,19 @@ mod tests {
                 calls: vec![direct_qubitum_call()],
             });
             assert_qubitum_rejected(call);
+        });
+    }
+
+    #[test]
+    fn proof_and_challenge_calls_must_be_shielded_even_when_safe_mode_whitelisted() {
+        new_test_ext().execute_with(|| {
+            assert_qubitum_rejected(proof_submission_call());
+            assert_qubitum_rejected(proof_challenge_call());
+
+            let wrapped = RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                calls: vec![proof_submission_call(), proof_challenge_call()],
+            });
+            assert_qubitum_rejected(wrapped);
         });
     }
 
