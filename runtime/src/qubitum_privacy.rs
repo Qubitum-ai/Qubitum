@@ -587,6 +587,24 @@ mod tests {
     }
 
     #[test]
+    fn encoded_preimage_proof_calls_must_be_shielded_even_when_safe_mode_whitelisted() {
+        new_test_ext().execute_with(|| {
+            for encoded in [
+                proof_submission_call().encode(),
+                proof_challenge_call().encode(),
+                RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                    calls: vec![proof_submission_call(), proof_challenge_call()],
+                })
+                .encode(),
+            ] {
+                let call =
+                    RuntimeCall::Preimage(pallet_preimage::Call::note_preimage { bytes: encoded });
+                assert_qubitum_rejected(call);
+            }
+        });
+    }
+
+    #[test]
     fn encoded_preimage_non_qubitum_call_passes() {
         new_test_ext().execute_with(|| {
             let call = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
