@@ -366,6 +366,60 @@ mod tests {
         })
     }
 
+    fn register_miner_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::register_miner {
+            subnet_id: 0,
+            model_commitment: commitment(10),
+            proof_system: ProofSystem::RiscZeroStark,
+        })
+    }
+
+    fn activate_miner_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::activate_miner {
+            miner_id: 0,
+            bond: 1_000u64.into(),
+        })
+    }
+
+    fn deactivate_miner_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::deactivate_miner { miner_id: 0 })
+    }
+
+    fn withdraw_miner_bond_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::withdraw_miner_bond { miner_id: 0 })
+    }
+
+    fn register_validator_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::register_validator {
+            subnet_id: 0,
+            stake: 1_000u64.into(),
+        })
+    }
+
+    fn deactivate_validator_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::deactivate_validator { validator_id: 0 })
+    }
+
+    fn withdraw_validator_stake_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::withdraw_validator_stake { validator_id: 0 })
+    }
+
+    fn slash_miner_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::slash_miner {
+            miner_id: 0,
+            operator: account(2),
+            slash_bps: 1_000,
+        })
+    }
+
+    fn slash_validator_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::slash_validator {
+            validator_id: 0,
+            operator: account(3),
+            slash_bps: 1_000,
+        })
+    }
+
     fn proof_submission_call() -> RuntimeCall {
         RuntimeCall::Qubitum(pallet_qubitum::Call::submit_proof {
             submission: proof_submission(1),
@@ -601,6 +655,50 @@ mod tests {
                     calls: vec![
                         set_miner_identity_commitments_call(),
                         set_validator_identity_commitments_call(),
+                    ],
+                })
+                .encode(),
+            });
+            assert_qubitum_rejected(encoded_batch);
+        });
+    }
+
+    #[test]
+    fn participant_capital_and_lifecycle_calls_must_be_shielded() {
+        new_test_ext().execute_with(|| {
+            for call in [
+                register_miner_call(),
+                activate_miner_call(),
+                deactivate_miner_call(),
+                withdraw_miner_bond_call(),
+                register_validator_call(),
+                deactivate_validator_call(),
+                withdraw_validator_stake_call(),
+                slash_miner_call(),
+                slash_validator_call(),
+            ] {
+                assert_qubitum_rejected(call);
+            }
+
+            let wrapped = RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                calls: vec![
+                    register_miner_call(),
+                    activate_miner_call(),
+                    register_validator_call(),
+                    slash_miner_call(),
+                    slash_validator_call(),
+                ],
+            });
+            assert_qubitum_rejected(wrapped);
+
+            let encoded_batch = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                    calls: vec![
+                        register_miner_call(),
+                        activate_miner_call(),
+                        register_validator_call(),
+                        slash_miner_call(),
+                        slash_validator_call(),
                     ],
                 })
                 .encode(),
@@ -1121,6 +1219,45 @@ mod tests {
                     calls: vec![
                         set_miner_identity_commitments_call(),
                         set_validator_identity_commitments_call(),
+                    ],
+                })
+                .encode(),
+            });
+            assert_eq!(
+                prepare_ext(&encoded_batch),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+        });
+    }
+
+    #[test]
+    fn prepare_rejects_participant_capital_and_lifecycle_calls() {
+        new_test_ext().execute_with(|| {
+            for call in [
+                register_miner_call(),
+                activate_miner_call(),
+                deactivate_miner_call(),
+                withdraw_miner_bond_call(),
+                register_validator_call(),
+                deactivate_validator_call(),
+                withdraw_validator_stake_call(),
+                slash_miner_call(),
+                slash_validator_call(),
+            ] {
+                assert_eq!(
+                    prepare_ext(&call),
+                    Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+                );
+            }
+
+            let encoded_batch = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                    calls: vec![
+                        register_miner_call(),
+                        activate_miner_call(),
+                        register_validator_call(),
+                        slash_miner_call(),
+                        slash_validator_call(),
                     ],
                 })
                 .encode(),
