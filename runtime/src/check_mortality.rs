@@ -16,6 +16,7 @@ use subtensor_macros::freeze_struct;
 /// the fork-aware tx pool within a handful of blocks.
 const MAX_SHIELD_ERA_PERIOD: u64 = 8;
 const MAX_SHIELD_CALL_SCAN_DEPTH: u8 = 8;
+const MAX_SHIELD_PREIMAGE_DECODE_PROBE_DEPTH: u32 = 32;
 
 pub trait ContainsShieldSubmitEncrypted {
     fn contains_shield_submit_encrypted(&self) -> bool;
@@ -35,7 +36,11 @@ fn encoded_runtime_call_contains_shield_submit(bytes: &[u8], depth: u8) -> bool 
     let remaining_depth = u32::from(MAX_SHIELD_CALL_SCAN_DEPTH - depth);
     match crate::RuntimeCall::decode_all_with_depth_limit(remaining_depth, &mut &bytes[..]) {
         Ok(call) => shield_submit_encrypted_at_depth(&call, depth),
-        Err(_) => false,
+        Err(_) => crate::RuntimeCall::decode_all_with_depth_limit(
+            MAX_SHIELD_PREIMAGE_DECODE_PROBE_DEPTH,
+            &mut &bytes[..],
+        )
+        .is_ok(),
     }
 }
 
@@ -229,9 +234,21 @@ mod tests {
         })
     }
 
+    fn nested_utility_call(call: RuntimeCall, depth: u8) -> RuntimeCall {
+        (0..depth).fold(call, |inner, _| {
+            RuntimeCall::Utility(pallet_subtensor_utility::Call::batch { calls: vec![inner] })
+        })
+    }
+
     fn preimage_wrapped_submit_encrypted_call() -> RuntimeCall {
         RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
             bytes: utility_wrapped_submit_encrypted_call().encode(),
+        })
+    }
+
+    fn deeply_nested_preimage_call(call: RuntimeCall) -> RuntimeCall {
+        RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+            bytes: nested_utility_call(call, MAX_SHIELD_CALL_SCAN_DEPTH + 1).encode(),
         })
     }
 
@@ -295,6 +312,42 @@ mod tests {
                 ),
                 Err(InvalidTransaction::Stale.into())
             );
+        });
+    }
+
+    #[test]
+    fn deeply_nested_encoded_preimage_shield_tx_with_long_era_fails_closed() {
+        new_test_ext().execute_with(|| {
+            assert_eq!(
+                validate_era_check(
+                    Era::mortal(16, 1),
+                    &deeply_nested_preimage_call(submit_encrypted_call())
+                ),
+                Err(InvalidTransaction::Stale.into())
+            );
+        });
+    }
+
+    #[test]
+    fn deeply_nested_encoded_preimage_non_shield_tx_with_long_era_fails_closed() {
+        new_test_ext().execute_with(|| {
+            assert_eq!(
+                validate_era_check(
+                    Era::mortal(16, 1),
+                    &deeply_nested_preimage_call(remark_call())
+                ),
+                Err(InvalidTransaction::Stale.into())
+            );
+        });
+    }
+
+    #[test]
+    fn malformed_encoded_preimage_with_long_era_passes_through() {
+        new_test_ext().execute_with(|| {
+            let call = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: vec![0xFF; 8],
+            });
+            assert!(validate_era_check(Era::mortal(256, 1), &call).is_ok());
         });
     }
 
