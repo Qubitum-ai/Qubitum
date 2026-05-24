@@ -440,6 +440,30 @@ mod tests {
         })
     }
 
+    fn all_current_qubitum_dispatchables() -> Vec<RuntimeCall> {
+        vec![
+            direct_qubitum_call(),
+            register_miner_call(),
+            activate_miner_call(),
+            register_validator_call(),
+            proof_submission_call(),
+            slash_miner_call(),
+            request_inference_call(),
+            cancel_inference_call(),
+            deactivate_miner_call(),
+            withdraw_miner_bond_call(),
+            deactivate_validator_call(),
+            withdraw_validator_stake_call(),
+            slash_validator_call(),
+            expire_inference_call(),
+            set_miner_identity_commitments_call(),
+            set_validator_identity_commitments_call(),
+            proof_challenge_call(),
+            request_inference_auto_route_call(),
+            request_inference_commitments_call(),
+        ]
+    }
+
     fn remark_call(seed: u8) -> RuntimeCall {
         RuntimeCall::System(frame_system::Call::remark {
             remark: commitment(seed).to_vec(),
@@ -536,6 +560,50 @@ mod tests {
     fn direct_external_qubitum_call_must_be_shielded() {
         new_test_ext().execute_with(|| {
             assert_qubitum_rejected(direct_qubitum_call());
+        });
+    }
+
+    #[test]
+    fn all_current_qubitum_dispatchables_are_shielded_directly_and_in_prepare() {
+        new_test_ext().execute_with(|| {
+            let calls = all_current_qubitum_dispatchables();
+            assert_eq!(calls.len(), 19);
+
+            for call in calls {
+                assert_eq!(
+                    validate_ext(&call, TransactionSource::External),
+                    Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+                );
+                assert_eq!(
+                    validate_ext(&call, TransactionSource::InBlock),
+                    Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+                );
+                assert_eq!(
+                    prepare_ext(&call),
+                    Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn all_current_qubitum_dispatchables_are_shielded_inside_encoded_preimage_batch() {
+        new_test_ext().execute_with(|| {
+            let calls = all_current_qubitum_dispatchables();
+            assert_eq!(calls.len(), 19);
+            let batch = RuntimeCall::Utility(pallet_subtensor_utility::Call::batch { calls });
+            let encoded_batch = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: batch.encode(),
+            });
+
+            assert_eq!(
+                validate_ext(&encoded_batch, TransactionSource::External),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+            assert_eq!(
+                prepare_ext(&encoded_batch),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
         });
     }
 
