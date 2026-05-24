@@ -625,6 +625,8 @@ fn protocol_params_expose_runtime_policy() {
         assert!(!params.committed_request_payloads);
         assert!(!params.shielded_call_payloads);
         assert!(!params.private_route_selection);
+        assert!(!params.account_commitment_blinding);
+        assert!(!params.private_routing_indexes);
         assert!(!params.post_quantum_account_signatures);
         assert!(!params.privacy_complete);
         assert!(!params.post_quantum_complete);
@@ -640,6 +642,8 @@ fn protocol_params_expose_runtime_policy() {
                 committed_request_payloads_missing: true,
                 shielded_call_payloads_missing: true,
                 private_route_selection_missing: true,
+                account_commitment_blinding_missing: true,
+                private_routing_indexes_missing: true,
                 signature_mode_not_full_post_quantum: false,
                 post_quantum_account_signatures_missing: true,
                 identity_signature_verification_missing: true,
@@ -664,6 +668,35 @@ fn protocol_params_expose_runtime_policy() {
         assert_eq!(params.miner_exit_cooldown_blocks, 20);
         assert_eq!(params.validator_exit_cooldown_blocks, 20);
         assert_eq!(params.request_cancel_delay_blocks, 10);
+    });
+}
+
+#[test]
+fn protocol_params_flag_public_storage_linkability_gaps() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+
+        let params = Qubitum::protocol_params();
+        assert!(!params.account_commitment_blinding);
+        assert!(!params.private_routing_indexes);
+        assert!(
+            params
+                .readiness_blockers
+                .account_commitment_blinding_missing
+        );
+        assert!(params.readiness_blockers.private_routing_indexes_missing);
+        assert!(params.readiness_blockers.privacy_blocked());
+
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().operator_commitment,
+            Qubitum::operator_commitment(&2)
+        );
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().operator_commitment,
+            Qubitum::operator_commitment(&3)
+        );
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
     });
 }
 

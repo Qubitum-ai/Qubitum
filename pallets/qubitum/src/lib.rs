@@ -792,6 +792,8 @@ pub mod pallet {
         pub committed_request_payloads_missing: bool,
         pub shielded_call_payloads_missing: bool,
         pub private_route_selection_missing: bool,
+        pub account_commitment_blinding_missing: bool,
+        pub private_routing_indexes_missing: bool,
         pub signature_mode_not_full_post_quantum: bool,
         pub post_quantum_account_signatures_missing: bool,
         pub identity_signature_verification_missing: bool,
@@ -803,6 +805,8 @@ pub mod pallet {
             self.committed_request_payloads_missing
                 || self.shielded_call_payloads_missing
                 || self.private_route_selection_missing
+                || self.account_commitment_blinding_missing
+                || self.private_routing_indexes_missing
         }
 
         pub fn post_quantum_blocked(self) -> bool {
@@ -844,6 +848,8 @@ pub mod pallet {
         pub committed_request_payloads: bool,
         pub shielded_call_payloads: bool,
         pub private_route_selection: bool,
+        pub account_commitment_blinding: bool,
+        pub private_routing_indexes: bool,
         pub post_quantum_account_signatures: bool,
         pub privacy_complete: bool,
         pub post_quantum_complete: bool,
@@ -2172,6 +2178,8 @@ pub mod pallet {
             let committed_request_payloads = false;
             let shielded_call_payloads = false;
             let private_route_selection = false;
+            let account_commitment_blinding = false;
+            let private_routing_indexes = false;
             let post_quantum_account_signatures = false;
             let identity_signature_commitment_policy = true;
             let identity_signature_challenge_binding = true;
@@ -2182,6 +2190,8 @@ pub mod pallet {
                 committed_request_payloads_missing: !committed_request_payloads,
                 shielded_call_payloads_missing: !shielded_call_payloads,
                 private_route_selection_missing: !private_route_selection,
+                account_commitment_blinding_missing: !account_commitment_blinding,
+                private_routing_indexes_missing: !private_routing_indexes,
                 signature_mode_not_full_post_quantum: signature_mode
                     != SignatureMode::FullPostQuantum,
                 post_quantum_account_signatures_missing: !post_quantum_account_signatures,
@@ -2213,6 +2223,8 @@ pub mod pallet {
                 committed_request_payloads,
                 shielded_call_payloads,
                 private_route_selection,
+                account_commitment_blinding,
+                private_routing_indexes,
                 post_quantum_account_signatures,
                 privacy_complete,
                 post_quantum_complete,
