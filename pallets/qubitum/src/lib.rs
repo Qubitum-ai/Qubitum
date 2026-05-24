@@ -357,7 +357,6 @@ pub mod pallet {
         MaxEncodedLen,
     )]
     pub struct ChainPublicSubnet {
-        pub id: SubnetId,
         pub domain: SubnetDomain,
         pub proof_system: ProofSystem,
         pub active: bool,
@@ -476,8 +475,6 @@ pub mod pallet {
         MaxEncodedLen,
     )]
     pub struct ChainPublicMiner {
-        pub id: MinerId,
-        pub subnet_id: SubnetId,
         pub proof_system: ProofSystem,
         pub status: PublicRegistryStatus,
     }
@@ -495,8 +492,6 @@ pub mod pallet {
         MaxEncodedLen,
     )]
     pub struct ChainPublicValidator {
-        pub id: ValidatorId,
-        pub subnet_id: SubnetId,
         pub status: PublicRegistryStatus,
     }
 
@@ -530,7 +525,6 @@ pub mod pallet {
         MaxEncodedLen,
     )]
     pub struct ChainPublicIdentity {
-        pub participant_id: u64,
         pub has_shielded_identity_commitment: bool,
         pub has_endpoint_commitment: bool,
         pub signature_commitment_recorded: bool,
@@ -579,8 +573,6 @@ pub mod pallet {
         MaxEncodedLen,
     )]
     pub struct ChainPublicProofRecord {
-        pub request_id: RequestId,
-        pub subnet_id: SubnetId,
         pub proof_system: ProofSystem,
     }
 
@@ -702,8 +694,6 @@ pub mod pallet {
         MaxEncodedLen,
     )]
     pub struct ChainPublicInferenceRequest {
-        pub request_id: RequestId,
-        pub subnet_id: SubnetId,
         pub status: InferenceRequestStatus,
     }
 
@@ -2289,7 +2279,6 @@ pub mod pallet {
 
         pub fn public_subnet(subnet_id: SubnetId) -> Option<ChainPublicSubnet> {
             Subnets::<T>::get(subnet_id).map(|subnet| ChainPublicSubnet {
-                id: subnet.id,
                 domain: subnet.domain,
                 proof_system: subnet.proof_system,
                 active: subnet.active,
@@ -2298,8 +2287,6 @@ pub mod pallet {
 
         pub fn public_miner(miner_id: MinerId) -> Option<ChainPublicMiner> {
             Miners::<T>::get(miner_id).map(|miner| ChainPublicMiner {
-                id: miner.id,
-                subnet_id: miner.subnet_id,
                 proof_system: miner.proof_system,
                 status: PublicRegistryStatus::from(miner.status),
             })
@@ -2307,8 +2294,6 @@ pub mod pallet {
 
         pub fn public_validator(validator_id: ValidatorId) -> Option<ChainPublicValidator> {
             Validators::<T>::get(validator_id).map(|validator| ChainPublicValidator {
-                id: validator.id,
-                subnet_id: validator.subnet_id,
                 status: PublicRegistryStatus::from(validator.status),
             })
         }
@@ -2317,7 +2302,6 @@ pub mod pallet {
             Miners::<T>::get(miner_id).map(|miner| {
                 let commitments = MinerIdentityCommitments::<T>::get(miner_id);
                 ChainPublicIdentity {
-                    participant_id: miner_id,
                     has_shielded_identity_commitment: commitments
                         .as_ref()
                         .and_then(|identity| identity.shielded_identity_commitment)
@@ -2345,7 +2329,6 @@ pub mod pallet {
             Validators::<T>::get(validator_id).map(|validator| {
                 let commitments = ValidatorIdentityCommitments::<T>::get(validator_id);
                 ChainPublicIdentity {
-                    participant_id: validator_id,
                     has_shielded_identity_commitment: commitments
                         .as_ref()
                         .and_then(|identity| identity.shielded_identity_commitment)
@@ -2373,16 +2356,12 @@ pub mod pallet {
             request_id: RequestId,
         ) -> Option<ChainPublicInferenceRequest> {
             InferenceRequests::<T>::get(request_id).map(|request| ChainPublicInferenceRequest {
-                request_id: request.request_id,
-                subnet_id: request.subnet_id,
                 status: request.status,
             })
         }
 
         pub fn public_proof_record(request_id: RequestId) -> Option<ChainPublicProofRecord> {
             ProofRecords::<T>::get(request_id).map(|record| ChainPublicProofRecord {
-                request_id: record.request_id,
-                subnet_id: record.subnet_id,
                 proof_system: record.proof_system,
             })
         }

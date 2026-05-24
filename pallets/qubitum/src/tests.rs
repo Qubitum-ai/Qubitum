@@ -574,7 +574,6 @@ fn public_subnet_view_redacts_owner_and_economic_policy() {
         assert_eq!(
             public_subnet,
             ChainPublicSubnet {
-                id: 0,
                 domain: SubnetDomain::Code,
                 proof_system: ProofSystem::RiscZeroStark,
                 active: true,
@@ -583,6 +582,7 @@ fn public_subnet_view_redacts_owner_and_economic_policy() {
 
         let encoded_subnet = public_subnet.encode();
         for hidden in [
+            0_u64.encode(),
             4_u64.encode(),
             subnet_creation_burn().encode(),
             MINER_REGISTRATION_BURN.encode(),
@@ -2256,7 +2256,6 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         assert_eq!(
             public_miner_identity,
             ChainPublicIdentity {
-                participant_id: 0,
                 has_shielded_identity_commitment: true,
                 has_endpoint_commitment: true,
                 signature_commitment_recorded: true,
@@ -2267,6 +2266,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         );
         let encoded_public_miner_identity = public_miner_identity.encode();
         for hidden in [
+            0_u64.encode(),
             commitment(20).encode(),
             commitment(21).encode(),
             miner_signature_bundle.encode(),
@@ -2306,7 +2306,6 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         assert_eq!(
             public_validator_identity,
             ChainPublicIdentity {
-                participant_id: 0,
                 has_shielded_identity_commitment: true,
                 has_endpoint_commitment: true,
                 signature_commitment_recorded: true,
@@ -2317,6 +2316,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         );
         let encoded_public_validator_identity = public_validator_identity.encode();
         for hidden in [
+            0_u64.encode(),
             commitment(22).encode(),
             commitment(23).encode(),
             validator_signature_bundle.encode(),
@@ -2368,7 +2368,6 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         assert_eq!(
             Qubitum::public_miner_identity(0),
             Some(ChainPublicIdentity {
-                participant_id: 0,
                 has_shielded_identity_commitment: false,
                 has_endpoint_commitment: false,
                 signature_commitment_recorded: false,
@@ -2403,7 +2402,6 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         assert_eq!(
             Qubitum::public_validator_identity(0),
             Some(ChainPublicIdentity {
-                participant_id: 0,
                 has_shielded_identity_commitment: false,
                 has_endpoint_commitment: false,
                 signature_commitment_recorded: false,
@@ -2931,13 +2929,13 @@ fn public_request_and_proof_views_redact_private_route_payment_and_timing() {
         assert_eq!(
             public_request,
             ChainPublicInferenceRequest {
-                request_id: 91,
-                subnet_id: 0,
                 status: InferenceRequestStatus::Pending,
             }
         );
         let encoded_request = public_request.encode();
         for hidden in [
+            91_u64.encode(),
+            0_u64.encode(),
             4_u64.encode(),
             123_456_789_u128.encode(),
             777_u16.encode(),
@@ -2967,13 +2965,13 @@ fn public_request_and_proof_views_redact_private_route_payment_and_timing() {
         assert_eq!(
             public_proof,
             ChainPublicProofRecord {
-                request_id: 91,
-                subnet_id: 0,
                 proof_system: ProofSystem::RiscZeroStark,
             }
         );
         let encoded_proof = public_proof.encode();
         for hidden in [
+            91_u64.encode(),
+            0_u64.encode(),
             65_432_u32.encode(),
             77_u32.encode(),
             100_u64.encode(),
@@ -2996,14 +2994,13 @@ fn public_registry_views_redact_operator_capital_and_model_commitments() {
         assert_eq!(
             public_miner,
             ChainPublicMiner {
-                id: 0,
-                subnet_id: 0,
                 proof_system: ProofSystem::RiscZeroStark,
                 status: PublicRegistryStatus::Active,
             }
         );
         let encoded_miner = public_miner.encode();
         for hidden in [
+            0_u64.encode(),
             2_u64.encode(),
             MIN_MINER_BOND.encode(),
             commitment(10).encode(),
@@ -3015,13 +3012,11 @@ fn public_registry_views_redact_operator_capital_and_model_commitments() {
         assert_eq!(
             public_validator,
             ChainPublicValidator {
-                id: 0,
-                subnet_id: 0,
                 status: PublicRegistryStatus::Active,
             }
         );
         let encoded_validator = public_validator.encode();
-        for hidden in [3_u64.encode(), MIN_MINER_BOND.encode()] {
+        for hidden in [0_u64.encode(), 3_u64.encode(), MIN_MINER_BOND.encode()] {
             assert!(!contains_subsequence(&encoded_validator, &hidden));
         }
 
