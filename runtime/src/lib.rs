@@ -570,6 +570,7 @@ impl pallet_qubitum::Config for Runtime {
     type MaxVerificationLatencyMs = QubitumMaxVerificationLatencyMs;
     type MaxProofSubmissionAgeBlocks = QubitumMaxProofSubmissionAgeBlocks;
     type SignatureMode = QubitumSignatureMode;
+    type ShieldedCallPayloads = ConstBool<true>;
     type RuntimeHoldReason = RuntimeHoldReason;
     type WeightInfo = pallet_qubitum::weights::SubstrateWeight<Runtime>;
     #[cfg(not(feature = "runtime-benchmarks"))]
@@ -2900,7 +2901,7 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
 
     assert!(!params.production_zk_verifier);
     assert!(!params.committed_request_payloads);
-    assert!(!params.shielded_call_payloads);
+    assert!(params.shielded_call_payloads);
     assert!(!params.shield_submitter_origin_privacy);
     assert!(!params.shield_key_window_privacy);
     assert!(!params.private_route_selection);
@@ -2925,7 +2926,7 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
     assert!(!params.production_ready);
     assert!(params.readiness_blockers.production_zk_verifier_missing);
     assert!(params.readiness_blockers.committed_request_payloads_missing);
-    assert!(params.readiness_blockers.shielded_call_payloads_missing);
+    assert!(!params.readiness_blockers.shielded_call_payloads_missing);
     assert!(
         params
             .readiness_blockers

@@ -264,6 +264,10 @@ pub mod pallet {
         #[pallet::constant]
         type SignatureMode: Get<SignatureMode>;
 
+        /// Whether this runtime requires Qubitum dispatchables to arrive via shielded payloads.
+        #[pallet::constant]
+        type ShieldedCallPayloads: Get<bool>;
+
         /// Runtime hold reason adapter.
         type RuntimeHoldReason: From<HoldReason>;
 
@@ -2156,7 +2160,7 @@ pub mod pallet {
             let production_zk_verifier = proof_verifier_mode.production_zk_verifier();
             let signature_mode = T::SignatureMode::get();
             let committed_request_payloads = false;
-            let shielded_call_payloads = false;
+            let shielded_call_payloads = T::ShieldedCallPayloads::get();
             let shield_submitter_origin_privacy = false;
             let shield_key_window_privacy = false;
             let private_route_selection = false;
