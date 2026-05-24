@@ -3192,17 +3192,20 @@ fn identity_update_events_redact_commitments_signatures_and_challenges() {
             })
             .collect();
 
-        assert!(events.iter().any(|event| matches!(
-            event,
-            crate::Event::MinerIdentityCommitmentsUpdated { miner_id: 0 }
-        )));
-        assert!(events.iter().any(|event| matches!(
-            event,
-            crate::Event::ValidatorIdentityCommitmentsUpdated { validator_id: 0 }
-        )));
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::MinerIdentityCommitmentsUpdated))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::ValidatorIdentityCommitmentsUpdated))
+        );
 
         for encoded in events.iter().map(Encode::encode) {
             for hidden in [
+                0_u64.encode(),
                 miner_identity_commitment.encode(),
                 miner_endpoint_commitment.encode(),
                 miner_signature.public_key_commitment.encode(),

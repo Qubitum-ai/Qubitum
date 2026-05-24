@@ -1176,9 +1176,9 @@ pub mod pallet {
         /// A validator stake was released after cooldown.
         ValidatorStakeWithdrawn { validator_id: ValidatorId },
         /// A miner published or cleared shielded identity commitments.
-        MinerIdentityCommitmentsUpdated { miner_id: MinerId },
+        MinerIdentityCommitmentsUpdated,
         /// A validator published or cleared shielded identity commitments.
-        ValidatorIdentityCommitmentsUpdated { validator_id: ValidatorId },
+        ValidatorIdentityCommitmentsUpdated,
         /// An inference request was opened and escrowed.
         InferenceRequested {
             request_id: RequestId,
@@ -2095,7 +2095,7 @@ pub mod pallet {
                 MinerIdentitySignatureChallenges::<T>::remove(miner_id);
             }
 
-            Self::deposit_event(Event::MinerIdentityCommitmentsUpdated { miner_id });
+            Self::deposit_event(Event::MinerIdentityCommitmentsUpdated);
             Ok(())
         }
 
@@ -2160,7 +2160,7 @@ pub mod pallet {
                 ValidatorIdentitySignatureChallenges::<T>::remove(validator_id);
             }
 
-            Self::deposit_event(Event::ValidatorIdentityCommitmentsUpdated { validator_id });
+            Self::deposit_event(Event::ValidatorIdentityCommitmentsUpdated);
             Ok(())
         }
     }
