@@ -2944,6 +2944,83 @@ fn public_registry_events_redact_operator_capital_model_and_exit_schedule() {
 }
 
 #[test]
+fn identity_update_events_redact_commitments_signatures_and_challenges() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        System::set_block_number(1);
+        System::reset_events();
+
+        let miner_identity_commitment = commitment(150);
+        let miner_endpoint_commitment = commitment(151);
+        let miner_bundle = miner_identity_signature_bundle(
+            0,
+            Some(miner_identity_commitment),
+            Some(miner_endpoint_commitment),
+        );
+        let miner_signature = miner_bundle.post_quantum.unwrap();
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(2),
+            0,
+            Some(miner_identity_commitment),
+            Some(miner_endpoint_commitment),
+            miner_bundle,
+        ));
+
+        let validator_identity_commitment = commitment(152);
+        let validator_endpoint_commitment = commitment(153);
+        let validator_bundle = validator_identity_signature_bundle(
+            0,
+            Some(validator_identity_commitment),
+            Some(validator_endpoint_commitment),
+        );
+        let validator_signature = validator_bundle.post_quantum.unwrap();
+        assert_ok!(Qubitum::set_validator_identity_commitments(
+            RuntimeOrigin::signed(3),
+            0,
+            Some(validator_identity_commitment),
+            Some(validator_endpoint_commitment),
+            validator_bundle,
+        ));
+
+        let miner_challenge = MinerIdentitySignatureChallenges::<Test>::get(0).unwrap();
+        let validator_challenge = ValidatorIdentitySignatureChallenges::<Test>::get(0).unwrap();
+        let events: Vec<_> = System::events()
+            .into_iter()
+            .filter_map(|record| match record.event {
+                RuntimeEvent::Qubitum(event) => Some(event),
+                _ => None,
+            })
+            .collect();
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            crate::Event::MinerIdentityCommitmentsUpdated { miner_id: 0 }
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            crate::Event::ValidatorIdentityCommitmentsUpdated { validator_id: 0 }
+        )));
+
+        for encoded in events.iter().map(Encode::encode) {
+            for hidden in [
+                miner_identity_commitment.encode(),
+                miner_endpoint_commitment.encode(),
+                miner_signature.public_key_commitment.encode(),
+                miner_signature.signature_commitment.encode(),
+                miner_challenge.encode(),
+                validator_identity_commitment.encode(),
+                validator_endpoint_commitment.encode(),
+                validator_signature.public_key_commitment.encode(),
+                validator_signature.signature_commitment.encode(),
+                validator_challenge.encode(),
+            ] {
+                assert!(!contains_subsequence(&encoded, &hidden));
+            }
+        }
+    });
+}
+
+#[test]
 fn public_lifecycle_events_redact_route_payment_and_proof_metadata() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
