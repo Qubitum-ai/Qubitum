@@ -326,7 +326,8 @@ fn submit_encrypted_rejects_missing_aead_tag() {
 #[test]
 fn try_decode_shielded_tx_parses_bare_submit_encrypted() {
     new_test_ext().execute_with(|| {
-        let key_hash = [0xAB; 16];
+        install_pending_key();
+        let key_hash = current_key_hash();
         let kem_ct = vec![0xCC; 1088];
         let nonce = [0xDD; 24];
         let aead_ct = vec![0xEE; 64];
@@ -348,6 +349,43 @@ fn try_decode_shielded_tx_parses_bare_submit_encrypted() {
         assert_eq!(shielded.kem_ct, kem_ct);
         assert_eq!(shielded.nonce, nonce);
         assert_eq!(shielded.aead_ct, aead_ct);
+    });
+}
+
+#[test]
+fn try_decode_shielded_tx_returns_none_for_unknown_key_hash() {
+    new_test_ext().execute_with(|| {
+        install_pending_key();
+        let ciphertext =
+            build_wire_ciphertext(&[0xAB; 16], &[0xCC; 1088], &[0xDD; 24], &[0xEE; 64]);
+        let call = RuntimeCall::MevShield(crate::Call::submit_encrypted {
+            ciphertext: BoundedVec::truncate_from(ciphertext),
+        });
+        let uxt = DecodableExtrinsic::new_bare(call);
+
+        let result = crate::Pallet::<Test>::try_decode_shielded_tx::<
+            DecodableBlock,
+            frame_system::ChainContext<Test>,
+        >(uxt);
+        assert!(result.is_none());
+    });
+}
+
+#[test]
+fn try_decode_shielded_tx_returns_none_without_pending_key() {
+    new_test_ext().execute_with(|| {
+        let ciphertext =
+            build_wire_ciphertext(&current_key_hash(), &[0xCC; 1088], &[0xDD; 24], &[0xEE; 64]);
+        let call = RuntimeCall::MevShield(crate::Call::submit_encrypted {
+            ciphertext: BoundedVec::truncate_from(ciphertext),
+        });
+        let uxt = DecodableExtrinsic::new_bare(call);
+
+        let result = crate::Pallet::<Test>::try_decode_shielded_tx::<
+            DecodableBlock,
+            frame_system::ChainContext<Test>,
+        >(uxt);
+        assert!(result.is_none());
     });
 }
 

@@ -638,7 +638,8 @@ impl<T: Config> Pallet<T> {
             return None;
         };
 
-        parse_valid_submit_encrypted_ciphertext(ciphertext)
+        let shielded_tx = parse_valid_submit_encrypted_ciphertext(ciphertext)?;
+        Self::is_shielded_using_current_key(&shielded_tx.key_hash).then_some(shielded_tx)
     }
 
     pub fn is_shielded_using_current_key(key_hash: &[u8; 16]) -> bool {
