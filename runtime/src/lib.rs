@@ -2896,6 +2896,7 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
     assert!(!params.private_route_selection);
     assert!(!params.account_commitment_blinding);
     assert!(!params.private_routing_indexes);
+    assert!(!params.private_capital_accounting);
     assert!(!params.post_quantum_account_signatures);
     assert!(!params.privacy_complete);
     assert!(!params.post_quantum_complete);
@@ -2916,6 +2917,7 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
             .account_commitment_blinding_missing
     );
     assert!(params.readiness_blockers.private_routing_indexes_missing);
+    assert!(params.readiness_blockers.private_capital_accounting_missing);
     assert!(
         !params
             .readiness_blockers

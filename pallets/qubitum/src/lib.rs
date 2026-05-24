@@ -796,6 +796,7 @@ pub mod pallet {
         pub private_route_selection_missing: bool,
         pub account_commitment_blinding_missing: bool,
         pub private_routing_indexes_missing: bool,
+        pub private_capital_accounting_missing: bool,
         pub signature_mode_not_full_post_quantum: bool,
         pub post_quantum_account_signatures_missing: bool,
         pub identity_signature_verification_missing: bool,
@@ -811,6 +812,7 @@ pub mod pallet {
                 || self.private_route_selection_missing
                 || self.account_commitment_blinding_missing
                 || self.private_routing_indexes_missing
+                || self.private_capital_accounting_missing
         }
 
         pub fn post_quantum_blocked(self) -> bool {
@@ -856,6 +858,7 @@ pub mod pallet {
         pub private_route_selection: bool,
         pub account_commitment_blinding: bool,
         pub private_routing_indexes: bool,
+        pub private_capital_accounting: bool,
         pub post_quantum_account_signatures: bool,
         pub privacy_complete: bool,
         pub post_quantum_complete: bool,
@@ -2188,6 +2191,7 @@ pub mod pallet {
             let private_route_selection = false;
             let account_commitment_blinding = false;
             let private_routing_indexes = false;
+            let private_capital_accounting = false;
             let post_quantum_account_signatures = false;
             let identity_signature_commitment_policy = true;
             let identity_signature_challenge_binding = true;
@@ -2202,6 +2206,7 @@ pub mod pallet {
                 private_route_selection_missing: !private_route_selection,
                 account_commitment_blinding_missing: !account_commitment_blinding,
                 private_routing_indexes_missing: !private_routing_indexes,
+                private_capital_accounting_missing: !private_capital_accounting,
                 signature_mode_not_full_post_quantum: signature_mode
                     != SignatureMode::FullPostQuantum,
                 post_quantum_account_signatures_missing: !post_quantum_account_signatures,
@@ -2237,6 +2242,7 @@ pub mod pallet {
                 private_route_selection,
                 account_commitment_blinding,
                 private_routing_indexes,
+                private_capital_accounting,
                 post_quantum_account_signatures,
                 privacy_complete,
                 post_quantum_complete,

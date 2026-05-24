@@ -629,6 +629,7 @@ fn protocol_params_expose_runtime_policy() {
         assert!(!params.private_route_selection);
         assert!(!params.account_commitment_blinding);
         assert!(!params.private_routing_indexes);
+        assert!(!params.private_capital_accounting);
         assert!(!params.post_quantum_account_signatures);
         assert!(!params.privacy_complete);
         assert!(!params.post_quantum_complete);
@@ -648,6 +649,7 @@ fn protocol_params_expose_runtime_policy() {
                 private_route_selection_missing: true,
                 account_commitment_blinding_missing: true,
                 private_routing_indexes_missing: true,
+                private_capital_accounting_missing: true,
                 signature_mode_not_full_post_quantum: false,
                 post_quantum_account_signatures_missing: true,
                 identity_signature_verification_missing: true,
@@ -685,6 +687,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
         assert!(!params.shield_key_window_privacy);
         assert!(!params.account_commitment_blinding);
         assert!(!params.private_routing_indexes);
+        assert!(!params.private_capital_accounting);
         assert!(
             params
                 .readiness_blockers
@@ -697,6 +700,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
                 .account_commitment_blinding_missing
         );
         assert!(params.readiness_blockers.private_routing_indexes_missing);
+        assert!(params.readiness_blockers.private_capital_accounting_missing);
         assert!(params.readiness_blockers.privacy_blocked());
 
         assert_eq!(
@@ -707,6 +711,8 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
             Validators::<Test>::get(0).unwrap().operator_commitment,
             Qubitum::operator_commitment(&3)
         );
+        assert_eq!(MinerLockedBond::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(MIN_MINER_BOND));
         assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
         assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
     });
