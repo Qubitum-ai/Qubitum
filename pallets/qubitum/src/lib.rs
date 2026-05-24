@@ -864,6 +864,7 @@ pub mod pallet {
         pub route_availability_ids_redacted: bool,
         pub public_accounting_totals_redacted: bool,
         pub public_request_status_counts_redacted: bool,
+        pub public_registry_records_redacted: bool,
         pub public_next_request_id_redacted: bool,
         pub public_registry_counts_redacted: bool,
         pub public_total_burned_redacted: bool,
@@ -2174,6 +2175,7 @@ pub mod pallet {
             let route_availability_ids_redacted = true;
             let public_accounting_totals_redacted = true;
             let public_request_status_counts_redacted = true;
+            let public_registry_records_redacted = true;
             let public_next_request_id_redacted = true;
             let public_registry_counts_redacted = true;
             let public_total_burned_redacted = true;
@@ -2241,6 +2243,7 @@ pub mod pallet {
                 route_availability_ids_redacted,
                 public_accounting_totals_redacted,
                 public_request_status_counts_redacted,
+                public_registry_records_redacted,
                 public_next_request_id_redacted,
                 public_registry_counts_redacted,
                 public_total_burned_redacted,
@@ -2326,36 +2329,22 @@ pub mod pallet {
             })
         }
 
-        pub fn public_miner(miner_id: MinerId) -> Option<ChainPublicMiner> {
-            Miners::<T>::get(miner_id).map(|miner| ChainPublicMiner {
-                proof_system: miner.proof_system,
-                status: PublicRegistryStatus::from(miner.status),
-            })
+        pub fn public_miner(_miner_id: MinerId) -> Option<ChainPublicMiner> {
+            None
         }
 
-        pub fn public_validator(validator_id: ValidatorId) -> Option<ChainPublicValidator> {
-            Validators::<T>::get(validator_id).map(|validator| ChainPublicValidator {
-                status: PublicRegistryStatus::from(validator.status),
-            })
+        pub fn public_validator(_validator_id: ValidatorId) -> Option<ChainPublicValidator> {
+            None
         }
 
-        fn redacted_public_identity() -> ChainPublicIdentity {
-            ChainPublicIdentity {
-                has_shielded_identity_commitment: false,
-                has_endpoint_commitment: false,
-                signature_commitment_recorded: false,
-                signature_challenge_bound: false,
-                signature_verified: false,
-                challenge_available: false,
-            }
+        pub fn public_miner_identity(_miner_id: MinerId) -> Option<ChainPublicIdentity> {
+            None
         }
 
-        pub fn public_miner_identity(miner_id: MinerId) -> Option<ChainPublicIdentity> {
-            Miners::<T>::contains_key(miner_id).then(Self::redacted_public_identity)
-        }
-
-        pub fn public_validator_identity(validator_id: ValidatorId) -> Option<ChainPublicIdentity> {
-            Validators::<T>::contains_key(validator_id).then(Self::redacted_public_identity)
+        pub fn public_validator_identity(
+            _validator_id: ValidatorId,
+        ) -> Option<ChainPublicIdentity> {
+            None
         }
 
         pub fn public_inference_request(

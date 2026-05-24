@@ -2,13 +2,12 @@
 
 use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, AutoRouteInferenceRequestParams,
-    CancelledInferenceRequestCount, ChainInferenceRequest, ChainMiner, ChainPublicIdentity,
-    ChainPublicInferenceRequest, ChainPublicMiner, ChainPublicProofRecord, ChainPublicSubnet,
-    ChainPublicValidator, ChainReadinessBlockers, ChainRequestStatusCounts, ChainRouteAvailability,
-    ChainValidator, Error, FailClosedProofVerifier, HoldReason, InferenceRequestCommitmentParams,
-    InferenceRequestParams, InferenceRequestStatus, InferenceRequestTerms,
-    InferenceRequestTermsWitness, InferenceRequestTimingWitness, InferenceRequests,
-    LegacyAccountingMigrationFailures, LegacyCapitalRecordMigrationFailures,
+    CancelledInferenceRequestCount, ChainInferenceRequest, ChainMiner, ChainPublicInferenceRequest,
+    ChainPublicProofRecord, ChainPublicSubnet, ChainReadinessBlockers, ChainRequestStatusCounts,
+    ChainRouteAvailability, ChainValidator, Error, FailClosedProofVerifier, HoldReason,
+    InferenceRequestCommitmentParams, InferenceRequestParams, InferenceRequestStatus,
+    InferenceRequestTerms, InferenceRequestTermsWitness, InferenceRequestTimingWitness,
+    InferenceRequests, LegacyAccountingMigrationFailures, LegacyCapitalRecordMigrationFailures,
     LegacyRoutingIndexMigrationFailures, MinerCount, MinerIdentityCommitments,
     MinerIdentitySignatureBundles, MinerIdentitySignatureChallenges, MinerLockedBond, Miners,
     PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests, ProofRecords,
@@ -54,17 +53,6 @@ fn timing_blinding() -> [u8; 32] {
 
 fn terms_blinding() -> [u8; 32] {
     commitment(91)
-}
-
-fn redacted_public_identity() -> ChainPublicIdentity {
-    ChainPublicIdentity {
-        has_shielded_identity_commitment: false,
-        has_endpoint_commitment: false,
-        signature_commitment_recorded: false,
-        signature_challenge_bound: false,
-        signature_verified: false,
-        challenge_available: false,
-    }
 }
 
 fn proof(seed: u8) -> ProofEnvelope {
@@ -648,6 +636,7 @@ fn protocol_params_expose_runtime_policy() {
         assert!(params.route_availability_ids_redacted);
         assert!(params.public_accounting_totals_redacted);
         assert!(params.public_request_status_counts_redacted);
+        assert!(params.public_registry_records_redacted);
         assert!(params.public_next_request_id_redacted);
         assert!(params.public_registry_counts_redacted);
         assert!(params.public_total_burned_redacted);
@@ -721,6 +710,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
         assert!(params.route_availability_ids_redacted);
         assert!(params.public_accounting_totals_redacted);
         assert!(params.public_request_status_counts_redacted);
+        assert!(params.public_registry_records_redacted);
         assert!(params.public_next_request_id_redacted);
         assert!(params.public_registry_counts_redacted);
         assert!(params.public_total_burned_redacted);
@@ -2279,9 +2269,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
             Some(miner_signature_bundle)
         );
         let miner_signature_challenge = MinerIdentitySignatureChallenges::<Test>::get(0).unwrap();
-        let public_miner_identity = Qubitum::public_miner_identity(0).unwrap();
-        assert_eq!(public_miner_identity, redacted_public_identity());
-        let encoded_public_miner_identity = public_miner_identity.encode();
+        assert_eq!(Qubitum::public_miner_identity(0), None);
         for hidden in [
             0_u64.encode(),
             commitment(20).encode(),
@@ -2290,7 +2278,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
             miner_signature_challenge.encode(),
         ] {
             assert!(!contains_subsequence(
-                &encoded_public_miner_identity,
+                &Qubitum::public_miner_identity(0).encode(),
                 &hidden
             ));
         }
@@ -2319,9 +2307,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         );
         let validator_signature_challenge =
             ValidatorIdentitySignatureChallenges::<Test>::get(0).unwrap();
-        let public_validator_identity = Qubitum::public_validator_identity(0).unwrap();
-        assert_eq!(public_validator_identity, redacted_public_identity());
-        let encoded_public_validator_identity = public_validator_identity.encode();
+        assert_eq!(Qubitum::public_validator_identity(0), None);
         for hidden in [
             0_u64.encode(),
             commitment(22).encode(),
@@ -2330,7 +2316,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
             validator_signature_challenge.encode(),
         ] {
             assert!(!contains_subsequence(
-                &encoded_public_validator_identity,
+                &Qubitum::public_validator_identity(0).encode(),
                 &hidden
             ));
         }
@@ -2372,10 +2358,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         assert!(MinerIdentityCommitments::<Test>::get(0).is_none());
         assert!(MinerIdentitySignatureBundles::<Test>::get(0).is_none());
         assert!(MinerIdentitySignatureChallenges::<Test>::get(0).is_none());
-        assert_eq!(
-            Qubitum::public_miner_identity(0),
-            Some(redacted_public_identity())
-        );
+        assert_eq!(Qubitum::public_miner_identity(0), None);
         assert_noop!(
             Qubitum::set_validator_identity_commitments(
                 RuntimeOrigin::signed(3),
@@ -2399,10 +2382,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         assert!(ValidatorIdentityCommitments::<Test>::get(0).is_none());
         assert!(ValidatorIdentitySignatureBundles::<Test>::get(0).is_none());
         assert!(ValidatorIdentitySignatureChallenges::<Test>::get(0).is_none());
-        assert_eq!(
-            Qubitum::public_validator_identity(0),
-            Some(redacted_public_identity())
-        );
+        assert_eq!(Qubitum::public_validator_identity(0), None);
         assert_eq!(Qubitum::public_miner_identity(999), None);
         assert_eq!(Qubitum::public_validator_identity(999), None);
     });
@@ -2659,12 +2639,10 @@ fn identity_signature_commitments_are_not_reported_as_verified() {
             validator_identity_signature_bundle(0, Some(commitment(66)), Some(commitment(67))),
         ));
 
-        let miner_identity = Qubitum::public_miner_identity(0).unwrap();
-        let validator_identity = Qubitum::public_validator_identity(0).unwrap();
         let params = Qubitum::protocol_params();
 
-        assert_eq!(miner_identity, redacted_public_identity());
-        assert_eq!(validator_identity, redacted_public_identity());
+        assert_eq!(Qubitum::public_miner_identity(0), None);
+        assert_eq!(Qubitum::public_validator_identity(0), None);
         assert!(MinerIdentitySignatureBundles::<Test>::contains_key(0));
         assert!(MinerIdentitySignatureChallenges::<Test>::contains_key(0));
         assert!(ValidatorIdentitySignatureBundles::<Test>::contains_key(0));
@@ -2697,8 +2675,7 @@ fn routing_and_proof_reject_unbound_identity_signature_bundles() {
 
         MinerIdentitySignatureBundles::<Test>::insert(0, post_quantum_signature_bundle());
 
-        let public_identity = Qubitum::public_miner_identity(0).unwrap();
-        assert_eq!(public_identity, redacted_public_identity());
+        assert_eq!(Qubitum::public_miner_identity(0), None);
         assert!(MinerIdentitySignatureBundles::<Test>::contains_key(0));
         assert!(MinerIdentitySignatureChallenges::<Test>::contains_key(0));
         assert!(!Qubitum::next_route_availability(0).available);
@@ -2986,49 +2963,43 @@ fn public_registry_views_redact_operator_capital_and_model_commitments() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
 
-        let public_miner = Qubitum::public_miner(0).unwrap();
-        assert_eq!(
-            public_miner,
-            ChainPublicMiner {
-                proof_system: ProofSystem::RiscZeroStark,
-                status: PublicRegistryStatus::Active,
-            }
-        );
-        let encoded_miner = public_miner.encode();
+        assert!(Miners::<Test>::contains_key(0));
+        assert_eq!(Qubitum::public_miner(0), None);
+        let encoded_miner = Qubitum::public_miner(0).encode();
         for hidden in [
             0_u64.encode(),
             2_u64.encode(),
             MIN_MINER_BOND.encode(),
             commitment(10).encode(),
+            ProofSystem::RiscZeroStark.encode(),
+            PublicRegistryStatus::Active.encode(),
         ] {
             assert!(!contains_subsequence(&encoded_miner, &hidden));
         }
 
-        let public_validator = Qubitum::public_validator(0).unwrap();
-        assert_eq!(
-            public_validator,
-            ChainPublicValidator {
-                status: PublicRegistryStatus::Active,
-            }
-        );
-        let encoded_validator = public_validator.encode();
-        for hidden in [0_u64.encode(), 3_u64.encode(), MIN_MINER_BOND.encode()] {
+        assert!(Validators::<Test>::contains_key(0));
+        assert_eq!(Qubitum::public_validator(0), None);
+        let encoded_validator = Qubitum::public_validator(0).encode();
+        for hidden in [
+            0_u64.encode(),
+            3_u64.encode(),
+            MIN_MINER_BOND.encode(),
+            PublicRegistryStatus::Active.encode(),
+        ] {
             assert!(!contains_subsequence(&encoded_validator, &hidden));
         }
 
         assert_ok!(Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0));
-        let exiting_miner = Qubitum::public_miner(0).unwrap();
-        assert_eq!(exiting_miner.status, PublicRegistryStatus::Exiting);
+        assert_eq!(Qubitum::public_miner(0), None);
         assert!(!contains_subsequence(
-            &exiting_miner.encode(),
+            &Qubitum::public_miner(0).encode(),
             &20_u64.encode()
         ));
 
         assert_ok!(Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0));
-        let exiting_validator = Qubitum::public_validator(0).unwrap();
-        assert_eq!(exiting_validator.status, PublicRegistryStatus::Exiting);
+        assert_eq!(Qubitum::public_validator(0), None);
         assert!(!contains_subsequence(
-            &exiting_validator.encode(),
+            &Qubitum::public_validator(0).encode(),
             &20_u64.encode()
         ));
     });
@@ -5491,16 +5462,8 @@ fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_healt
         assert_eq!(LegacyRoutingIndexMigrationFailures::<Test>::get(), 2);
         assert_eq!(Qubitum::migration_health().legacy_routing_index_failures, 2);
         assert_eq!(Qubitum::migration_health().legacy_accounting_failures, 0);
-        assert_eq!(
-            Qubitum::public_miner(exiting_miner_id).unwrap().status,
-            PublicRegistryStatus::Exiting
-        );
-        assert_eq!(
-            Qubitum::public_validator(exiting_validator_id)
-                .unwrap()
-                .status,
-            PublicRegistryStatus::Exiting
-        );
+        assert_eq!(Qubitum::public_miner(exiting_miner_id), None);
+        assert_eq!(Qubitum::public_validator(exiting_validator_id), None);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
             StorageVersion::new(18)
