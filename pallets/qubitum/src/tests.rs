@@ -39,6 +39,10 @@ fn commitment(seed: u8) -> [u8; 32] {
     [seed; 32]
 }
 
+fn subnet_creation_burn() -> u128 {
+    <Test as crate::Config>::SubnetCreationBurn::get()
+}
+
 fn assignment_blinding() -> [u8; 32] {
     commitment(90)
 }
@@ -515,17 +519,17 @@ fn create_subnet_burns_qbt_and_commits_owner_and_policy() {
         assert!(!contains_subsequence(&subnet.encode(), &1_u64.encode()));
         assert!(!contains_subsequence(
             &subnet.encode(),
-            &MINER_REGISTRATION_BURN.encode()
+            &subnet_creation_burn().encode()
         ));
         assert!(!contains_subsequence(
             &subnet.encode(),
             &MIN_MINER_BOND.encode()
         ));
         assert_eq!(SubnetCount::<Test>::get(), 1);
-        assert_eq!(TotalBurned::<Test>::get(), MINER_REGISTRATION_BURN);
+        assert_eq!(TotalBurned::<Test>::get(), subnet_creation_burn());
         assert_eq!(
             Balances::free_balance(1),
-            1_000_000_000_000_000 - MINER_REGISTRATION_BURN
+            1_000_000_000_000_000 - subnet_creation_burn()
         );
     });
 }
@@ -579,6 +583,7 @@ fn public_subnet_view_redacts_owner_and_economic_policy() {
         let encoded_subnet = public_subnet.encode();
         for hidden in [
             4_u64.encode(),
+            subnet_creation_burn().encode(),
             MINER_REGISTRATION_BURN.encode(),
             MIN_MINER_BOND.encode(),
             MAX_MINER_BOND.encode(),
@@ -593,7 +598,7 @@ fn protocol_params_expose_runtime_policy() {
     new_test_ext().execute_with(|| {
         let params = Qubitum::protocol_params();
 
-        assert_eq!(params.subnet_creation_burn, MINER_REGISTRATION_BURN);
+        assert_eq!(params.subnet_creation_burn, subnet_creation_burn());
         assert_eq!(params.miner_registration_burn, MINER_REGISTRATION_BURN);
         assert_eq!(params.min_miner_bond, MIN_MINER_BOND);
         assert_eq!(params.max_miner_bond, MAX_MINER_BOND);
@@ -777,7 +782,7 @@ fn register_and_activate_miner_locks_bond() {
         );
         assert_eq!(
             TotalBurned::<Test>::get(),
-            MINER_REGISTRATION_BURN + MINER_REGISTRATION_BURN
+            subnet_creation_burn() + MINER_REGISTRATION_BURN
         );
     });
 }
@@ -2981,7 +2986,7 @@ fn runtime_upgrade_migrates_subnet_owner_and_policy_to_commitments() {
             owner: 44,
             domain: SubnetDomain::Code,
             proof_system: ProofSystem::RiscZeroStark,
-            creation_burn: MINER_REGISTRATION_BURN,
+            creation_burn: subnet_creation_burn(),
             min_miner_bond: MIN_MINER_BOND,
             max_miner_bond: MAX_MINER_BOND,
             min_validator_stake: MIN_MINER_BOND,
@@ -4733,7 +4738,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
             owner: 1,
             domain: SubnetDomain::Code,
             proof_system: ProofSystem::RiscZeroStark,
-            creation_burn: MINER_REGISTRATION_BURN,
+            creation_burn: subnet_creation_burn(),
             min_miner_bond: MIN_MINER_BOND,
             max_miner_bond: MAX_MINER_BOND,
             min_validator_stake: MIN_MINER_BOND,

@@ -51,7 +51,7 @@ frame_support::construct_runtime!(
 parameter_types! {
     pub const BlockHashCount: u64 = 250;
     pub const ExistentialDeposit: Balance = 1;
-    pub const SubnetCreationBurn: Balance = qubitum_protocol::MINER_REGISTRATION_BURN;
+    pub const SubnetCreationBurn: Balance = qubitum_protocol::MINER_REGISTRATION_BURN * 2;
     pub const MinerRegistrationBurn: Balance = qubitum_protocol::MINER_REGISTRATION_BURN;
     pub const MinMinerBond: Balance = qubitum_protocol::MIN_MINER_BOND;
     pub const MaxMinerBond: Balance = qubitum_protocol::MAX_MINER_BOND;
