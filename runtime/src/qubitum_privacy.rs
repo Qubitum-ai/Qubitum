@@ -302,6 +302,36 @@ mod tests {
         })
     }
 
+    fn timing_witness() -> pallet_qubitum::InferenceRequestTimingWitness {
+        pallet_qubitum::InferenceRequestTimingWitness {
+            created_at: 1,
+            blinding: commitment(92),
+        }
+    }
+
+    fn cancel_inference_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::cancel_inference {
+            request_id: 6,
+            miner_id: 0,
+            validator_id: 0,
+            assignment_blinding: commitment(90),
+            timing_witness: timing_witness(),
+            terms_witness: request_terms_witness(),
+        })
+    }
+
+    fn expire_inference_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::expire_inference {
+            request_id: 7,
+            request_user: account(4),
+            miner_id: 0,
+            validator_id: 0,
+            assignment_blinding: commitment(90),
+            timing_witness: timing_witness(),
+            terms_witness: request_terms_witness(),
+        })
+    }
+
     fn proof_submission_call() -> RuntimeCall {
         RuntimeCall::Qubitum(pallet_qubitum::Call::submit_proof {
             submission: proof_submission(1),
@@ -485,6 +515,28 @@ mod tests {
                         request_inference_auto_route_call(),
                         request_inference_commitments_call(),
                     ],
+                })
+                .encode(),
+            });
+            assert_qubitum_rejected(encoded_batch);
+        });
+    }
+
+    #[test]
+    fn request_close_and_refund_calls_must_be_shielded_even_when_terms_are_public() {
+        new_test_ext().execute_with(|| {
+            for call in [cancel_inference_call(), expire_inference_call()] {
+                assert_qubitum_rejected(call);
+            }
+
+            let wrapped = RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                calls: vec![cancel_inference_call(), expire_inference_call()],
+            });
+            assert_qubitum_rejected(wrapped);
+
+            let encoded_batch = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                    calls: vec![cancel_inference_call(), expire_inference_call()],
                 })
                 .encode(),
             });
@@ -953,6 +1005,29 @@ mod tests {
                         request_inference_auto_route_call(),
                         request_inference_commitments_call(),
                     ],
+                })
+                .encode(),
+            });
+            assert_eq!(
+                prepare_ext(&encoded_batch),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+        });
+    }
+
+    #[test]
+    fn prepare_rejects_request_close_and_refund_calls_even_when_terms_are_public() {
+        new_test_ext().execute_with(|| {
+            for call in [cancel_inference_call(), expire_inference_call()] {
+                assert_eq!(
+                    prepare_ext(&call),
+                    Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+                );
+            }
+
+            let encoded_batch = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                    calls: vec![cancel_inference_call(), expire_inference_call()],
                 })
                 .encode(),
             });
