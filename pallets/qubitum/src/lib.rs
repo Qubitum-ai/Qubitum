@@ -1174,24 +1174,21 @@ pub mod pallet {
         /// A validator published or cleared shielded identity commitments.
         ValidatorIdentityCommitmentsUpdated,
         /// An inference request was opened and escrowed.
-        InferenceRequested {
-            request_id: RequestId,
-            subnet_id: SubnetId,
-        },
+        InferenceRequested,
         /// A proof record was accepted.
-        ProofAccepted { request_id: RequestId },
+        ProofAccepted,
         /// An invalid proof challenge was accepted and the request was rejected.
-        ProofChallengeAccepted { request_id: RequestId },
+        ProofChallengeAccepted,
         /// Escrowed request payment was settled.
-        InferenceSettled { request_id: RequestId },
+        InferenceSettled,
         /// Pending inference request escrow was released back to the user.
-        InferenceCancelled { request_id: RequestId },
+        InferenceCancelled,
         /// Rejected proof released escrow back to the user.
-        InferenceRefunded { request_id: RequestId },
+        InferenceRefunded,
         /// Stale pending inference escrow was released back to the user.
-        InferenceExpired { request_id: RequestId },
+        InferenceExpired,
         /// A proof was rejected by the verifier and the miner was slashed.
-        ProofRejected { request_id: RequestId },
+        ProofRejected,
         /// A miner was slashed.
         MinerSlashed,
         /// A validator was slashed.
@@ -1493,12 +1490,8 @@ pub mod pallet {
                         assignment_blinding,
                         &terms_witness,
                     )?;
-                    Self::deposit_event(Event::ProofRejected {
-                        request_id: submission.request_id,
-                    });
-                    Self::deposit_event(Event::InferenceRefunded {
-                        request_id: submission.request_id,
-                    });
+                    Self::deposit_event(Event::ProofRejected);
+                    Self::deposit_event(Event::InferenceRefunded);
                     return Ok(());
                 }
                 VerificationOutcome::Error => return Err(Error::<T>::VerifierError.into()),
@@ -1530,12 +1523,8 @@ pub mod pallet {
                 },
             );
 
-            Self::deposit_event(Event::ProofAccepted {
-                request_id: submission.request_id,
-            });
-            Self::deposit_event(Event::InferenceSettled {
-                request_id: submission.request_id,
-            });
+            Self::deposit_event(Event::ProofAccepted);
+            Self::deposit_event(Event::InferenceSettled);
             Ok(())
         }
 
@@ -1574,15 +1563,9 @@ pub mod pallet {
                         assignment_blinding,
                         &terms_witness,
                     )?;
-                    Self::deposit_event(Event::ProofRejected {
-                        request_id: submission.request_id,
-                    });
-                    Self::deposit_event(Event::ProofChallengeAccepted {
-                        request_id: submission.request_id,
-                    });
-                    Self::deposit_event(Event::InferenceRefunded {
-                        request_id: submission.request_id,
-                    });
+                    Self::deposit_event(Event::ProofRejected);
+                    Self::deposit_event(Event::ProofChallengeAccepted);
+                    Self::deposit_event(Event::InferenceRefunded);
                     Ok(())
                 }
                 VerificationOutcome::Valid => Err(Error::<T>::ChallengeProofValid.into()),
@@ -1769,7 +1752,7 @@ pub mod pallet {
             )?;
             Self::record_inference_refund(payment)?;
 
-            Self::deposit_event(Event::InferenceCancelled { request_id });
+            Self::deposit_event(Event::InferenceCancelled);
             Ok(())
         }
 
@@ -2016,7 +1999,7 @@ pub mod pallet {
             )?;
             Self::record_inference_refund(payment)?;
 
-            Self::deposit_event(Event::InferenceExpired { request_id });
+            Self::deposit_event(Event::InferenceExpired);
             Ok(())
         }
 
@@ -2516,10 +2499,7 @@ pub mod pallet {
                 },
             );
 
-            Self::deposit_event(Event::InferenceRequested {
-                request_id,
-                subnet_id,
-            });
+            Self::deposit_event(Event::InferenceRequested);
             Ok(())
         }
 

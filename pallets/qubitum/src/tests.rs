@@ -3288,26 +3288,26 @@ fn public_lifecycle_events_redact_route_payment_and_proof_metadata() {
             })
             .collect();
 
-        assert!(events.iter().any(|event| matches!(
-            event,
-            crate::Event::InferenceRequested {
-                request_id: 96,
-                subnet_id: 0,
-            }
-        )));
         assert!(
             events
                 .iter()
-                .any(|event| matches!(event, crate::Event::ProofAccepted { request_id: 96 }))
+                .any(|event| matches!(event, crate::Event::InferenceRequested))
         );
         assert!(
             events
                 .iter()
-                .any(|event| matches!(event, crate::Event::InferenceSettled { request_id: 96 }))
+                .any(|event| matches!(event, crate::Event::ProofAccepted))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::InferenceSettled))
         );
 
         for encoded in events.iter().map(Encode::encode) {
             for hidden in [
+                96_u64.encode(),
+                0_u64.encode(),
                 123_456_789_u128.encode(),
                 777_u16.encode(),
                 888_u16.encode(),
@@ -3387,16 +3387,18 @@ fn public_failure_events_redact_route_payment_and_proof_metadata() {
         assert!(
             events
                 .iter()
-                .any(|event| matches!(event, crate::Event::ProofRejected { request_id: 97 }))
+                .any(|event| matches!(event, crate::Event::ProofRejected))
         );
         assert!(
             events
                 .iter()
-                .any(|event| matches!(event, crate::Event::InferenceRefunded { request_id: 97 }))
+                .any(|event| matches!(event, crate::Event::InferenceRefunded))
         );
 
         for encoded in events.iter().map(Encode::encode) {
             for hidden in [
+                97_u64.encode(),
+                0_u64.encode(),
                 123_456_789_u128.encode(),
                 777_u16.encode(),
                 888_u16.encode(),
@@ -3477,18 +3479,21 @@ fn public_failure_events_redact_route_payment_and_proof_metadata() {
                 .iter()
                 .any(|event| matches!(event, crate::Event::MinerSlashed))
         );
-        assert!(events.iter().any(|event| matches!(
-            event,
-            crate::Event::ProofChallengeAccepted { request_id: 98 }
-        )));
         assert!(
             events
                 .iter()
-                .any(|event| matches!(event, crate::Event::InferenceRefunded { request_id: 98 }))
+                .any(|event| matches!(event, crate::Event::ProofChallengeAccepted))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::InferenceRefunded))
         );
 
         for encoded in events.iter().map(Encode::encode) {
             for hidden in [
+                98_u64.encode(),
+                0_u64.encode(),
                 987_654_321_u128.encode(),
                 444_u16.encode(),
                 555_u16.encode(),
@@ -5663,10 +5668,7 @@ fn auto_route_request_computes_assignment_without_caller_supplied_participants()
         );
         assert!(System::events().iter().any(|record| matches!(
             &record.event,
-            RuntimeEvent::Qubitum(crate::Event::InferenceRequested {
-                request_id: 54,
-                subnet_id: 0,
-            })
+            RuntimeEvent::Qubitum(crate::Event::InferenceRequested)
         )));
     });
 }

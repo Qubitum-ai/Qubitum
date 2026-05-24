@@ -516,13 +516,7 @@ mod benchmarks {
             Pallet::<T>::request_user_commitment(&user)
         );
         assert_eq!(request.status, InferenceRequestStatus::Pending);
-        assert_last_event::<T>(
-            Event::<T>::InferenceRequested {
-                request_id: 42,
-                subnet_id: 0,
-            }
-            .into(),
-        );
+        assert_last_event::<T>(Event::<T>::InferenceRequested.into());
     }
 
     #[benchmark]
@@ -551,7 +545,7 @@ mod benchmarks {
             Pallet::<T>::request_user_commitment(&user)
         );
         assert_eq!(request.status, InferenceRequestStatus::Cancelled);
-        assert_last_event::<T>(Event::<T>::InferenceCancelled { request_id: 42 }.into());
+        assert_last_event::<T>(Event::<T>::InferenceCancelled.into());
     }
 
     #[benchmark]
@@ -582,7 +576,7 @@ mod benchmarks {
             Pallet::<T>::request_user_commitment(&user)
         );
         assert_eq!(request.status, InferenceRequestStatus::Expired);
-        assert_last_event::<T>(Event::<T>::InferenceExpired { request_id: 42 }.into());
+        assert_last_event::<T>(Event::<T>::InferenceExpired.into());
     }
 
     impl_benchmark_test_suite!(Pallet, crate::mock::new_test_ext(), crate::mock::Test);
