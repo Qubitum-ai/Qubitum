@@ -4,19 +4,20 @@ use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, AutoRouteInferenceRequestParams,
     CancelledInferenceRequestCount, ChainInferenceRequest, ChainMiner, ChainPublicIdentity,
     ChainPublicInferenceRequest, ChainPublicMiner, ChainPublicProofRecord, ChainPublicSubnet,
-    ChainPublicValidator, ChainRequestStatusCounts, ChainRouteAvailability, ChainValidator, Error,
-    FailClosedProofVerifier, HoldReason, InferenceRequestCommitmentParams, InferenceRequestParams,
-    InferenceRequestStatus, InferenceRequestTerms, InferenceRequestTermsWitness,
-    InferenceRequestTimingWitness, InferenceRequests, LegacyAccountingMigrationFailures,
-    LegacyCapitalRecordMigrationFailures, LegacyRoutingIndexMigrationFailures, MinerCount,
-    MinerIdentityCommitments, MinerIdentitySignatureBundles, MinerIdentitySignatureChallenges,
-    MinerLockedBond, Miners, PendingInferenceRequestCount, PendingMinerRequests,
-    PendingValidatorRequests, ProofRecords, ProofVerificationPolicy, ProofVerifierMode,
-    PublicRegistryStatus, RejectedInferenceRequestCount, RequestCount,
-    SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned, TotalInferenceEscrowed,
-    TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees, TotalValidatorFees,
-    ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles,
-    ValidatorIdentitySignatureChallenges, ValidatorLockedStake, Validators, VerifyProof,
+    ChainPublicValidator, ChainReadinessBlockers, ChainRequestStatusCounts, ChainRouteAvailability,
+    ChainValidator, Error, FailClosedProofVerifier, HoldReason, InferenceRequestCommitmentParams,
+    InferenceRequestParams, InferenceRequestStatus, InferenceRequestTerms,
+    InferenceRequestTermsWitness, InferenceRequestTimingWitness, InferenceRequests,
+    LegacyAccountingMigrationFailures, LegacyCapitalRecordMigrationFailures,
+    LegacyRoutingIndexMigrationFailures, MinerCount, MinerIdentityCommitments,
+    MinerIdentitySignatureBundles, MinerIdentitySignatureChallenges, MinerLockedBond, Miners,
+    PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests, ProofRecords,
+    ProofVerificationPolicy, ProofVerifierMode, PublicRegistryStatus,
+    RejectedInferenceRequestCount, RequestCount, SettledInferenceRequestCount, SubnetCount,
+    Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
+    TotalTreasuryFees, TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
+    ValidatorIdentitySignatureBundles, ValidatorIdentitySignatureChallenges, ValidatorLockedStake,
+    Validators, VerifyProof,
     mock::{
         Balances, Qubitum, RuntimeEvent, RuntimeOrigin, System, Test, new_test_ext,
         set_verification_outcome,
@@ -631,6 +632,35 @@ fn protocol_params_expose_runtime_policy() {
         assert!(params.identity_signature_commitment_policy);
         assert!(params.identity_signature_challenge_binding);
         assert!(!params.identity_signature_verification);
+        assert_eq!(
+            params.readiness_blockers,
+            ChainReadinessBlockers {
+                proof_settlement_disabled: false,
+                production_zk_verifier_missing: true,
+                committed_request_payloads_missing: true,
+                shielded_call_payloads_missing: true,
+                private_route_selection_missing: true,
+                signature_mode_not_full_post_quantum: false,
+                post_quantum_account_signatures_missing: true,
+                identity_signature_verification_missing: true,
+                external_audit_missing: true,
+            }
+        );
+        assert!(params.readiness_blockers.privacy_blocked());
+        assert!(params.readiness_blockers.post_quantum_blocked());
+        assert!(params.readiness_blockers.production_blocked());
+        assert_eq!(
+            params.privacy_complete,
+            !params.readiness_blockers.privacy_blocked()
+        );
+        assert_eq!(
+            params.post_quantum_complete,
+            !params.readiness_blockers.post_quantum_blocked()
+        );
+        assert_eq!(
+            params.production_ready,
+            !params.readiness_blockers.production_blocked()
+        );
         assert_eq!(params.miner_exit_cooldown_blocks, 20);
         assert_eq!(params.validator_exit_cooldown_blocks, 20);
         assert_eq!(params.request_cancel_delay_blocks, 10);

@@ -96,7 +96,7 @@ Model weights and inference inputs are private. The chain stores commitments, pr
 
 Validators verify that inference executed correctly, that the committed model version was used, and that latency bounds were met. Validators do not learn model weights, raw inference input, or model internals.
 
-Current runtime protocol parameters intentionally report `privacy_complete = false`, `post_quantum_complete = false`, and `production_ready = false`. The remaining blockers are a production zk verifier, committed request payload plumbing, end-to-end shielded call payload execution, private route selection, post-quantum account signatures, and real identity-signature verification rather than commitment-only policy checks.
+Current runtime protocol parameters intentionally report `privacy_complete = false`, `post_quantum_complete = false`, and `production_ready = false`. They also expose machine-readable readiness blockers for proof settlement, production zk verification, committed request payload plumbing, end-to-end shielded call payload execution, private route selection, post-quantum account signatures, real identity-signature verification rather than commitment-only policy checks, and external audit completion.
 
 ## Post-Quantum Signature Policy
 

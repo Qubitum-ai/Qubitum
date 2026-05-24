@@ -2865,6 +2865,7 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
             pallet_qubitum::ProofVerifierMode::FailClosed
         );
         assert!(!params.proof_settlement_enabled);
+        assert!(params.readiness_blockers.proof_settlement_disabled);
     }
 
     #[cfg(feature = "runtime-benchmarks")]
@@ -2874,6 +2875,7 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
             pallet_qubitum::ProofVerifierMode::ShapeOnly
         );
         assert!(params.proof_settlement_enabled);
+        assert!(!params.readiness_blockers.proof_settlement_disabled);
     }
 
     assert!(!params.production_zk_verifier);
@@ -2884,6 +2886,29 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
     assert!(!params.privacy_complete);
     assert!(!params.post_quantum_complete);
     assert!(!params.production_ready);
+    assert!(params.readiness_blockers.production_zk_verifier_missing);
+    assert!(params.readiness_blockers.committed_request_payloads_missing);
+    assert!(params.readiness_blockers.shielded_call_payloads_missing);
+    assert!(params.readiness_blockers.private_route_selection_missing);
+    assert!(
+        !params
+            .readiness_blockers
+            .signature_mode_not_full_post_quantum
+    );
+    assert!(
+        params
+            .readiness_blockers
+            .post_quantum_account_signatures_missing
+    );
+    assert!(
+        params
+            .readiness_blockers
+            .identity_signature_verification_missing
+    );
+    assert!(params.readiness_blockers.external_audit_missing);
+    assert!(params.readiness_blockers.privacy_blocked());
+    assert!(params.readiness_blockers.post_quantum_blocked());
+    assert!(params.readiness_blockers.production_blocked());
 }
 
 #[test]

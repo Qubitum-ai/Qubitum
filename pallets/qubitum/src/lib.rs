@@ -775,6 +775,52 @@ pub mod pallet {
     }
 
     #[derive(
+        Encode,
+        Decode,
+        DecodeWithMemTracking,
+        TypeInfo,
+        Clone,
+        Copy,
+        PartialEq,
+        Eq,
+        Debug,
+        MaxEncodedLen,
+    )]
+    pub struct ChainReadinessBlockers {
+        pub proof_settlement_disabled: bool,
+        pub production_zk_verifier_missing: bool,
+        pub committed_request_payloads_missing: bool,
+        pub shielded_call_payloads_missing: bool,
+        pub private_route_selection_missing: bool,
+        pub signature_mode_not_full_post_quantum: bool,
+        pub post_quantum_account_signatures_missing: bool,
+        pub identity_signature_verification_missing: bool,
+        pub external_audit_missing: bool,
+    }
+
+    impl ChainReadinessBlockers {
+        pub fn privacy_blocked(self) -> bool {
+            self.committed_request_payloads_missing
+                || self.shielded_call_payloads_missing
+                || self.private_route_selection_missing
+        }
+
+        pub fn post_quantum_blocked(self) -> bool {
+            self.signature_mode_not_full_post_quantum
+                || self.post_quantum_account_signatures_missing
+                || self.identity_signature_verification_missing
+        }
+
+        pub fn production_blocked(self) -> bool {
+            self.proof_settlement_disabled
+                || self.production_zk_verifier_missing
+                || self.privacy_blocked()
+                || self.post_quantum_blocked()
+                || self.external_audit_missing
+        }
+    }
+
+    #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
     pub struct ChainProtocolParams<Balance> {
@@ -805,6 +851,7 @@ pub mod pallet {
         pub identity_signature_commitment_policy: bool,
         pub identity_signature_challenge_binding: bool,
         pub identity_signature_verification: bool,
+        pub readiness_blockers: ChainReadinessBlockers,
         pub miner_exit_cooldown_blocks: BlockNumber,
         pub validator_exit_cooldown_blocks: BlockNumber,
         pub request_cancel_delay_blocks: BlockNumber,
@@ -2129,15 +2176,21 @@ pub mod pallet {
             let identity_signature_commitment_policy = true;
             let identity_signature_challenge_binding = true;
             let identity_signature_verification = false;
-            let privacy_complete =
-                committed_request_payloads && shielded_call_payloads && private_route_selection;
-            let post_quantum_complete = signature_mode == SignatureMode::FullPostQuantum
-                && post_quantum_account_signatures
-                && identity_signature_verification;
-            let production_ready = proof_settlement_enabled
-                && production_zk_verifier
-                && privacy_complete
-                && post_quantum_complete;
+            let readiness_blockers = ChainReadinessBlockers {
+                proof_settlement_disabled: !proof_settlement_enabled,
+                production_zk_verifier_missing: !production_zk_verifier,
+                committed_request_payloads_missing: !committed_request_payloads,
+                shielded_call_payloads_missing: !shielded_call_payloads,
+                private_route_selection_missing: !private_route_selection,
+                signature_mode_not_full_post_quantum: signature_mode
+                    != SignatureMode::FullPostQuantum,
+                post_quantum_account_signatures_missing: !post_quantum_account_signatures,
+                identity_signature_verification_missing: !identity_signature_verification,
+                external_audit_missing: true,
+            };
+            let privacy_complete = !readiness_blockers.privacy_blocked();
+            let post_quantum_complete = !readiness_blockers.post_quantum_blocked();
+            let production_ready = !readiness_blockers.production_blocked();
 
             ChainProtocolParams {
                 subnet_creation_burn: T::SubnetCreationBurn::get(),
@@ -2167,6 +2220,7 @@ pub mod pallet {
                 identity_signature_commitment_policy,
                 identity_signature_challenge_binding,
                 identity_signature_verification,
+                readiness_blockers,
                 miner_exit_cooldown_blocks: T::MinerExitCooldownBlocks::get(),
                 validator_exit_cooldown_blocks: T::ValidatorExitCooldownBlocks::get(),
                 request_cancel_delay_blocks: T::RequestCancelDelayBlocks::get(),
