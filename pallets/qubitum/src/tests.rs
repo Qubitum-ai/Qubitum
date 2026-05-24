@@ -3361,12 +3361,12 @@ fn public_failure_events_redact_route_payment_and_proof_metadata() {
         assert!(
             events
                 .iter()
-                .any(|event| matches!(event, crate::Event::MinerSlashed { miner_id: 0 }))
+                .any(|event| matches!(event, crate::Event::MinerSlashed))
         );
         assert!(
             events
                 .iter()
-                .any(|event| matches!(event, crate::Event::ValidatorSlashed { validator_id: 0 }))
+                .any(|event| matches!(event, crate::Event::ValidatorSlashed))
         );
         assert!(
             events
@@ -3393,6 +3393,18 @@ fn public_failure_events_redact_route_payment_and_proof_metadata() {
             ] {
                 assert!(!contains_subsequence(&encoded, &hidden));
             }
+        }
+        for encoded in events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event,
+                    crate::Event::MinerSlashed | crate::Event::ValidatorSlashed
+                )
+            })
+            .map(Encode::encode)
+        {
+            assert!(!contains_subsequence(&encoded, &0_u64.encode()));
         }
     });
 
@@ -3447,7 +3459,7 @@ fn public_failure_events_redact_route_payment_and_proof_metadata() {
         assert!(
             events
                 .iter()
-                .any(|event| matches!(event, crate::Event::MinerSlashed { miner_id: 0 }))
+                .any(|event| matches!(event, crate::Event::MinerSlashed))
         );
         assert!(events.iter().any(|event| matches!(
             event,
@@ -3473,6 +3485,13 @@ fn public_failure_events_redact_route_payment_and_proof_metadata() {
             ] {
                 assert!(!contains_subsequence(&encoded, &hidden));
             }
+        }
+        for encoded in events
+            .iter()
+            .filter(|event| matches!(event, crate::Event::MinerSlashed))
+            .map(Encode::encode)
+        {
+            assert!(!contains_subsequence(&encoded, &0_u64.encode()));
         }
     });
 }
@@ -6442,9 +6461,7 @@ fn verifier_rejection_slashes_and_refunds_request() {
             Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
             90_000_000_000
         );
-        System::assert_has_event(RuntimeEvent::Qubitum(crate::Event::MinerSlashed {
-            miner_id: 0,
-        }));
+        System::assert_has_event(RuntimeEvent::Qubitum(crate::Event::MinerSlashed));
         let validator = Validators::<Test>::get(0).unwrap();
         assert_eq!(
             validator.stake_commitment,
@@ -6455,9 +6472,7 @@ fn verifier_rejection_slashes_and_refunds_request() {
             Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
             90_000_000_000
         );
-        System::assert_has_event(RuntimeEvent::Qubitum(crate::Event::ValidatorSlashed {
-            validator_id: 0,
-        }));
+        System::assert_has_event(RuntimeEvent::Qubitum(crate::Event::ValidatorSlashed));
     });
 }
 
@@ -6493,9 +6508,7 @@ fn invalid_proof_challenge_slashes_miner_without_validator_self_slash() {
             expected_miner_bond_commitment(0, 2, RegistryStatus::Slashed)
         );
         assert_eq!(miner.status, RegistryStatus::Slashed);
-        System::assert_has_event(RuntimeEvent::Qubitum(crate::Event::MinerSlashed {
-            miner_id: 0,
-        }));
+        System::assert_has_event(RuntimeEvent::Qubitum(crate::Event::MinerSlashed));
         let validator = Validators::<Test>::get(0).unwrap();
         assert_eq!(
             validator.stake_commitment,

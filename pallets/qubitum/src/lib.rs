@@ -1199,9 +1199,9 @@ pub mod pallet {
         /// A proof was rejected by the verifier and the miner was slashed.
         ProofRejected { request_id: RequestId },
         /// A miner was slashed.
-        MinerSlashed { miner_id: MinerId },
+        MinerSlashed,
         /// A validator was slashed.
-        ValidatorSlashed { validator_id: ValidatorId },
+        ValidatorSlashed,
     }
 
     #[pallet::error]
@@ -1492,17 +1492,13 @@ pub mod pallet {
                         &terms_witness,
                     )?;
                     Self::slash_miner_bond(submission.miner_id, &miner_operator, slash_bps)?;
-                    Self::deposit_event(Event::MinerSlashed {
-                        miner_id: submission.miner_id,
-                    });
+                    Self::deposit_event(Event::MinerSlashed);
                     Self::slash_validator_stake(
                         submission.validator_id,
                         &validator_operator,
                         slash_bps,
                     )?;
-                    Self::deposit_event(Event::ValidatorSlashed {
-                        validator_id: submission.validator_id,
-                    });
+                    Self::deposit_event(Event::ValidatorSlashed);
                     Self::refund_rejected_request(
                         &submission,
                         &request_user,
@@ -1583,9 +1579,7 @@ pub mod pallet {
                         &terms_witness,
                     )?;
                     Self::slash_miner_bond(submission.miner_id, &miner_operator, slash_bps)?;
-                    Self::deposit_event(Event::MinerSlashed {
-                        miner_id: submission.miner_id,
-                    });
+                    Self::deposit_event(Event::MinerSlashed);
                     Self::refund_rejected_request(
                         &submission,
                         &request_user,
@@ -1630,7 +1624,7 @@ pub mod pallet {
             );
 
             Self::slash_miner_bond(miner_id, &operator, slash_bps)?;
-            Self::deposit_event(Event::MinerSlashed { miner_id });
+            Self::deposit_event(Event::MinerSlashed);
             Ok(())
         }
 
@@ -1971,7 +1965,7 @@ pub mod pallet {
             );
 
             Self::slash_validator_stake(validator_id, &operator, slash_bps)?;
-            Self::deposit_event(Event::ValidatorSlashed { validator_id });
+            Self::deposit_event(Event::ValidatorSlashed);
             Ok(())
         }
 
