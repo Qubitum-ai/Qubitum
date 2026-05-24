@@ -817,6 +817,37 @@ mod tests {
     }
 
     #[test]
+    fn prepare_rejects_proof_calls_even_when_safe_mode_whitelisted() {
+        new_test_ext().execute_with(|| {
+            for call in [proof_submission_call(), proof_challenge_call()] {
+                assert_eq!(
+                    prepare_ext(&call),
+                    Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+                );
+            }
+
+            let encoded_submission = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: proof_submission_call().encode(),
+            });
+            assert_eq!(
+                prepare_ext(&encoded_submission),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+
+            let encoded_batch = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                    calls: vec![proof_submission_call(), proof_challenge_call()],
+                })
+                .encode(),
+            });
+            assert_eq!(
+                prepare_ext(&encoded_batch),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+        });
+    }
+
+    #[test]
     fn prepare_rejects_disabled_store_encrypted_call() {
         new_test_ext().execute_with(|| {
             assert_eq!(
