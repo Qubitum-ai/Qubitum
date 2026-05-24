@@ -4673,6 +4673,94 @@ fn public_request_call_payload_exposes_witnesses_until_shielded_calls_land() {
 }
 
 #[test]
+fn public_settlement_and_cancel_call_payloads_expose_witnesses_until_shielded_calls_land() {
+    new_test_ext().execute_with(|| {
+        let params = Qubitum::protocol_params();
+        assert!(!params.shielded_call_payloads);
+        assert!(params.readiness_blockers.shielded_call_payloads_missing);
+
+        let mut submission = InferenceProofSubmission {
+            request_id: 88,
+            subnet_id: 3,
+            miner_id: 7,
+            validator_id: 9,
+            input_commitment: commitment(11),
+            output_commitment: commitment(12),
+            model_commitment: commitment(13),
+            proof: proof(14),
+            proof_system: ProofSystem::RiscZeroStark,
+            proof_size_bytes: 65_432,
+            verification_latency_ms: 77,
+            submitted_at: 55,
+        };
+        submission = bind_proof_transcript(submission);
+        let submit_terms = terms_witness(inference_terms(123_456, 777, 888), terms_blinding());
+        let encoded_submit = crate::Call::<Test>::submit_proof {
+            submission: submission.clone(),
+            request_user: 4,
+            miner_operator: 2,
+            assignment_blinding: assignment_blinding(),
+            terms_witness: submit_terms,
+        }
+        .encode();
+
+        for exposed in [
+            88_u64.encode(),
+            7_u64.encode(),
+            9_u64.encode(),
+            4_u64.encode(),
+            2_u64.encode(),
+            commitment(11).encode(),
+            commitment(12).encode(),
+            commitment(13).encode(),
+            submission.proof.proof_commitment.encode(),
+            submission.proof.journal_commitment.encode(),
+            submission.proof.image_id.encode(),
+            65_432_u32.encode(),
+            77_u32.encode(),
+            55_u64.encode(),
+            assignment_blinding().encode(),
+            terms_blinding().encode(),
+            123_456_u128.encode(),
+            777_u16.encode(),
+            888_u16.encode(),
+        ] {
+            assert!(contains_subsequence(&encoded_submit, &exposed));
+        }
+
+        let cancel_timing = InferenceRequestTimingWitness {
+            created_at: 66,
+            blinding: timing_blinding(),
+        };
+        let cancel_terms = terms_witness(inference_terms(654_321, 444, 222), terms_blinding());
+        let encoded_cancel = crate::Call::<Test>::cancel_inference {
+            request_id: 89,
+            miner_id: 7,
+            validator_id: 9,
+            assignment_blinding: assignment_blinding(),
+            timing_witness: cancel_timing,
+            terms_witness: cancel_terms,
+        }
+        .encode();
+
+        for exposed in [
+            89_u64.encode(),
+            7_u64.encode(),
+            9_u64.encode(),
+            assignment_blinding().encode(),
+            timing_blinding().encode(),
+            66_u64.encode(),
+            terms_blinding().encode(),
+            654_321_u128.encode(),
+            444_u16.encode(),
+            222_u16.encode(),
+        ] {
+            assert!(contains_subsequence(&encoded_cancel, &exposed));
+        }
+    });
+}
+
+#[test]
 fn request_commitment_call_rejects_unverifiable_committed_payloads_without_state_changes() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
