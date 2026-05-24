@@ -22,9 +22,17 @@ use ml_kem::{
 use rand_chacha::{ChaChaRng, rand_core::SeedableRng};
 use stc_shield::MemoryShieldKeystore;
 
+fn current_key_hash() -> [u8; 16] {
+    sp_io::hashing::twox_128(&valid_pk()[..])
+}
+
+fn install_pending_key() {
+    PendingKey::<Test>::put(valid_pk());
+}
+
 fn valid_submit_ciphertext() -> BoundedVec<u8, ConstU32<8192>> {
     BoundedVec::truncate_from(build_wire_ciphertext(
-        &[0xAB; 16],
+        &current_key_hash(),
         &[0xCC; 1088],
         &[0xDD; 24],
         &[0xEE; 16],
@@ -217,6 +225,7 @@ fn announce_fails_when_no_current_author() {
 fn submit_encrypted_emits_event() {
     new_test_ext().execute_with(|| {
         System::set_block_number(1);
+        install_pending_key();
 
         let ciphertext = valid_submit_ciphertext();
         let who: u64 = 1;
@@ -234,6 +243,24 @@ fn submit_encrypted_emits_event() {
                 who,
             }
             .into(),
+        );
+    });
+}
+
+#[test]
+fn submit_encrypted_rejects_unknown_key_hash() {
+    new_test_ext().execute_with(|| {
+        install_pending_key();
+        let ciphertext = BoundedVec::truncate_from(build_wire_ciphertext(
+            &[0xAB; 16],
+            &[0xCC; 1088],
+            &[0xDD; 24],
+            &[0xEE; 16],
+        ));
+
+        assert_noop!(
+            MevShield::submit_encrypted(RuntimeOrigin::signed(1), ciphertext),
+            Error::<Test>::InvalidShieldedTxPubKeyHash
         );
     });
 }

@@ -52,7 +52,7 @@ fn initialize_block_with_slot<T: frame_system::Config>(slot: u64) {
 /// Build a real max-size encrypted ciphertext (8192 bytes wire format).
 ///
 /// Returns `(wire_ciphertext, dec_key)` so the benchmark can measure decryption.
-fn build_max_encrypted_payload() -> (Vec<u8>, DecapsulationKey<MlKem768Params>) {
+fn build_max_encrypted_payload(key_hash: [u8; 16]) -> (Vec<u8>, DecapsulationKey<MlKem768Params>) {
     let mut rng = ChaCha20Rng::from_seed([42u8; 32]);
     let (dec_key, enc_key) = MlKem768::generate(&mut rng);
     let (kem_ct, shared_secret) = enc_key.encapsulate(&mut rng).unwrap();
@@ -75,8 +75,6 @@ fn build_max_encrypted_payload() -> (Vec<u8>, DecapsulationKey<MlKem768Params>) 
         .expect("AEAD encryption must succeed in benchmark setup");
 
     let kem_ct_bytes = kem_ct.as_slice();
-    let key_hash = [0u8; 16];
-
     let mut wire = Vec::with_capacity(8192);
     wire.extend_from_slice(&key_hash);
     wire.extend_from_slice(&(kem_ct_bytes.len() as u16).to_le_bytes());
@@ -148,9 +146,12 @@ mod benches {
     #[benchmark]
     fn submit_encrypted() {
         let who: T::AccountId = whitelisted_caller();
+        let pending_key: ShieldEncKey = BoundedVec::truncate_from(vec![0x42; MLKEM768_ENC_KEY_LEN]);
+        let key_hash = sp_io::hashing::twox_128(&pending_key[..]);
+        PendingKey::<T>::put(pending_key);
 
         // Build a real max-size encrypted payload.
-        let (wire, dec_key) = build_max_encrypted_payload();
+        let (wire, dec_key) = build_max_encrypted_payload(key_hash);
         let ciphertext: BoundedVec<u8, ConstU32<8192>> = BoundedVec::truncate_from(wire);
 
         #[block]

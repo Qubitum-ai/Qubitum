@@ -99,10 +99,15 @@ impl CheckQubitumShielding {
             }
             RuntimeCall::Preimage(_) => None,
             RuntimeCall::MevShield(pallet_shield::Call::submit_encrypted { ciphertext }) => {
-                if pallet_shield::parse_valid_submit_encrypted_ciphertext(ciphertext).is_some() {
+                let Some(shielded_tx) =
+                    pallet_shield::parse_valid_submit_encrypted_ciphertext(ciphertext)
+                else {
+                    return Some(CustomTransactionError::FailedShieldedTxParsing);
+                };
+                if crate::MevShield::is_shielded_using_current_key(&shielded_tx.key_hash) {
                     None
                 } else {
-                    Some(CustomTransactionError::FailedShieldedTxParsing)
+                    Some(CustomTransactionError::InvalidShieldedTxPubKeyHash)
                 }
             }
             RuntimeCall::MevShield(pallet_shield::Call::store_encrypted { .. }) => {
@@ -470,9 +475,21 @@ mod tests {
         })
     }
 
+    fn valid_shield_key_hash() -> [u8; 16] {
+        let key: stp_shield::ShieldEncKey =
+            BoundedVec::truncate_from(vec![0x42; stp_shield::MLKEM768_ENC_KEY_LEN]);
+        sp_io::hashing::twox_128(&key[..])
+    }
+
+    fn install_valid_shield_key() {
+        let key: stp_shield::ShieldEncKey =
+            BoundedVec::truncate_from(vec![0x42; stp_shield::MLKEM768_ENC_KEY_LEN]);
+        pallet_shield::PendingKey::<crate::Runtime>::put(key);
+    }
+
     fn valid_shield_ciphertext() -> BoundedVec<u8, ConstU32<8192>> {
         let mut buf = Vec::new();
-        buf.extend_from_slice(&[0xAB; 16]);
+        buf.extend_from_slice(&valid_shield_key_hash());
         buf.extend_from_slice(&(1088u16).to_le_bytes());
         buf.extend_from_slice(&[0xCC; 1088]);
         buf.extend_from_slice(&[0xDD; 24]);
@@ -494,6 +511,17 @@ mod tests {
     fn malformed_shield_call() -> RuntimeCall {
         RuntimeCall::MevShield(pallet_shield::Call::submit_encrypted {
             ciphertext: malformed_shield_ciphertext(),
+        })
+    }
+
+    fn stale_key_shield_call() -> RuntimeCall {
+        let mut ciphertext = valid_shield_ciphertext().into_inner();
+        let Some(key_hash) = ciphertext.get_mut(..16) else {
+            panic!("valid shield ciphertext must include key hash prefix");
+        };
+        key_hash.copy_from_slice(&[0xAB; 16]);
+        RuntimeCall::MevShield(pallet_shield::Call::submit_encrypted {
+            ciphertext: BoundedVec::truncate_from(ciphertext),
         })
     }
 
@@ -1109,6 +1137,21 @@ mod tests {
     }
 
     #[test]
+    fn stale_key_shield_envelope_is_rejected() {
+        new_test_ext().execute_with(|| {
+            install_valid_shield_key();
+            assert_eq!(
+                validate_ext(&stale_key_shield_call(), TransactionSource::External),
+                Err(CustomTransactionError::InvalidShieldedTxPubKeyHash.into())
+            );
+            assert_eq!(
+                validate_ext(&stale_key_shield_call(), TransactionSource::InBlock),
+                Err(CustomTransactionError::InvalidShieldedTxPubKeyHash.into())
+            );
+        });
+    }
+
+    #[test]
     fn wrapped_malformed_shield_envelopes_are_rejected() {
         new_test_ext().execute_with(|| {
             let calls = vec![
@@ -1148,6 +1191,7 @@ mod tests {
     #[test]
     fn shield_envelope_and_non_qubitum_calls_pass() {
         new_test_ext().execute_with(|| {
+            install_valid_shield_key();
             assert!(validate_ext(&shield_call(), TransactionSource::External).is_ok());
             assert!(validate_ext(&shield_call(), TransactionSource::InBlock).is_ok());
             let call = remark_call(9);
@@ -1374,8 +1418,28 @@ mod tests {
     }
 
     #[test]
+    fn prepare_rejects_stale_key_shield_envelopes() {
+        new_test_ext().execute_with(|| {
+            install_valid_shield_key();
+            assert_eq!(
+                prepare_ext(&stale_key_shield_call()),
+                Err(CustomTransactionError::InvalidShieldedTxPubKeyHash.into())
+            );
+
+            let wrapped = RuntimeCall::Utility(pallet_subtensor_utility::Call::batch_all {
+                calls: vec![stale_key_shield_call()],
+            });
+            assert_eq!(
+                prepare_ext(&wrapped),
+                Err(CustomTransactionError::InvalidShieldedTxPubKeyHash.into())
+            );
+        });
+    }
+
+    #[test]
     fn prepare_allows_shield_envelope_and_non_qubitum_calls() {
         new_test_ext().execute_with(|| {
+            install_valid_shield_key();
             assert!(prepare_ext(&shield_call()).is_ok());
             assert!(prepare_ext(&remark_call(13)).is_ok());
         });

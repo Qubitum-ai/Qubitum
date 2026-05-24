@@ -253,6 +253,8 @@ pub mod pallet {
         BadEncKeyLen,
         /// The submitted shielded ciphertext is malformed or not compatible with ML-KEM-768.
         BadCiphertext,
+        /// The submitted shielded ciphertext does not target the current shield key.
+        InvalidShieldedTxPubKeyHash,
         /// Unreachable.
         Unreachable,
         /// Too many pending extrinsics in storage.
@@ -377,9 +379,11 @@ pub mod pallet {
             ciphertext: BoundedVec<u8, ConstU32<8192>>,
         ) -> DispatchResult {
             let who = ensure_signed(origin)?;
+            let shielded_tx = parse_valid_submit_encrypted_ciphertext(&ciphertext)
+                .ok_or(Error::<T>::BadCiphertext)?;
             ensure!(
-                parse_valid_submit_encrypted_ciphertext(&ciphertext).is_some(),
-                Error::<T>::BadCiphertext
+                Self::is_shielded_using_current_key(&shielded_tx.key_hash),
+                Error::<T>::InvalidShieldedTxPubKeyHash
             );
             let id: T::Hash = T::Hashing::hash_of(&(who.clone(), &ciphertext));
 

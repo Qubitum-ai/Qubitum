@@ -66,9 +66,11 @@ where
             return Ok((Default::default(), (), origin));
         };
 
-        // Reject malformed ciphertext regardless of source.
-        if crate::parse_valid_submit_encrypted_ciphertext(ciphertext).is_none() {
+        let Some(shielded_tx) = crate::parse_valid_submit_encrypted_ciphertext(ciphertext) else {
             return Err(CustomTransactionError::FailedShieldedTxParsing.into());
+        };
+        if !crate::Pallet::<T>::is_shielded_using_current_key(&shielded_tx.key_hash) {
+            return Err(CustomTransactionError::InvalidShieldedTxPubKeyHash.into());
         }
 
         Ok((Default::default(), (), origin))
@@ -93,9 +95,11 @@ where
             return Ok(());
         };
 
-        // Reject malformed ciphertext during block preparation too.
-        if crate::parse_valid_submit_encrypted_ciphertext(ciphertext).is_none() {
+        let Some(shielded_tx) = crate::parse_valid_submit_encrypted_ciphertext(ciphertext) else {
             return Err(CustomTransactionError::FailedShieldedTxParsing.into());
+        };
+        if !crate::Pallet::<T>::is_shielded_using_current_key(&shielded_tx.key_hash) {
+            return Err(CustomTransactionError::InvalidShieldedTxPubKeyHash.into());
         }
 
         Ok(())
@@ -105,6 +109,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PendingKey;
     use crate::mock::*;
     use frame_support::dispatch::GetDispatchInfo;
     use frame_support::pallet_prelude::{BoundedVec, ConstU32};
@@ -126,6 +131,15 @@ mod tests {
         buf.extend_from_slice(&aead_ct);
 
         BoundedVec::truncate_from(buf)
+    }
+
+    fn current_key_hash() -> [u8; 16] {
+        let key = valid_pk();
+        sp_io::hashing::twox_128(&key[..])
+    }
+
+    fn install_pending_key() {
+        PendingKey::<Test>::put(valid_pk());
     }
 
     fn make_submit_call(key_hash: [u8; 16]) -> RuntimeCall {
@@ -231,7 +245,8 @@ mod tests {
     #[test]
     fn wellformed_ciphertext_accepted_inblock() {
         new_test_ext().execute_with(|| {
-            let call = make_submit_call([0xFF; 16]);
+            install_pending_key();
+            let call = make_submit_call(current_key_hash());
             let validity = validate_ext(Some(1), &call, TransactionSource::InBlock).unwrap();
             assert_eq!(validity, ValidTransaction::default());
         });
@@ -240,7 +255,8 @@ mod tests {
     #[test]
     fn wellformed_ciphertext_accepted_external() {
         new_test_ext().execute_with(|| {
-            let call = make_submit_call([0xFF; 16]);
+            install_pending_key();
+            let call = make_submit_call(current_key_hash());
             let validity = validate_ext(Some(1), &call, TransactionSource::External).unwrap();
             assert_eq!(validity, ValidTransaction::default());
         });
@@ -249,9 +265,46 @@ mod tests {
     #[test]
     fn wellformed_ciphertext_accepted_local() {
         new_test_ext().execute_with(|| {
-            let call = make_submit_call([0xFF; 16]);
+            install_pending_key();
+            let call = make_submit_call(current_key_hash());
             let validity = validate_ext(Some(1), &call, TransactionSource::Local).unwrap();
             assert_eq!(validity, ValidTransaction::default());
+        });
+    }
+
+    #[test]
+    fn wellformed_ciphertext_with_unknown_key_rejected_from_pool() {
+        new_test_ext().execute_with(|| {
+            install_pending_key();
+            let call = make_submit_call([0xFF; 16]);
+            assert_eq!(
+                validate_ext(Some(1), &call, TransactionSource::External),
+                Err(CustomTransactionError::InvalidShieldedTxPubKeyHash.into())
+            );
+        });
+    }
+
+    #[test]
+    fn wellformed_ciphertext_with_unknown_key_rejected_inblock() {
+        new_test_ext().execute_with(|| {
+            install_pending_key();
+            let call = make_submit_call([0xFF; 16]);
+            assert_eq!(
+                validate_ext(Some(1), &call, TransactionSource::InBlock),
+                Err(CustomTransactionError::InvalidShieldedTxPubKeyHash.into())
+            );
+        });
+    }
+
+    #[test]
+    fn wellformed_ciphertext_with_unknown_key_rejected_during_prepare() {
+        new_test_ext().execute_with(|| {
+            install_pending_key();
+            let call = make_submit_call([0xFF; 16]);
+            assert_eq!(
+                prepare_ext(Some(1), &call),
+                Err(CustomTransactionError::InvalidShieldedTxPubKeyHash.into())
+            );
         });
     }
 }
