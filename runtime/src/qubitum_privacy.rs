@@ -251,6 +251,57 @@ mod tests {
         }
     }
 
+    fn request_inference_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::request_inference {
+            request_id: 3,
+            params: pallet_qubitum::InferenceRequestParams {
+                subnet_id: 0,
+                miner_id: 0,
+                validator_id: 0,
+                input_commitment: commitment(1),
+                assignment_blinding: commitment(90),
+                timing_blinding: commitment(92),
+                terms_blinding: commitment(91),
+                payment: 1_000u64.into(),
+                validator_fee_bps: 250,
+                treasury_fee_bps: 50,
+            },
+        })
+    }
+
+    fn request_inference_auto_route_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::request_inference_auto_route {
+            request_id: 4,
+            params: pallet_qubitum::AutoRouteInferenceRequestParams {
+                subnet_id: 0,
+                input_commitment: commitment(1),
+                assignment_blinding: commitment(90),
+                timing_blinding: commitment(92),
+                terms_blinding: commitment(91),
+                payment: 1_000u64.into(),
+                validator_fee_bps: 250,
+                treasury_fee_bps: 50,
+            },
+        })
+    }
+
+    fn request_inference_commitments_call() -> RuntimeCall {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::request_inference_commitments {
+            request_id: 5,
+            params: pallet_qubitum::InferenceRequestCommitmentParams {
+                subnet_id: 0,
+                input_commitment: commitment(1),
+                assignment_commitment: commitment(10),
+                created_at: 1,
+                timing_commitment: commitment(11),
+                terms_commitment: commitment(12),
+                payment: 1_000u64.into(),
+                validator_fee_bps: 250,
+                treasury_fee_bps: 50,
+            },
+        })
+    }
+
     fn proof_submission_call() -> RuntimeCall {
         RuntimeCall::Qubitum(pallet_qubitum::Call::submit_proof {
             submission: proof_submission(1),
@@ -404,6 +455,40 @@ mod tests {
                 calls: vec![proof_submission_call(), proof_challenge_call()],
             });
             assert_qubitum_rejected(wrapped);
+        });
+    }
+
+    #[test]
+    fn request_opening_calls_must_be_shielded_even_when_terms_are_public() {
+        new_test_ext().execute_with(|| {
+            for call in [
+                request_inference_call(),
+                request_inference_auto_route_call(),
+                request_inference_commitments_call(),
+            ] {
+                assert_qubitum_rejected(call);
+            }
+
+            let wrapped = RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                calls: vec![
+                    request_inference_call(),
+                    request_inference_auto_route_call(),
+                    request_inference_commitments_call(),
+                ],
+            });
+            assert_qubitum_rejected(wrapped);
+
+            let encoded_batch = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                    calls: vec![
+                        request_inference_call(),
+                        request_inference_auto_route_call(),
+                        request_inference_commitments_call(),
+                    ],
+                })
+                .encode(),
+            });
+            assert_qubitum_rejected(encoded_batch);
         });
     }
 
@@ -837,6 +922,37 @@ mod tests {
             let encoded_batch = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
                 bytes: RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
                     calls: vec![proof_submission_call(), proof_challenge_call()],
+                })
+                .encode(),
+            });
+            assert_eq!(
+                prepare_ext(&encoded_batch),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+        });
+    }
+
+    #[test]
+    fn prepare_rejects_request_opening_calls_even_when_terms_are_public() {
+        new_test_ext().execute_with(|| {
+            for call in [
+                request_inference_call(),
+                request_inference_auto_route_call(),
+                request_inference_commitments_call(),
+            ] {
+                assert_eq!(
+                    prepare_ext(&call),
+                    Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+                );
+            }
+
+            let encoded_batch = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                    calls: vec![
+                        request_inference_call(),
+                        request_inference_auto_route_call(),
+                        request_inference_commitments_call(),
+                    ],
                 })
                 .encode(),
             });
