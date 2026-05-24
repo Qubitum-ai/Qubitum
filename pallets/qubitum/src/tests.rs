@@ -821,11 +821,7 @@ fn routing_requires_post_quantum_identity_bundles() {
 
         assert_eq!(
             Qubitum::next_route_availability(0),
-            ChainRouteAvailability {
-                request_id: 0,
-                subnet_id: 0,
-                available: false,
-            }
+            ChainRouteAvailability { available: false }
         );
         assert_noop!(
             Qubitum::request_inference(
@@ -4968,21 +4964,17 @@ fn public_next_route_availability_does_not_expose_participant_assignment_or_futu
 
         assert_eq!(
             Qubitum::next_route_availability(0),
-            ChainRouteAvailability {
-                request_id: 42,
-                subnet_id: 0,
-                available: true,
-            }
+            ChainRouteAvailability { available: true }
         );
+        let encoded_available = Qubitum::next_route_availability(0).encode();
+        for hidden in [42_u64.encode(), 0_u64.encode()] {
+            assert!(!contains_subsequence(&encoded_available, &hidden));
+        }
 
         assert_ok!(Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0));
         assert_eq!(
             Qubitum::next_route_availability(0),
-            ChainRouteAvailability {
-                request_id: 42,
-                subnet_id: 0,
-                available: false,
-            }
+            ChainRouteAvailability { available: false }
         );
     });
 }

@@ -729,8 +729,6 @@ pub mod pallet {
         MaxEncodedLen,
     )]
     pub struct ChainRouteAvailability {
-        pub request_id: RequestId,
-        pub subnet_id: SubnetId,
         pub available: bool,
     }
 
@@ -2274,8 +2272,6 @@ pub mod pallet {
         pub fn next_route_availability(subnet_id: SubnetId) -> ChainRouteAvailability {
             let request_id = RequestCount::<T>::get();
             ChainRouteAvailability {
-                request_id,
-                subnet_id,
                 available: Self::route_assignment(subnet_id, request_id).is_some(),
             }
         }
