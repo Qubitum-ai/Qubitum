@@ -6670,6 +6670,66 @@ fn public_accounting_view_redacts_capital_totals() {
 }
 
 #[test]
+fn raw_capital_accounting_storage_remains_visible_until_private_accounting_lands() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(44);
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(44)));
+
+        let params = Qubitum::protocol_params();
+        let raw_accounting = Qubitum::raw_accounting();
+        assert!(!params.private_capital_accounting);
+        assert!(params.public_accounting_totals_redacted);
+        assert!(params.readiness_blockers.private_capital_accounting_missing);
+
+        assert_eq!(MinerLockedBond::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(raw_accounting.total_inference_escrowed, 1_000);
+        assert_eq!(raw_accounting.total_miner_payouts, 970);
+        assert_eq!(raw_accounting.total_validator_fees, 25);
+        assert_eq!(raw_accounting.total_treasury_fees, 5);
+
+        for (encoded_storage_value, exposed_amount) in [
+            (
+                sp_io::storage::get(&MinerLockedBond::<Test>::hashed_key_for(0))
+                    .unwrap()
+                    .to_vec(),
+                MIN_MINER_BOND.encode(),
+            ),
+            (
+                sp_io::storage::get(&ValidatorLockedStake::<Test>::hashed_key_for(0))
+                    .unwrap()
+                    .to_vec(),
+                MIN_MINER_BOND.encode(),
+            ),
+            (
+                TotalInferenceEscrowed::<Test>::get().encode(),
+                1_000_u128.encode(),
+            ),
+            (TotalMinerPayouts::<Test>::get().encode(), 970_u128.encode()),
+            (TotalValidatorFees::<Test>::get().encode(), 25_u128.encode()),
+            (TotalTreasuryFees::<Test>::get().encode(), 5_u128.encode()),
+        ] {
+            assert!(contains_subsequence(
+                &encoded_storage_value,
+                &exposed_amount
+            ));
+        }
+
+        let public_accounting = Qubitum::accounting().encode();
+        for hidden in [
+            MIN_MINER_BOND.encode(),
+            1_000_u128.encode(),
+            970_u128.encode(),
+            25_u128.encode(),
+            5_u128.encode(),
+        ] {
+            assert!(!contains_subsequence(&public_accounting, &hidden));
+        }
+    });
+}
+
+#[test]
 fn public_request_status_counts_redact_activity_totals() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
