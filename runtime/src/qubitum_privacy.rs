@@ -8,6 +8,7 @@ use subtensor_macros::freeze_struct;
 use subtensor_runtime_common::CustomTransactionError;
 
 const MAX_CALL_SCAN_DEPTH: u8 = 8;
+const MAX_PREIMAGE_DECODE_PROBE_DEPTH: u32 = 32;
 
 #[freeze_struct("6fa88ccc5f626e1a")]
 #[derive(Default, Encode, Decode, DecodeWithMemTracking, Clone, Eq, PartialEq, TypeInfo)]
@@ -30,7 +31,18 @@ impl CheckQubitumShielding {
         let remaining_depth = u32::from(MAX_CALL_SCAN_DEPTH - depth);
         match RuntimeCall::decode_all_with_depth_limit(remaining_depth, &mut &bytes[..]) {
             Ok(call) => Self::privacy_violation_at_depth(&call, depth),
-            Err(_) => Some(CustomTransactionError::QubitumCallMustBeShielded),
+            Err(_) => {
+                if RuntimeCall::decode_all_with_depth_limit(
+                    MAX_PREIMAGE_DECODE_PROBE_DEPTH,
+                    &mut &bytes[..],
+                )
+                .is_ok()
+                {
+                    Some(CustomTransactionError::QubitumCallMustBeShielded)
+                } else {
+                    None
+                }
+            }
         }
     }
 
@@ -509,12 +521,12 @@ mod tests {
     }
 
     #[test]
-    fn encoded_preimage_malformed_call_bytes_fail_closed() {
+    fn encoded_preimage_malformed_non_call_bytes_pass() {
         new_test_ext().execute_with(|| {
             let call = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
                 bytes: vec![0xFF; 8],
             });
-            assert_qubitum_rejected(call);
+            assert!(validate_ext(&call, TransactionSource::External).is_ok());
         });
     }
 
