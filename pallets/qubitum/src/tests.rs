@@ -2873,6 +2873,99 @@ fn identity_signature_commitments_are_not_reported_as_verified() {
 }
 
 #[test]
+fn challenge_bound_signature_commitments_are_shape_only_until_crypto_verification_lands() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+
+        let miner = Miners::<Test>::get(0).unwrap();
+        let miner_challenge = Qubitum::miner_identity_signature_challenge(
+            0,
+            miner.operator_commitment,
+            Some(commitment(68)),
+            Some(commitment(69)),
+        );
+        let unsigned_miner_signature = SignatureCommitment {
+            algorithm: SignatureAlgorithm::Dilithium3,
+            public_key_commitment: commitment(180),
+            signature_commitment: [0; 32],
+        };
+        let shape_only_miner_bundle = SignatureBundle {
+            classical: None,
+            post_quantum: Some(SignatureCommitment {
+                signature_commitment: Qubitum::identity_signature_binding(
+                    miner_challenge,
+                    unsigned_miner_signature,
+                ),
+                ..unsigned_miner_signature
+            }),
+        };
+
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(2),
+            0,
+            Some(commitment(68)),
+            Some(commitment(69)),
+            shape_only_miner_bundle,
+        ));
+
+        let validator = Validators::<Test>::get(0).unwrap();
+        let validator_challenge = Qubitum::validator_identity_signature_challenge(
+            0,
+            validator.operator_commitment,
+            Some(commitment(70)),
+            Some(commitment(71)),
+        );
+        let unsigned_validator_signature = SignatureCommitment {
+            algorithm: SignatureAlgorithm::Dilithium3,
+            public_key_commitment: commitment(181),
+            signature_commitment: [0; 32],
+        };
+        let shape_only_validator_bundle = SignatureBundle {
+            classical: None,
+            post_quantum: Some(SignatureCommitment {
+                signature_commitment: Qubitum::identity_signature_binding(
+                    validator_challenge,
+                    unsigned_validator_signature,
+                ),
+                ..unsigned_validator_signature
+            }),
+        };
+
+        assert_ok!(Qubitum::set_validator_identity_commitments(
+            RuntimeOrigin::signed(3),
+            0,
+            Some(commitment(70)),
+            Some(commitment(71)),
+            shape_only_validator_bundle,
+        ));
+
+        let params = Qubitum::protocol_params();
+        assert_eq!(
+            MinerIdentitySignatureBundles::<Test>::get(0),
+            Some(shape_only_miner_bundle)
+        );
+        assert_eq!(
+            ValidatorIdentitySignatureBundles::<Test>::get(0),
+            Some(shape_only_validator_bundle)
+        );
+        assert!(!params.post_quantum_signature_crypto_verification);
+        assert!(!params.identity_signature_verification);
+        assert!(
+            params
+                .readiness_blockers
+                .post_quantum_signature_crypto_verification_missing
+        );
+        assert!(
+            params
+                .readiness_blockers
+                .identity_signature_verification_missing
+        );
+        assert!(params.readiness_blockers.post_quantum_blocked());
+        assert!(!params.post_quantum_complete);
+    });
+}
+
+#[test]
 fn routing_and_proof_reject_unbound_identity_signature_bundles() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
