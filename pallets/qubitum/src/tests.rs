@@ -752,6 +752,141 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
 }
 
 #[test]
+fn storage_keys_remain_linkable_until_private_keying_lands() {
+    new_test_ext().execute_with(|| {
+        let params = Qubitum::protocol_params();
+        assert!(!params.private_storage_keys);
+        assert!(!params.private_routing_indexes);
+        assert!(!params.private_capital_accounting);
+        assert!(params.readiness_blockers.private_storage_keys_missing);
+        assert!(params.readiness_blockers.private_routing_indexes_missing);
+        assert!(params.readiness_blockers.private_capital_accounting_missing);
+
+        let subnet_id = 7_u16;
+        let miner_id = 11_u64;
+        let validator_id = 13_u64;
+        let request_id = 91_u64;
+
+        for (storage_name, storage_key, raw_id) in [
+            (
+                "Subnets",
+                Subnets::<Test>::hashed_key_for(subnet_id),
+                subnet_id.encode(),
+            ),
+            (
+                "ActiveMinersBySubnet",
+                ActiveMinersBySubnet::<Test>::hashed_key_for(subnet_id),
+                subnet_id.encode(),
+            ),
+            (
+                "ActiveValidatorsBySubnet",
+                ActiveValidatorsBySubnet::<Test>::hashed_key_for(subnet_id),
+                subnet_id.encode(),
+            ),
+        ] {
+            assert!(
+                contains_subsequence(&storage_key, &raw_id),
+                "{storage_name} storage key no longer exposes the raw subnet id; update the readiness flags"
+            );
+        }
+
+        for (storage_name, storage_key, raw_id) in [
+            (
+                "Miners",
+                Miners::<Test>::hashed_key_for(miner_id),
+                miner_id.encode(),
+            ),
+            (
+                "MinerIdentityCommitments",
+                MinerIdentityCommitments::<Test>::hashed_key_for(miner_id),
+                miner_id.encode(),
+            ),
+            (
+                "MinerIdentitySignatureBundles",
+                MinerIdentitySignatureBundles::<Test>::hashed_key_for(miner_id),
+                miner_id.encode(),
+            ),
+            (
+                "MinerIdentitySignatureChallenges",
+                MinerIdentitySignatureChallenges::<Test>::hashed_key_for(miner_id),
+                miner_id.encode(),
+            ),
+            (
+                "MinerLockedBond",
+                MinerLockedBond::<Test>::hashed_key_for(miner_id),
+                miner_id.encode(),
+            ),
+            (
+                "PendingMinerRequests",
+                PendingMinerRequests::<Test>::hashed_key_for(miner_id),
+                miner_id.encode(),
+            ),
+        ] {
+            assert!(
+                contains_subsequence(&storage_key, &raw_id),
+                "{storage_name} storage key no longer exposes the raw miner id; update the readiness flags"
+            );
+        }
+
+        for (storage_name, storage_key, raw_id) in [
+            (
+                "Validators",
+                Validators::<Test>::hashed_key_for(validator_id),
+                validator_id.encode(),
+            ),
+            (
+                "ValidatorIdentityCommitments",
+                ValidatorIdentityCommitments::<Test>::hashed_key_for(validator_id),
+                validator_id.encode(),
+            ),
+            (
+                "ValidatorIdentitySignatureBundles",
+                ValidatorIdentitySignatureBundles::<Test>::hashed_key_for(validator_id),
+                validator_id.encode(),
+            ),
+            (
+                "ValidatorIdentitySignatureChallenges",
+                ValidatorIdentitySignatureChallenges::<Test>::hashed_key_for(validator_id),
+                validator_id.encode(),
+            ),
+            (
+                "ValidatorLockedStake",
+                ValidatorLockedStake::<Test>::hashed_key_for(validator_id),
+                validator_id.encode(),
+            ),
+            (
+                "PendingValidatorRequests",
+                PendingValidatorRequests::<Test>::hashed_key_for(validator_id),
+                validator_id.encode(),
+            ),
+        ] {
+            assert!(
+                contains_subsequence(&storage_key, &raw_id),
+                "{storage_name} storage key no longer exposes the raw validator id; update the readiness flags"
+            );
+        }
+
+        for (storage_name, storage_key, raw_id) in [
+            (
+                "InferenceRequests",
+                InferenceRequests::<Test>::hashed_key_for(request_id),
+                request_id.encode(),
+            ),
+            (
+                "ProofRecords",
+                ProofRecords::<Test>::hashed_key_for(request_id),
+                request_id.encode(),
+            ),
+        ] {
+            assert!(
+                contains_subsequence(&storage_key, &raw_id),
+                "{storage_name} storage key no longer exposes the raw request id; update the readiness flags"
+            );
+        }
+    });
+}
+
+#[test]
 fn protocol_params_are_policy_only_across_state_transitions() {
     new_test_ext().execute_with(|| {
         let baseline = Qubitum::protocol_params();
