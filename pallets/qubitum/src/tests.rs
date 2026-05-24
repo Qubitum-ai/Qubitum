@@ -3329,6 +3329,42 @@ fn public_qubitum_events_remain_payloadless() {
 }
 
 #[test]
+fn event_stream_reveals_activity_sequence_until_private_metadata_lands() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        System::set_block_number(1);
+        System::reset_events();
+
+        request_inference(42);
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(42)));
+
+        let params = Qubitum::protocol_params();
+        assert!(!params.private_event_metadata);
+        assert!(params.public_event_payloads_redacted);
+        assert!(params.readiness_blockers.private_event_metadata_missing);
+
+        let events: Vec<_> = System::events()
+            .into_iter()
+            .filter_map(|record| match record.event {
+                RuntimeEvent::Qubitum(event) => Some(event),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            events,
+            vec![
+                crate::Event::InferenceRequested,
+                crate::Event::ProofAccepted,
+                crate::Event::InferenceSettled,
+            ]
+        );
+        for encoded in events.iter().map(Encode::encode) {
+            assert_eq!(encoded.len(), 1);
+        }
+    });
+}
+
+#[test]
 fn public_registry_events_redact_operator_capital_model_and_exit_schedule() {
     new_test_ext().execute_with(|| {
         System::set_block_number(7);
