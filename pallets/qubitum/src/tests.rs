@@ -5297,6 +5297,46 @@ fn next_route_assignment_uses_chain_next_request_id() {
 }
 
 #[test]
+fn route_selection_is_deterministic_until_private_selection_lands() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(12),
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            1,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(2),
+            1,
+            Some(commitment(124)),
+            Some(commitment(125)),
+            miner_identity_signature_bundle(1, Some(commitment(124)), Some(commitment(125))),
+        ));
+
+        let params = Qubitum::protocol_params();
+        assert!(!params.private_route_selection);
+        assert!(params.public_route_availability_redacted);
+        assert!(params.readiness_blockers.private_route_selection_missing);
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0, 1]);
+
+        let request_42 = Qubitum::route_assignment(0, 42).unwrap();
+        let request_43 = Qubitum::route_assignment(0, 43).unwrap();
+        assert_eq!(request_42, Qubitum::route_assignment(0, 42).unwrap());
+        assert_eq!(request_43, Qubitum::route_assignment(0, 43).unwrap());
+        assert_eq!(request_42.miner_id, 0);
+        assert_eq!(request_43.miner_id, 1);
+        assert_eq!(request_42.validator_id, 0);
+        assert_eq!(request_43.validator_id, 0);
+    });
+}
+
+#[test]
 fn public_next_route_availability_does_not_expose_participant_assignment_or_future_oracle() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
