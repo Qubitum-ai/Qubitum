@@ -4761,6 +4761,127 @@ fn public_settlement_and_cancel_call_payloads_expose_witnesses_until_shielded_ca
 }
 
 #[test]
+fn public_route_challenge_and_identity_calls_expose_commitments_until_shielded_calls_land() {
+    new_test_ext().execute_with(|| {
+        let params = Qubitum::protocol_params();
+        assert!(!params.shielded_call_payloads);
+        assert!(!params.private_event_metadata);
+        assert!(params.readiness_blockers.shielded_call_payloads_missing);
+
+        let auto_route_params = AutoRouteInferenceRequestParams {
+            subnet_id: 3,
+            input_commitment: commitment(21),
+            assignment_blinding: assignment_blinding(),
+            timing_blinding: timing_blinding(),
+            terms_blinding: terms_blinding(),
+            payment: 777_000,
+            validator_fee_bps: 321,
+            treasury_fee_bps: 123,
+        };
+        let encoded_auto_route = crate::Call::<Test>::request_inference_auto_route {
+            request_id: 90,
+            params: auto_route_params,
+        }
+        .encode();
+        for exposed in [
+            90_u64.encode(),
+            3_u16.encode(),
+            commitment(21).encode(),
+            assignment_blinding().encode(),
+            timing_blinding().encode(),
+            terms_blinding().encode(),
+            777_000_u128.encode(),
+            321_u16.encode(),
+            123_u16.encode(),
+        ] {
+            assert!(contains_subsequence(&encoded_auto_route, &exposed));
+        }
+
+        let mut challenge_submission = InferenceProofSubmission {
+            request_id: 91,
+            subnet_id: 4,
+            miner_id: 12,
+            validator_id: 13,
+            input_commitment: commitment(31),
+            output_commitment: commitment(32),
+            model_commitment: commitment(33),
+            proof: proof(34),
+            proof_system: ProofSystem::RiscZeroStark,
+            proof_size_bytes: 54_321,
+            verification_latency_ms: 66,
+            submitted_at: 44,
+        };
+        challenge_submission = bind_proof_transcript(challenge_submission);
+        let challenge_terms = terms_witness(inference_terms(456_789, 654, 345), terms_blinding());
+        let encoded_challenge = crate::Call::<Test>::challenge_proof {
+            submission: challenge_submission.clone(),
+            request_user: 4,
+            miner_operator: 2,
+            assignment_blinding: assignment_blinding(),
+            terms_witness: challenge_terms,
+        }
+        .encode();
+        for exposed in [
+            91_u64.encode(),
+            12_u64.encode(),
+            13_u64.encode(),
+            4_u64.encode(),
+            2_u64.encode(),
+            commitment(31).encode(),
+            commitment(32).encode(),
+            commitment(33).encode(),
+            challenge_submission.proof.proof_commitment.encode(),
+            challenge_submission.proof.journal_commitment.encode(),
+            challenge_submission.proof.image_id.encode(),
+            54_321_u32.encode(),
+            66_u32.encode(),
+            44_u64.encode(),
+            assignment_blinding().encode(),
+            terms_blinding().encode(),
+            456_789_u128.encode(),
+            654_u16.encode(),
+            345_u16.encode(),
+        ] {
+            assert!(contains_subsequence(&encoded_challenge, &exposed));
+        }
+
+        let miner_signature_bundle = post_quantum_signature_bundle();
+        let encoded_miner_identity = crate::Call::<Test>::set_miner_identity_commitments {
+            miner_id: 7,
+            shielded_identity_commitment: Some(commitment(201)),
+            endpoint_commitment: Some(commitment(202)),
+            signature_bundle: miner_signature_bundle,
+        }
+        .encode();
+        for exposed in [
+            7_u64.encode(),
+            commitment(201).encode(),
+            commitment(202).encode(),
+            miner_signature_bundle.encode(),
+        ] {
+            assert!(contains_subsequence(&encoded_miner_identity, &exposed));
+        }
+
+        let validator_signature_bundle = post_quantum_signature_bundle();
+        let encoded_validator_identity = crate::Call::<Test>::set_validator_identity_commitments {
+            validator_id: 8,
+            shielded_identity_commitment: Some(commitment(203)),
+            endpoint_commitment: Some(commitment(204)),
+            signature_bundle: validator_signature_bundle,
+        }
+        .encode();
+        for exposed in [
+            8_u64.encode(),
+            commitment(203).encode(),
+            commitment(204).encode(),
+            validator_signature_bundle.encode(),
+        ] {
+            assert!(contains_subsequence(&encoded_validator_identity, &exposed));
+        }
+    });
+}
+
+#[test]
 fn request_commitment_call_rejects_unverifiable_committed_payloads_without_state_changes() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
