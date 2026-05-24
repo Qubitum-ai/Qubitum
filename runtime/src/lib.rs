@@ -75,7 +75,7 @@ use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 use stp_shield::ShieldedTransaction;
 use substrate_fixed::types::U96F32;
-use subtensor_precompiles::Precompiles;
+use subtensor_precompiles::{Precompiles, ProxyRuntimeCallFilter};
 use subtensor_runtime_common::{AlphaBalance, AuthorshipInfo, TaoBalance, time::*, *};
 use subtensor_swap_interface::{Order, SwapHandler};
 
@@ -1655,9 +1655,19 @@ pub struct ContractCallFilter;
 impl Contains<RuntimeCall> for ContractCallFilter {
     fn contains(call: &RuntimeCall) -> bool {
         match call {
-            RuntimeCall::Proxy(inner) => matches!(inner, pallet_proxy::Call::proxy { .. }),
+            RuntimeCall::Proxy(inner) => {
+                matches!(inner, pallet_proxy::Call::proxy { .. })
+                    && qubitum_privacy::CheckQubitumShielding::private_runtime_call_violation(call)
+                        .is_none()
+            }
             _ => false,
         }
+    }
+}
+
+impl ProxyRuntimeCallFilter for RuntimeCall {
+    fn contains_private_runtime_call(&self) -> bool {
+        qubitum_privacy::CheckQubitumShielding::private_runtime_call_violation(self).is_some()
     }
 }
 

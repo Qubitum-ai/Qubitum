@@ -36,7 +36,7 @@ pub use extensions::PrecompileExt;
 pub use leasing::LeasingPrecompile;
 pub use metagraph::MetagraphPrecompile;
 pub use neuron::NeuronPrecompile;
-pub use proxy::ProxyPrecompile;
+pub use proxy::{ProxyPrecompile, ProxyRuntimeCallFilter};
 pub use sr25519::Sr25519Verify;
 pub use staking::{StakingPrecompile, StakingPrecompileV2};
 pub use storage_query::StorageQueryPrecompile;
@@ -83,6 +83,7 @@ where
         + scale_info::TypeInfo,
     R::AccountId: From<[u8; 32]> + ByteArray + Into<[u8; 32]>,
     <R as frame_system::Config>::RuntimeOrigin: AsSystemOriginSigner<R::AccountId> + Clone,
+    <R as pallet_proxy::Config>::RuntimeCall: ProxyRuntimeCallFilter,
     <R as frame_system::Config>::RuntimeCall: From<pallet_subtensor::Call<R>>
         + From<pallet_proxy::Call<R>>
         + From<pallet_balances::Call<R>>
@@ -93,7 +94,8 @@ where
         + IsSubType<pallet_balances::Call<R>>
         + IsSubType<pallet_subtensor::Call<R>>
         + IsSubType<pallet_shield::Call<R>>
-        + IsSubType<pallet_subtensor_proxy::Call<R>>,
+        + IsSubType<pallet_subtensor_proxy::Call<R>>
+        + ProxyRuntimeCallFilter,
     <R as pallet_evm::Config>::AddressMapping: AddressMapping<R::AccountId>,
     <R as pallet_balances::Config>::Balance: TryFrom<U256>,
     <<R as frame_system::Config>::Lookup as StaticLookup>::Source: From<R::AccountId>,
@@ -120,6 +122,7 @@ where
         + scale_info::TypeInfo,
     R::AccountId: From<[u8; 32]> + ByteArray + Into<[u8; 32]>,
     <R as frame_system::Config>::RuntimeOrigin: AsSystemOriginSigner<R::AccountId> + Clone,
+    <R as pallet_proxy::Config>::RuntimeCall: ProxyRuntimeCallFilter,
     <R as frame_system::Config>::RuntimeCall: From<pallet_subtensor::Call<R>>
         + From<pallet_proxy::Call<R>>
         + From<pallet_balances::Call<R>>
@@ -130,7 +133,8 @@ where
         + IsSubType<pallet_balances::Call<R>>
         + IsSubType<pallet_subtensor::Call<R>>
         + IsSubType<pallet_shield::Call<R>>
-        + IsSubType<pallet_subtensor_proxy::Call<R>>,
+        + IsSubType<pallet_subtensor_proxy::Call<R>>
+        + ProxyRuntimeCallFilter,
     <R as pallet_evm::Config>::AddressMapping: AddressMapping<R::AccountId>,
     <R as pallet_balances::Config>::Balance: TryFrom<U256>,
     <<R as frame_system::Config>::Lookup as StaticLookup>::Source: From<R::AccountId>,
@@ -188,6 +192,7 @@ where
         + scale_info::TypeInfo,
     R::AccountId: From<[u8; 32]> + ByteArray + Into<[u8; 32]>,
     <R as frame_system::Config>::RuntimeOrigin: AsSystemOriginSigner<R::AccountId> + Clone,
+    <R as pallet_proxy::Config>::RuntimeCall: ProxyRuntimeCallFilter,
     <R as frame_system::Config>::RuntimeCall: From<pallet_subtensor::Call<R>>
         + From<pallet_proxy::Call<R>>
         + From<pallet_balances::Call<R>>
@@ -199,6 +204,7 @@ where
         + IsSubType<pallet_subtensor::Call<R>>
         + IsSubType<pallet_shield::Call<R>>
         + IsSubType<pallet_subtensor_proxy::Call<R>>
+        + ProxyRuntimeCallFilter
         + Decode,
     <<R as frame_system::Config>::RuntimeCall as Dispatchable>::RuntimeOrigin:
         From<Option<pallet_evm::AccountIdOf<R>>>,

@@ -23,6 +23,12 @@ impl CheckQubitumShielding {
         Self::privacy_violation_at_depth(call, 0)
     }
 
+    pub(crate) fn private_runtime_call_violation(
+        call: &RuntimeCall,
+    ) -> Option<CustomTransactionError> {
+        Self::privacy_violation(call)
+    }
+
     fn encoded_bytes_privacy_violation(bytes: &[u8], depth: u8) -> Option<CustomTransactionError> {
         if depth >= MAX_CALL_SCAN_DEPTH {
             return Some(CustomTransactionError::QubitumCallMustBeShielded);

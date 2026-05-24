@@ -2,14 +2,21 @@
 #![allow(clippy::expect_used)]
 
 use fp_evm::{Context, ExitError, PrecompileFailure, PrecompileResult};
-use node_subtensor_runtime::{BuildStorage, Runtime, RuntimeGenesisConfig, System};
+use frame_support::traits::Contains;
+use node_subtensor_runtime::{
+    BuildStorage, ContractCallFilter, Runtime, RuntimeCall, RuntimeGenesisConfig, System,
+};
 use pallet_evm::{BalanceConverter, PrecompileSet};
 use precompile_utils::solidity::encode_with_selector;
 use precompile_utils::testing::MockHandle;
+use qubitum_protocol::{ProofSystem, SubnetDomain};
 use sp_core::{H160, H256, U256};
+use sp_runtime::codec::Encode;
 use sp_runtime::traits::Hash;
 use std::collections::BTreeSet;
-use subtensor_precompiles::{BalanceTransferPrecompile, PrecompileExt, Precompiles};
+use subtensor_precompiles::{
+    BalanceTransferPrecompile, PrecompileExt, Precompiles, ProxyPrecompile,
+};
 
 type AccountId = <Runtime as frame_system::Config>::AccountId;
 
@@ -54,6 +61,13 @@ fn addr_from_index(index: u64) -> H160 {
 fn selector_u32(signature: &str) -> u32 {
     let hash = sp_io::hashing::keccak_256(signature.as_bytes());
     u32::from_be_bytes([hash[0], hash[1], hash[2], hash[3]])
+}
+
+fn qubitum_create_subnet_call() -> RuntimeCall {
+    RuntimeCall::Qubitum(pallet_qubitum::Call::create_subnet {
+        domain: SubnetDomain::Code,
+        proof_system: ProofSystem::RiscZeroStark,
+    })
 }
 
 #[test]
@@ -164,4 +178,59 @@ fn balance_transfer_precompile_respects_dispatch_guard_policy() {
         assert_eq!(source_balance_after, source_balance_before);
         assert_eq!(destination_balance_after, destination_balance_before);
     });
+}
+
+#[test]
+fn proxy_precompile_rejects_qubitum_call_bytes() {
+    new_test_ext().execute_with(|| {
+        let precompiles = Precompiles::<Runtime>::new();
+        let precompile_addr = addr_from_index(ProxyPrecompile::<Runtime>::INDEX);
+        let result = execute_precompile(
+            &precompiles,
+            precompile_addr,
+            addr_from_index(1),
+            encode_with_selector(
+                selector_u32("proxyCall(bytes32,uint8[],uint8[])"),
+                (
+                    H256::repeat_byte(2),
+                    Vec::<u8>::new(),
+                    qubitum_create_subnet_call().encode(),
+                ),
+            ),
+            U256::zero(),
+        )
+        .expect("expected proxy call to be routed to the proxy precompile");
+
+        let failure = result.expect_err("expected proxy precompile private-call rejection");
+        let message = match failure {
+            PrecompileFailure::Error {
+                exit_status: ExitError::Other(message),
+            } => message,
+            other => panic!("unexpected precompile failure: {other:?}"),
+        };
+        assert!(
+            message.contains("Proxy precompile cannot dispatch private runtime call"),
+            "unexpected precompile failure: {message}"
+        );
+    });
+}
+
+#[test]
+fn contract_call_filter_rejects_proxy_wrapped_qubitum() {
+    let real: AccountId = [2u8; 32].into();
+    let private_proxy_call = RuntimeCall::Proxy(pallet_subtensor_proxy::Call::proxy {
+        real: real.into(),
+        force_proxy_type: None,
+        call: Box::new(qubitum_create_subnet_call()),
+    });
+    assert!(!ContractCallFilter::contains(&private_proxy_call));
+
+    let safe_proxy_call = RuntimeCall::Proxy(pallet_subtensor_proxy::Call::proxy {
+        real: AccountId::from([3u8; 32]).into(),
+        force_proxy_type: None,
+        call: Box::new(RuntimeCall::System(frame_system::Call::remark {
+            remark: vec![1],
+        })),
+    });
+    assert!(ContractCallFilter::contains(&safe_proxy_call));
 }

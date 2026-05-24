@@ -486,6 +486,12 @@ impl frame_support::traits::InstanceFilter<RuntimeCall> for ProxyType {
     }
 }
 
+impl crate::ProxyRuntimeCallFilter for RuntimeCall {
+    fn contains_private_runtime_call(&self) -> bool {
+        false
+    }
+}
+
 impl pallet_subtensor_proxy::Config for Runtime {
     type RuntimeCall = RuntimeCall;
     type Currency = Balances;

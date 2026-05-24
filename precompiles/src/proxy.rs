@@ -23,6 +23,10 @@ use subtensor_runtime_common::ProxyType;
 pub struct ProxyPrecompile<R>(PhantomData<R>);
 const MAX_DECODE_DEPTH: u32 = 8;
 
+pub trait ProxyRuntimeCallFilter {
+    fn contains_private_runtime_call(&self) -> bool;
+}
+
 impl<R> PrecompileExt<R::AccountId> for ProxyPrecompile<R>
 where
     R: frame_system::Config
@@ -38,6 +42,7 @@ where
     R::AccountId: From<[u8; 32]> + Into<[u8; 32]>,
     <R as frame_system::Config>::RuntimeOrigin: AsSystemOriginSigner<R::AccountId> + Clone,
     <R as pallet_evm::Config>::AddressMapping: AddressMapping<R::AccountId>,
+    <R as pallet_proxy::Config>::RuntimeCall: ProxyRuntimeCallFilter,
     <R as frame_system::Config>::RuntimeCall: From<pallet_subtensor::Call<R>>
         + From<pallet_proxy::Call<R>>
         + GetDispatchInfo
@@ -45,7 +50,8 @@ where
         + IsSubType<pallet_balances::Call<R>>
         + IsSubType<pallet_subtensor::Call<R>>
         + IsSubType<pallet_shield::Call<R>>
-        + IsSubType<pallet_subtensor_proxy::Call<R>>,
+        + IsSubType<pallet_subtensor_proxy::Call<R>>
+        + ProxyRuntimeCallFilter,
     <R as pallet_evm::Config>::AddressMapping: AddressMapping<R::AccountId>,
     <<R as frame_system::Config>::Lookup as StaticLookup>::Source: From<R::AccountId>,
 {
@@ -68,6 +74,7 @@ where
     R::AccountId: From<[u8; 32]> + Into<[u8; 32]>,
     <R as frame_system::Config>::RuntimeOrigin: AsSystemOriginSigner<R::AccountId> + Clone,
     <R as pallet_evm::Config>::AddressMapping: AddressMapping<R::AccountId>,
+    <R as pallet_proxy::Config>::RuntimeCall: ProxyRuntimeCallFilter,
     <R as frame_system::Config>::RuntimeCall: From<pallet_subtensor::Call<R>>
         + From<pallet_proxy::Call<R>>
         + GetDispatchInfo
@@ -75,7 +82,8 @@ where
         + IsSubType<pallet_balances::Call<R>>
         + IsSubType<pallet_subtensor::Call<R>>
         + IsSubType<pallet_shield::Call<R>>
-        + IsSubType<pallet_subtensor_proxy::Call<R>>,
+        + IsSubType<pallet_subtensor_proxy::Call<R>>
+        + ProxyRuntimeCallFilter,
     <<R as frame_system::Config>::Lookup as StaticLookup>::Source: From<R::AccountId>,
 {
     #[precompile::public("createPureProxy(uint8,uint32,uint16)")]
@@ -166,6 +174,13 @@ where
         .map_err(|_| PrecompileFailure::Error {
             exit_status: ExitError::Other("The raw call data not correctly encoded".into()),
         })?;
+        if call.contains_private_runtime_call() {
+            return Err(PrecompileFailure::Error {
+                exit_status: ExitError::Other(
+                    "Proxy precompile cannot dispatch private runtime call".into(),
+                ),
+            });
+        }
 
         let mut proxy_type: Option<ProxyType> = None;
         if let Some(p) = force_proxy_type.first() {
