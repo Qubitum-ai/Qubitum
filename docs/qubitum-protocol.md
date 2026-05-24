@@ -45,7 +45,7 @@ Validators use the same two-step exit pattern: active validators enter a stake c
 
 Root governance can slash miner bonds and validator stake within the configured invalid-proof slash bounds. Slashed participants are removed from active eligibility, but can still enter the exit cooldown and withdraw any residual held capital after the delay.
 
-Proof submission is constrained to the registered validator operator for the submitted validator ID. The pallet rejects duplicate request IDs, requires an existing pending inference request, requires the submitted model commitment to match the registered miner commitment, validates the proof envelope, and routes every submission through `pallet_qubitum::VerifyProof` before storing a proof record. The current runtime uses a shape-only verifier adapter; a concrete Risc Zero verifier can replace that associated type without changing dispatchable semantics.
+Proof submission is constrained to the registered validator operator for the submitted validator ID. The pallet rejects duplicate request IDs, requires an existing pending inference request, requires the submitted model commitment to match the registered miner commitment, validates the proof envelope, and routes every submission through `pallet_qubitum::VerifyProof` before storing a proof record. The normal runtime is fail-closed until a concrete production zk verifier is wired; shape-only verification is limited to benchmark-oriented builds.
 
 The proof envelope commits to the off-chain proof artifact without storing raw proof bytes on-chain:
 
@@ -56,9 +56,9 @@ The proof envelope commits to the off-chain proof artifact without storing raw p
 
 This keeps block execution bounded while preserving enough metadata for validators, indexers, and future Risc Zero adapters to audit what was verified. Accepted proof records also retain proof system, proof size, verification latency, and chain-stamped submission block metadata for RPC consumers.
 
-`pallet-qubitum-runtime-api` exposes typed runtime queries for subnet, miner, validator, inference-request, proof-record, deterministic request assignment, registry-count, and total-burned state. `pallet-qubitum-rpc` wires those queries into node JSON-RPC methods under the `qubitum_*` namespace, returning SCALE-encoded bytes for complex structs and a direct balance for total burned state.
+`pallet-qubitum-runtime-api` exposes typed runtime queries for public subnet, miner, validator, identity, inference-request, proof-record, route-availability, registry-count, accounting, migration-health, protocol-parameter, request-status, and total-burned state. `pallet-qubitum-rpc` wires those queries into node JSON-RPC methods under the `qubitum_*` namespace, returning SCALE-encoded bytes for complex structs and a direct balance for total burned state.
 
-Runtime safe mode explicitly allows Qubitum `submit_proof` so already-routed verified work can keep settling, while blocking Qubitum subnet creation, participant registration, miner exits, new inference requests, and request cancellation until safe mode exits.
+Runtime safe mode explicitly allows Qubitum `submit_proof` and `challenge_proof` so already-routed verified work can keep settling or be challenged, while blocking Qubitum subnet creation, participant registration, miner exits, new inference requests, and request cancellation until safe mode exits. The runtime transaction extension still requires public Qubitum dispatchables to be submitted through the shield envelope; safe-mode whitelisting is not a public-call privacy bypass.
 
 Current focused checks:
 
@@ -95,6 +95,8 @@ cargo test -p node-subtensor-runtime --test safe_mode
 Model weights and inference inputs are private. The chain stores commitments, proof-envelope metadata, and verifier version data, not raw inputs, proof bytes, journals, or model weights. Inference outputs are public or user-visible, and miner identity may be shielded through optional identity commitments.
 
 Validators verify that inference executed correctly, that the committed model version was used, and that latency bounds were met. Validators do not learn model weights, raw inference input, or model internals.
+
+Current runtime protocol parameters intentionally report `privacy_complete = false`, `post_quantum_complete = false`, and `production_ready = false`. The remaining blockers are a production zk verifier, committed request payload plumbing, end-to-end shielded call payload execution, private route selection, post-quantum account signatures, and real identity-signature verification rather than commitment-only policy checks.
 
 ## Post-Quantum Signature Policy
 
