@@ -635,6 +635,7 @@ fn protocol_params_expose_runtime_policy() {
         assert!(params.public_event_payloads_redacted);
         assert!(params.public_query_ids_redacted);
         assert!(params.route_availability_ids_redacted);
+        assert!(params.public_accounting_totals_redacted);
         assert!(!params.post_quantum_account_signatures);
         assert!(!params.post_quantum_signature_crypto_verification);
         assert!(!params.privacy_complete);
@@ -702,6 +703,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
         assert!(params.public_event_payloads_redacted);
         assert!(params.public_query_ids_redacted);
         assert!(params.route_availability_ids_redacted);
+        assert!(params.public_accounting_totals_redacted);
         assert!(
             params
                 .readiness_blockers
@@ -6289,6 +6291,51 @@ fn fail_closed_verifier_never_accepts_shape_only_proofs() {
             FailClosedProofVerifier::verify(&submission, policy),
             Ok(VerificationOutcome::Error)
         );
+    });
+}
+
+#[test]
+fn public_accounting_view_redacts_capital_totals() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(42);
+
+        let mut submission = valid_submission(42);
+        submission = bind_proof_transcript(submission);
+        assert_ok!(Qubitum::submit_proof(
+            RuntimeOrigin::signed(3),
+            submission,
+            4,
+            2,
+            assignment_blinding(),
+            request_terms_witness()
+        ));
+
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
+        assert_eq!(TotalMinerPayouts::<Test>::get(), 970);
+        assert_eq!(TotalValidatorFees::<Test>::get(), 25);
+        assert_eq!(TotalTreasuryFees::<Test>::get(), 5);
+
+        assert_eq!(
+            Qubitum::accounting(),
+            crate::ChainAccounting {
+                total_inference_escrowed: 0,
+                total_miner_payouts: 0,
+                total_validator_fees: 0,
+                total_treasury_fees: 0,
+                total_inference_refunded: 0,
+                legacy_migration_failures: 0,
+            }
+        );
+        let encoded_accounting = Qubitum::accounting().encode();
+        for hidden in [
+            1_000_u128.encode(),
+            970_u128.encode(),
+            25_u128.encode(),
+            5_u128.encode(),
+        ] {
+            assert!(!contains_subsequence(&encoded_accounting, &hidden));
+        }
     });
 }
 

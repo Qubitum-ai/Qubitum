@@ -858,6 +858,7 @@ pub mod pallet {
         pub public_event_payloads_redacted: bool,
         pub public_query_ids_redacted: bool,
         pub route_availability_ids_redacted: bool,
+        pub public_accounting_totals_redacted: bool,
         pub post_quantum_account_signatures: bool,
         pub post_quantum_signature_crypto_verification: bool,
         pub privacy_complete: bool,
@@ -2127,11 +2128,11 @@ pub mod pallet {
     impl<T: Config> Pallet<T> {
         pub fn accounting() -> ChainAccounting<BalanceOf<T>> {
             ChainAccounting {
-                total_inference_escrowed: TotalInferenceEscrowed::<T>::get(),
-                total_miner_payouts: TotalMinerPayouts::<T>::get(),
-                total_validator_fees: TotalValidatorFees::<T>::get(),
-                total_treasury_fees: TotalTreasuryFees::<T>::get(),
-                total_inference_refunded: TotalInferenceRefunded::<T>::get(),
+                total_inference_escrowed: BalanceOf::<T>::default(),
+                total_miner_payouts: BalanceOf::<T>::default(),
+                total_validator_fees: BalanceOf::<T>::default(),
+                total_treasury_fees: BalanceOf::<T>::default(),
+                total_inference_refunded: BalanceOf::<T>::default(),
                 legacy_migration_failures: LegacyAccountingMigrationFailures::<T>::get(),
             }
         }
@@ -2162,6 +2163,7 @@ pub mod pallet {
             let public_event_payloads_redacted = true;
             let public_query_ids_redacted = true;
             let route_availability_ids_redacted = true;
+            let public_accounting_totals_redacted = true;
             let post_quantum_account_signatures = false;
             let post_quantum_signature_crypto_verification = false;
             let identity_signature_commitment_policy = true;
@@ -2223,6 +2225,7 @@ pub mod pallet {
                 public_event_payloads_redacted,
                 public_query_ids_redacted,
                 route_availability_ids_redacted,
+                public_accounting_totals_redacted,
                 post_quantum_account_signatures,
                 post_quantum_signature_crypto_verification,
                 privacy_complete,
