@@ -9798,18 +9798,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pallet-evm-precompile-dispatch"
-version = "2.0.0-dev"
-source = "git+https://github.com/opentensor/frontier?rev=d553a11551333c2457d9e64d6d912e2210a4ca26#d553a11551333c2457d9e64d6d912e2210a4ca26"
-dependencies = [
- "fp-evm",
- "frame-support",
- "pallet-evm",
- "parity-scale-codec",
- "sp-runtime",
-]
-
-[[package]]
 name = "pallet-evm-precompile-modexp"
 version = "2.0.0-dev"
 source = "git+https://github.com/opentensor/frontier?rev=d553a11551333c2457d9e64d6d912e2210a4ca26#d553a11551333c2457d9e64d6d912e2210a4ca26"
@@ -18294,7 +18282,6 @@ dependencies = [
  "pallet-drand",
  "pallet-evm",
  "pallet-evm-precompile-bn128",
- "pallet-evm-precompile-dispatch",
  "pallet-evm-precompile-modexp",
  "pallet-evm-precompile-sha3fips",
  "pallet-evm-precompile-simple",

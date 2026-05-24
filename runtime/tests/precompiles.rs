@@ -78,6 +78,26 @@ fn precompile_registry_addresses_are_unique() {
 }
 
 #[test]
+fn generic_runtime_dispatch_precompile_is_not_exposed() {
+    new_test_ext().execute_with(|| {
+        let precompiles = Precompiles::<Runtime>::new();
+        let dispatch_slot = addr_from_index(6);
+
+        assert!(!Precompiles::<Runtime>::used_addresses().contains(&dispatch_slot));
+        assert!(
+            execute_precompile(
+                &precompiles,
+                dispatch_slot,
+                addr_from_index(1),
+                qubitum_create_subnet_call().encode(),
+                U256::zero(),
+            )
+            .is_none()
+        );
+    });
+}
+
+#[test]
 fn balance_transfer_precompile_transfers_balance() {
     new_test_ext().execute_with(|| {
         let precompiles = Precompiles::<Runtime>::new();
