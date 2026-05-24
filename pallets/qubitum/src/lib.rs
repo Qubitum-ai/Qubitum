@@ -860,6 +860,9 @@ pub mod pallet {
         pub route_availability_ids_redacted: bool,
         pub public_accounting_totals_redacted: bool,
         pub public_request_status_counts_redacted: bool,
+        pub public_next_request_id_redacted: bool,
+        pub public_registry_counts_redacted: bool,
+        pub public_total_burned_redacted: bool,
         pub post_quantum_account_signatures: bool,
         pub post_quantum_signature_crypto_verification: bool,
         pub privacy_complete: bool,
@@ -2166,6 +2169,9 @@ pub mod pallet {
             let route_availability_ids_redacted = true;
             let public_accounting_totals_redacted = true;
             let public_request_status_counts_redacted = true;
+            let public_next_request_id_redacted = true;
+            let public_registry_counts_redacted = true;
+            let public_total_burned_redacted = true;
             let post_quantum_account_signatures = false;
             let post_quantum_signature_crypto_verification = false;
             let identity_signature_commitment_policy = true;
@@ -2229,6 +2235,9 @@ pub mod pallet {
                 route_availability_ids_redacted,
                 public_accounting_totals_redacted,
                 public_request_status_counts_redacted,
+                public_next_request_id_redacted,
+                public_registry_counts_redacted,
+                public_total_burned_redacted,
                 post_quantum_account_signatures,
                 post_quantum_signature_crypto_verification,
                 privacy_complete,

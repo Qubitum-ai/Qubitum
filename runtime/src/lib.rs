@@ -1877,6 +1877,20 @@ fn generate_genesis_json() -> Vec<u8> {
 
 type EventRecord = frame_system::EventRecord<RuntimeEvent, Hash>;
 
+type QubitumPublicActivityAggregates = (
+    qubitum_protocol::RequestId,
+    (
+        qubitum_protocol::SubnetId,
+        qubitum_protocol::MinerId,
+        qubitum_protocol::ValidatorId,
+    ),
+    TaoBalance,
+);
+
+fn qubitum_redacted_public_activity_aggregates() -> QubitumPublicActivityAggregates {
+    (0, (0, 0, 0), TaoBalance::ZERO)
+}
+
 impl_runtime_apis! {
     impl sp_api::Core<Block> for Runtime {
         fn version() -> RuntimeVersion {
@@ -2655,7 +2669,7 @@ impl_runtime_apis! {
         }
 
         fn qubitum_next_request_id() -> qubitum_protocol::RequestId {
-            pallet_qubitum::RequestCount::<Runtime>::get()
+            qubitum_redacted_public_activity_aggregates().0
         }
 
         fn qubitum_counts() -> (
@@ -2663,15 +2677,11 @@ impl_runtime_apis! {
             qubitum_protocol::MinerId,
             qubitum_protocol::ValidatorId,
         ) {
-            (
-                pallet_qubitum::SubnetCount::<Runtime>::get(),
-                pallet_qubitum::MinerCount::<Runtime>::get(),
-                pallet_qubitum::ValidatorCount::<Runtime>::get(),
-            )
+            qubitum_redacted_public_activity_aggregates().1
         }
 
         fn qubitum_total_burned() -> TaoBalance {
-            pallet_qubitum::TotalBurned::<Runtime>::get()
+            qubitum_redacted_public_activity_aggregates().2
         }
 
         fn qubitum_accounting() -> pallet_qubitum::ChainAccounting<TaoBalance> {
@@ -2904,6 +2914,9 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
     assert!(params.route_availability_ids_redacted);
     assert!(params.public_accounting_totals_redacted);
     assert!(params.public_request_status_counts_redacted);
+    assert!(params.public_next_request_id_redacted);
+    assert!(params.public_registry_counts_redacted);
+    assert!(params.public_total_burned_redacted);
     assert!(!params.post_quantum_account_signatures);
     assert!(!params.post_quantum_signature_crypto_verification);
     assert!(!params.privacy_complete);
@@ -2952,6 +2965,14 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
     assert!(params.readiness_blockers.privacy_blocked());
     assert!(params.readiness_blockers.post_quantum_blocked());
     assert!(params.readiness_blockers.production_blocked());
+}
+
+#[test]
+fn qubitum_runtime_api_redacts_public_activity_aggregates() {
+    assert_eq!(
+        qubitum_redacted_public_activity_aggregates(),
+        (0, (0, 0, 0), TaoBalance::ZERO)
+    );
 }
 
 #[test]
