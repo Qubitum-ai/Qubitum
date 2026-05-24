@@ -865,6 +865,8 @@ pub mod pallet {
         pub route_availability_ids_redacted: bool,
         pub public_route_availability_redacted: bool,
         pub public_accounting_totals_redacted: bool,
+        pub public_accounting_migration_failures_redacted: bool,
+        pub public_migration_health_redacted: bool,
         pub public_request_status_counts_redacted: bool,
         pub public_registry_records_redacted: bool,
         pub public_request_records_redacted: bool,
@@ -2147,15 +2149,36 @@ pub mod pallet {
                 total_validator_fees: BalanceOf::<T>::default(),
                 total_treasury_fees: BalanceOf::<T>::default(),
                 total_inference_refunded: BalanceOf::<T>::default(),
+                legacy_migration_failures: 0,
+            }
+        }
+
+        #[cfg(any(test, feature = "try-runtime"))]
+        pub(crate) fn raw_accounting() -> ChainAccounting<BalanceOf<T>> {
+            ChainAccounting {
+                total_inference_escrowed: TotalInferenceEscrowed::<T>::get(),
+                total_miner_payouts: TotalMinerPayouts::<T>::get(),
+                total_validator_fees: TotalValidatorFees::<T>::get(),
+                total_treasury_fees: TotalTreasuryFees::<T>::get(),
+                total_inference_refunded: TotalInferenceRefunded::<T>::get(),
                 legacy_migration_failures: LegacyAccountingMigrationFailures::<T>::get(),
+            }
+        }
+
+        #[cfg(any(test, feature = "try-runtime"))]
+        pub(crate) fn raw_migration_health() -> ChainMigrationHealth {
+            ChainMigrationHealth {
+                legacy_accounting_failures: LegacyAccountingMigrationFailures::<T>::get(),
+                legacy_routing_index_failures: LegacyRoutingIndexMigrationFailures::<T>::get(),
+                legacy_capital_record_failures: LegacyCapitalRecordMigrationFailures::<T>::get(),
             }
         }
 
         pub fn migration_health() -> ChainMigrationHealth {
             ChainMigrationHealth {
-                legacy_accounting_failures: LegacyAccountingMigrationFailures::<T>::get(),
-                legacy_routing_index_failures: LegacyRoutingIndexMigrationFailures::<T>::get(),
-                legacy_capital_record_failures: LegacyCapitalRecordMigrationFailures::<T>::get(),
+                legacy_accounting_failures: 0,
+                legacy_routing_index_failures: 0,
+                legacy_capital_record_failures: 0,
             }
         }
 
@@ -2180,6 +2203,8 @@ pub mod pallet {
             let route_availability_ids_redacted = true;
             let public_route_availability_redacted = true;
             let public_accounting_totals_redacted = true;
+            let public_accounting_migration_failures_redacted = true;
+            let public_migration_health_redacted = true;
             let public_request_status_counts_redacted = true;
             let public_registry_records_redacted = true;
             let public_request_records_redacted = true;
@@ -2252,6 +2277,8 @@ pub mod pallet {
                 route_availability_ids_redacted,
                 public_route_availability_redacted,
                 public_accounting_totals_redacted,
+                public_accounting_migration_failures_redacted,
+                public_migration_health_redacted,
                 public_request_status_counts_redacted,
                 public_registry_records_redacted,
                 public_request_records_redacted,

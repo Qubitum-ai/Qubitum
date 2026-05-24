@@ -629,6 +629,8 @@ fn protocol_params_expose_runtime_policy() {
         assert!(params.route_availability_ids_redacted);
         assert!(params.public_route_availability_redacted);
         assert!(params.public_accounting_totals_redacted);
+        assert!(params.public_accounting_migration_failures_redacted);
+        assert!(params.public_migration_health_redacted);
         assert!(params.public_request_status_counts_redacted);
         assert!(params.public_registry_records_redacted);
         assert!(params.public_request_records_redacted);
@@ -707,6 +709,8 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
         assert!(params.route_availability_ids_redacted);
         assert!(params.public_route_availability_redacted);
         assert!(params.public_accounting_totals_redacted);
+        assert!(params.public_accounting_migration_failures_redacted);
+        assert!(params.public_migration_health_redacted);
         assert!(params.public_request_status_counts_redacted);
         assert!(params.public_registry_records_redacted);
         assert!(params.public_request_records_redacted);
@@ -4130,7 +4134,8 @@ fn runtime_upgrade_records_legacy_accounting_failures_without_saturated_totals()
         assert_eq!(TotalValidatorFees::<Test>::get(), 0);
         assert_eq!(TotalTreasuryFees::<Test>::get(), 0);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
-        assert_eq!(Qubitum::accounting().legacy_migration_failures, 1);
+        assert_eq!(Qubitum::raw_accounting().legacy_migration_failures, 1);
+        assert_eq!(Qubitum::accounting().legacy_migration_failures, 0);
         assert_eq!(
             InferenceRequests::<Test>::get(91).unwrap().status,
             InferenceRequestStatus::Settled
@@ -4172,7 +4177,8 @@ fn runtime_upgrade_records_legacy_accounting_failures_without_saturated_totals()
         assert_eq!(TotalValidatorFees::<Test>::get(), 0);
         assert_eq!(TotalTreasuryFees::<Test>::get(), 0);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
-        assert_eq!(Qubitum::accounting().legacy_migration_failures, 1);
+        assert_eq!(Qubitum::raw_accounting().legacy_migration_failures, 1);
+        assert_eq!(Qubitum::accounting().legacy_migration_failures, 0);
         assert_eq!(
             InferenceRequests::<Test>::get(93).unwrap().status,
             InferenceRequestStatus::Settled
@@ -5458,7 +5464,15 @@ fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_healt
             )
         );
         assert_eq!(LegacyRoutingIndexMigrationFailures::<Test>::get(), 2);
-        assert_eq!(Qubitum::migration_health().legacy_routing_index_failures, 2);
+        assert_eq!(
+            Qubitum::raw_migration_health().legacy_routing_index_failures,
+            2
+        );
+        assert_eq!(
+            Qubitum::raw_migration_health().legacy_accounting_failures,
+            0
+        );
+        assert_eq!(Qubitum::migration_health().legacy_routing_index_failures, 0);
         assert_eq!(Qubitum::migration_health().legacy_accounting_failures, 0);
         assert_eq!(Qubitum::public_miner(exiting_miner_id), None);
         assert_eq!(Qubitum::public_validator(exiting_validator_id), None);
@@ -5547,8 +5561,20 @@ fn runtime_upgrade_reports_missing_legacy_capital_records() {
 
         assert_eq!(LegacyCapitalRecordMigrationFailures::<Test>::get(), 2);
         assert_eq!(
-            Qubitum::migration_health().legacy_capital_record_failures,
+            Qubitum::raw_migration_health().legacy_capital_record_failures,
             2
+        );
+        assert_eq!(
+            Qubitum::raw_migration_health().legacy_accounting_failures,
+            0
+        );
+        assert_eq!(
+            Qubitum::raw_migration_health().legacy_routing_index_failures,
+            0
+        );
+        assert_eq!(
+            Qubitum::migration_health().legacy_capital_record_failures,
+            0
         );
         assert_eq!(Qubitum::migration_health().legacy_accounting_failures, 0);
         assert_eq!(Qubitum::migration_health().legacy_routing_index_failures, 0);
