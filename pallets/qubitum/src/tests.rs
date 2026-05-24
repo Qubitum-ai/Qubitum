@@ -3106,6 +3106,175 @@ fn public_lifecycle_events_redact_route_payment_and_proof_metadata() {
 }
 
 #[test]
+fn public_failure_events_redact_route_payment_and_proof_metadata() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        System::set_block_number(1);
+        System::reset_events();
+        RequestCount::<Test>::put(97);
+
+        assert_ok!(Qubitum::request_inference_auto_route(
+            RuntimeOrigin::signed(4),
+            97,
+            AutoRouteInferenceRequestParams {
+                subnet_id: 0,
+                input_commitment: commitment(41),
+                assignment_blinding: assignment_blinding(),
+                timing_blinding: timing_blinding(),
+                terms_blinding: terms_blinding(),
+                payment: 123_456_789,
+                validator_fee_bps: 777,
+                treasury_fee_bps: 888,
+            },
+        ));
+
+        System::set_block_number(2);
+        let mut submission = valid_submission(97);
+        submission.input_commitment = commitment(41);
+        submission.output_commitment = commitment(42);
+        submission.proof = proof(43);
+        submission.proof_size_bytes = 65_432;
+        submission.verification_latency_ms = 77;
+        submission.submitted_at = 2;
+        submission = bind_proof_transcript(submission);
+        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
+        assert_ok!(Qubitum::submit_proof(
+            RuntimeOrigin::signed(3),
+            submission,
+            4,
+            2,
+            assignment_blinding(),
+            terms_witness(inference_terms(123_456_789, 777, 888), terms_blinding())
+        ));
+
+        let events: Vec<_> = System::events()
+            .into_iter()
+            .filter_map(|record| match record.event {
+                RuntimeEvent::Qubitum(event) => Some(event),
+                _ => None,
+            })
+            .collect();
+
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::MinerSlashed { miner_id: 0 }))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::ValidatorSlashed { validator_id: 0 }))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::ProofRejected { request_id: 97 }))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::InferenceRefunded { request_id: 97 }))
+        );
+
+        for encoded in events.iter().map(Encode::encode) {
+            for hidden in [
+                123_456_789_u128.encode(),
+                777_u16.encode(),
+                888_u16.encode(),
+                65_432_u32.encode(),
+                77_u32.encode(),
+                commitment(41).encode(),
+                commitment(42).encode(),
+                commitment(10).encode(),
+                proof(43).encode(),
+            ] {
+                assert!(!contains_subsequence(&encoded, &hidden));
+            }
+        }
+    });
+
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        System::set_block_number(1);
+        System::reset_events();
+        RequestCount::<Test>::put(98);
+
+        assert_ok!(Qubitum::request_inference_auto_route(
+            RuntimeOrigin::signed(4),
+            98,
+            AutoRouteInferenceRequestParams {
+                subnet_id: 0,
+                input_commitment: commitment(51),
+                assignment_blinding: assignment_blinding(),
+                timing_blinding: timing_blinding(),
+                terms_blinding: terms_blinding(),
+                payment: 987_654_321,
+                validator_fee_bps: 444,
+                treasury_fee_bps: 555,
+            },
+        ));
+
+        System::set_block_number(2);
+        let mut submission = valid_submission(98);
+        submission.input_commitment = commitment(51);
+        submission.output_commitment = commitment(52);
+        submission.proof = proof(53);
+        submission.proof_size_bytes = 54_321;
+        submission.verification_latency_ms = 88;
+        submission.submitted_at = 2;
+        submission = bind_proof_transcript(submission);
+        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
+        assert_ok!(Qubitum::challenge_proof(
+            RuntimeOrigin::signed(4),
+            submission,
+            4,
+            2,
+            assignment_blinding(),
+            terms_witness(inference_terms(987_654_321, 444, 555), terms_blinding())
+        ));
+
+        let events: Vec<_> = System::events()
+            .into_iter()
+            .filter_map(|record| match record.event {
+                RuntimeEvent::Qubitum(event) => Some(event),
+                _ => None,
+            })
+            .collect();
+
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::MinerSlashed { miner_id: 0 }))
+        );
+        assert!(events.iter().any(|event| matches!(
+            event,
+            crate::Event::ProofChallengeAccepted { request_id: 98 }
+        )));
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::InferenceRefunded { request_id: 98 }))
+        );
+
+        for encoded in events.iter().map(Encode::encode) {
+            for hidden in [
+                987_654_321_u128.encode(),
+                444_u16.encode(),
+                555_u16.encode(),
+                54_321_u32.encode(),
+                88_u32.encode(),
+                commitment(51).encode(),
+                commitment(52).encode(),
+                commitment(10).encode(),
+                proof(53).encode(),
+            ] {
+                assert!(!contains_subsequence(&encoded, &hidden));
+            }
+        }
+    });
+}
+
+#[test]
 fn runtime_upgrade_migrates_subnet_owner_and_policy_to_commitments() {
     new_test_ext().execute_with(|| {
         let legacy = LegacyChainSubnetV15 {
