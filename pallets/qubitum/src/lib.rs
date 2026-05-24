@@ -1421,11 +1421,17 @@ pub mod pallet {
                         &terms_witness,
                     )?;
                     Self::slash_miner_bond(submission.miner_id, &miner_operator, slash_bps)?;
+                    Self::deposit_event(Event::MinerSlashed {
+                        miner_id: submission.miner_id,
+                    });
                     Self::slash_validator_stake(
                         submission.validator_id,
                         &validator_operator,
                         slash_bps,
                     )?;
+                    Self::deposit_event(Event::ValidatorSlashed {
+                        validator_id: submission.validator_id,
+                    });
                     Self::refund_rejected_request(
                         &submission,
                         &request_user,
@@ -1506,6 +1512,9 @@ pub mod pallet {
                         &terms_witness,
                     )?;
                     Self::slash_miner_bond(submission.miner_id, &miner_operator, slash_bps)?;
+                    Self::deposit_event(Event::MinerSlashed {
+                        miner_id: submission.miner_id,
+                    });
                     Self::refund_rejected_request(
                         &submission,
                         &request_user,

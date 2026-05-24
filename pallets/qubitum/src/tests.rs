@@ -5816,6 +5816,7 @@ fn submit_proof_rejects_unassigned_participants() {
 #[test]
 fn verifier_rejection_slashes_and_refunds_request() {
     new_test_ext().execute_with(|| {
+        System::set_block_number(1);
         register_active_miner_and_validator();
         request_inference(48);
         set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
@@ -5854,6 +5855,9 @@ fn verifier_rejection_slashes_and_refunds_request() {
             Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
             90_000_000_000
         );
+        System::assert_has_event(RuntimeEvent::Qubitum(crate::Event::MinerSlashed {
+            miner_id: 0,
+        }));
         let validator = Validators::<Test>::get(0).unwrap();
         assert_eq!(
             validator.stake_commitment,
@@ -5864,12 +5868,16 @@ fn verifier_rejection_slashes_and_refunds_request() {
             Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
             90_000_000_000
         );
+        System::assert_has_event(RuntimeEvent::Qubitum(crate::Event::ValidatorSlashed {
+            validator_id: 0,
+        }));
     });
 }
 
 #[test]
 fn invalid_proof_challenge_slashes_miner_without_validator_self_slash() {
     new_test_ext().execute_with(|| {
+        System::set_block_number(1);
         register_active_miner_and_validator();
         request_inference(49);
         set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
@@ -5898,12 +5906,72 @@ fn invalid_proof_challenge_slashes_miner_without_validator_self_slash() {
             expected_miner_bond_commitment(0, 2, RegistryStatus::Slashed)
         );
         assert_eq!(miner.status, RegistryStatus::Slashed);
+        System::assert_has_event(RuntimeEvent::Qubitum(crate::Event::MinerSlashed {
+            miner_id: 0,
+        }));
         let validator = Validators::<Test>::get(0).unwrap();
         assert_eq!(
             validator.stake_commitment,
             expected_validator_stake_commitment(0, 3, RegistryStatus::Active)
         );
         assert_eq!(validator.status, RegistryStatus::Active);
+    });
+}
+
+#[test]
+fn invalid_proof_slashing_removes_participants_from_routing_but_preserves_pending_refunds() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(80);
+        request_inference(81);
+        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
+
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 2);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 2);
+
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(80)));
+
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().status,
+            RegistryStatus::Slashed
+        );
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Slashed
+        );
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
+        assert_eq!(Qubitum::route_assignment(0, 82), None);
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(
+            InferenceRequests::<Test>::get(81).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+
+        assert_noop!(
+            submit_proof(RuntimeOrigin::signed(3), valid_submission(81)),
+            Error::<Test>::NotActive
+        );
+
+        System::set_block_number(10);
+        assert_ok!(Qubitum::expire_inference(
+            RuntimeOrigin::signed(5),
+            81,
+            4,
+            0,
+            0,
+            assignment_blinding(),
+            timing_witness(0),
+            request_terms_witness()
+        ));
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
+        assert_eq!(
+            InferenceRequests::<Test>::get(81).unwrap().status,
+            InferenceRequestStatus::Expired
+        );
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 2_000);
     });
 }
 
