@@ -2,12 +2,12 @@
 
 use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, AutoRouteInferenceRequestParams,
-    CancelledInferenceRequestCount, ChainInferenceRequest, ChainMiner, ChainPublicInferenceRequest,
-    ChainPublicProofRecord, ChainPublicSubnet, ChainReadinessBlockers, ChainRequestStatusCounts,
-    ChainRouteAvailability, ChainValidator, Error, FailClosedProofVerifier, HoldReason,
-    InferenceRequestCommitmentParams, InferenceRequestParams, InferenceRequestStatus,
-    InferenceRequestTerms, InferenceRequestTermsWitness, InferenceRequestTimingWitness,
-    InferenceRequests, LegacyAccountingMigrationFailures, LegacyCapitalRecordMigrationFailures,
+    CancelledInferenceRequestCount, ChainInferenceRequest, ChainMiner, ChainPublicSubnet,
+    ChainReadinessBlockers, ChainRequestStatusCounts, ChainRouteAvailability, ChainValidator,
+    Error, FailClosedProofVerifier, HoldReason, InferenceRequestCommitmentParams,
+    InferenceRequestParams, InferenceRequestStatus, InferenceRequestTerms,
+    InferenceRequestTermsWitness, InferenceRequestTimingWitness, InferenceRequests,
+    LegacyAccountingMigrationFailures, LegacyCapitalRecordMigrationFailures,
     LegacyRoutingIndexMigrationFailures, MinerCount, MinerIdentityCommitments,
     MinerIdentitySignatureBundles, MinerIdentitySignatureChallenges, MinerLockedBond, Miners,
     PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests, ProofRecords,
@@ -637,6 +637,8 @@ fn protocol_params_expose_runtime_policy() {
         assert!(params.public_accounting_totals_redacted);
         assert!(params.public_request_status_counts_redacted);
         assert!(params.public_registry_records_redacted);
+        assert!(params.public_request_records_redacted);
+        assert!(params.public_proof_records_redacted);
         assert!(params.public_next_request_id_redacted);
         assert!(params.public_registry_counts_redacted);
         assert!(params.public_total_burned_redacted);
@@ -711,6 +713,8 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
         assert!(params.public_accounting_totals_redacted);
         assert!(params.public_request_status_counts_redacted);
         assert!(params.public_registry_records_redacted);
+        assert!(params.public_request_records_redacted);
+        assert!(params.public_proof_records_redacted);
         assert!(params.public_next_request_id_redacted);
         assert!(params.public_registry_counts_redacted);
         assert!(params.public_total_burned_redacted);
@@ -2898,14 +2902,12 @@ fn public_request_and_proof_views_redact_private_route_payment_and_timing() {
             },
         ));
 
-        let public_request = Qubitum::public_inference_request(91).unwrap();
         assert_eq!(
-            public_request,
-            ChainPublicInferenceRequest {
-                status: InferenceRequestStatus::Pending,
-            }
+            InferenceRequests::<Test>::get(91).unwrap().status,
+            InferenceRequestStatus::Pending
         );
-        let encoded_request = public_request.encode();
+        assert_eq!(Qubitum::public_inference_request(91), None);
+        let encoded_request = Qubitum::public_inference_request(91).encode();
         for hidden in [
             91_u64.encode(),
             0_u64.encode(),
@@ -2934,14 +2936,9 @@ fn public_request_and_proof_views_redact_private_route_payment_and_timing() {
             terms_witness(inference_terms(123_456_789, 777, 888), terms_blinding())
         ));
 
-        let public_proof = Qubitum::public_proof_record(91).unwrap();
-        assert_eq!(
-            public_proof,
-            ChainPublicProofRecord {
-                proof_system: ProofSystem::RiscZeroStark,
-            }
-        );
-        let encoded_proof = public_proof.encode();
+        assert!(ProofRecords::<Test>::contains_key(91));
+        assert_eq!(Qubitum::public_proof_record(91), None);
+        let encoded_proof = Qubitum::public_proof_record(91).encode();
         for hidden in [
             91_u64.encode(),
             0_u64.encode(),

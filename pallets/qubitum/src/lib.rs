@@ -865,6 +865,8 @@ pub mod pallet {
         pub public_accounting_totals_redacted: bool,
         pub public_request_status_counts_redacted: bool,
         pub public_registry_records_redacted: bool,
+        pub public_request_records_redacted: bool,
+        pub public_proof_records_redacted: bool,
         pub public_next_request_id_redacted: bool,
         pub public_registry_counts_redacted: bool,
         pub public_total_burned_redacted: bool,
@@ -2176,6 +2178,8 @@ pub mod pallet {
             let public_accounting_totals_redacted = true;
             let public_request_status_counts_redacted = true;
             let public_registry_records_redacted = true;
+            let public_request_records_redacted = true;
+            let public_proof_records_redacted = true;
             let public_next_request_id_redacted = true;
             let public_registry_counts_redacted = true;
             let public_total_burned_redacted = true;
@@ -2244,6 +2248,8 @@ pub mod pallet {
                 public_accounting_totals_redacted,
                 public_request_status_counts_redacted,
                 public_registry_records_redacted,
+                public_request_records_redacted,
+                public_proof_records_redacted,
                 public_next_request_id_redacted,
                 public_registry_counts_redacted,
                 public_total_burned_redacted,
@@ -2348,17 +2354,13 @@ pub mod pallet {
         }
 
         pub fn public_inference_request(
-            request_id: RequestId,
+            _request_id: RequestId,
         ) -> Option<ChainPublicInferenceRequest> {
-            InferenceRequests::<T>::get(request_id).map(|request| ChainPublicInferenceRequest {
-                status: request.status,
-            })
+            None
         }
 
-        pub fn public_proof_record(request_id: RequestId) -> Option<ChainPublicProofRecord> {
-            ProofRecords::<T>::get(request_id).map(|record| ChainPublicProofRecord {
-                proof_system: record.proof_system,
-            })
+        pub fn public_proof_record(_request_id: RequestId) -> Option<ChainPublicProofRecord> {
+            None
         }
 
         #[allow(clippy::too_many_arguments)]
