@@ -274,6 +274,27 @@ fn submit_encrypted_event_id_is_submitter_independent() {
 }
 
 #[test]
+fn submit_encrypted_header_exposes_public_key_window_hash() {
+    new_test_ext().execute_with(|| {
+        install_pending_key();
+
+        let ciphertext = valid_submit_ciphertext();
+        let pending_key = PendingKey::<Test>::get().unwrap();
+        let mut header = [0u8; 16];
+        header.copy_from_slice(&ciphertext[..16]);
+
+        assert_eq!(header, sp_io::hashing::twox_128(&pending_key[..]));
+        assert!(MevShield::is_shielded_using_current_key(&header));
+        assert_eq!(
+            crate::parse_valid_submit_encrypted_ciphertext(&ciphertext)
+                .unwrap()
+                .key_hash,
+            header
+        );
+    });
+}
+
+#[test]
 fn submit_encrypted_rejects_unknown_key_hash() {
     new_test_ext().execute_with(|| {
         install_pending_key();

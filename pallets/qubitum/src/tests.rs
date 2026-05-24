@@ -625,6 +625,7 @@ fn protocol_params_expose_runtime_policy() {
         assert!(!params.committed_request_payloads);
         assert!(!params.shielded_call_payloads);
         assert!(!params.shield_submitter_origin_privacy);
+        assert!(!params.shield_key_window_privacy);
         assert!(!params.private_route_selection);
         assert!(!params.account_commitment_blinding);
         assert!(!params.private_routing_indexes);
@@ -643,6 +644,7 @@ fn protocol_params_expose_runtime_policy() {
                 committed_request_payloads_missing: true,
                 shielded_call_payloads_missing: true,
                 shield_submitter_origin_privacy_missing: true,
+                shield_key_window_privacy_missing: true,
                 private_route_selection_missing: true,
                 account_commitment_blinding_missing: true,
                 private_routing_indexes_missing: true,
@@ -680,6 +682,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
 
         let params = Qubitum::protocol_params();
         assert!(!params.shield_submitter_origin_privacy);
+        assert!(!params.shield_key_window_privacy);
         assert!(!params.account_commitment_blinding);
         assert!(!params.private_routing_indexes);
         assert!(
@@ -687,6 +690,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
                 .readiness_blockers
                 .shield_submitter_origin_privacy_missing
         );
+        assert!(params.readiness_blockers.shield_key_window_privacy_missing);
         assert!(
             params
                 .readiness_blockers
