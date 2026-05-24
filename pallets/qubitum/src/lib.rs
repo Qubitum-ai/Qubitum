@@ -1154,7 +1154,7 @@ pub mod pallet {
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
         /// A subnet was created.
-        SubnetCreated { subnet_id: SubnetId },
+        SubnetCreated,
         /// A miner was registered.
         MinerRegistered,
         /// A miner bond was locked and activated.
@@ -1324,7 +1324,7 @@ pub mod pallet {
             };
 
             Subnets::<T>::insert(subnet_id, subnet);
-            Self::deposit_event(Event::SubnetCreated { subnet_id });
+            Self::deposit_event(Event::SubnetCreated);
             Ok(())
         }
 

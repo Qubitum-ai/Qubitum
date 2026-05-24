@@ -3090,7 +3090,7 @@ fn public_registry_events_redact_operator_capital_model_and_exit_schedule() {
         assert!(
             events
                 .iter()
-                .any(|event| matches!(event, crate::Event::SubnetCreated { subnet_id: 0 }))
+                .any(|event| matches!(event, crate::Event::SubnetCreated))
         );
         assert!(
             events
@@ -3143,7 +3143,8 @@ fn public_registry_events_redact_operator_capital_model_and_exit_schedule() {
             .filter(|event| {
                 matches!(
                     event,
-                    crate::Event::MinerRegistered
+                    crate::Event::SubnetCreated
+                        | crate::Event::MinerRegistered
                         | crate::Event::MinerActivated
                         | crate::Event::MinerExitStarted
                         | crate::Event::MinerBondWithdrawn

@@ -250,7 +250,7 @@ mod benchmarks {
 
         assert_eq!(SubnetCount::<T>::get(), 1);
         assert!(Subnets::<T>::contains_key(0));
-        assert_last_event::<T>(Event::<T>::SubnetCreated { subnet_id: 0 }.into());
+        assert_last_event::<T>(Event::<T>::SubnetCreated.into());
     }
 
     #[benchmark]
