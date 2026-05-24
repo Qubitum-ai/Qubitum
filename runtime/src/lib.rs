@@ -2917,6 +2917,7 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
     assert!(params.public_next_request_id_redacted);
     assert!(params.public_registry_counts_redacted);
     assert!(params.public_total_burned_redacted);
+    assert!(params.public_identity_metadata_redacted);
     assert!(!params.post_quantum_account_signatures);
     assert!(!params.post_quantum_signature_crypto_verification);
     assert!(!params.privacy_complete);

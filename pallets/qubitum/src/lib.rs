@@ -863,6 +863,7 @@ pub mod pallet {
         pub public_next_request_id_redacted: bool,
         pub public_registry_counts_redacted: bool,
         pub public_total_burned_redacted: bool,
+        pub public_identity_metadata_redacted: bool,
         pub post_quantum_account_signatures: bool,
         pub post_quantum_signature_crypto_verification: bool,
         pub privacy_complete: bool,
@@ -2172,6 +2173,7 @@ pub mod pallet {
             let public_next_request_id_redacted = true;
             let public_registry_counts_redacted = true;
             let public_total_burned_redacted = true;
+            let public_identity_metadata_redacted = true;
             let post_quantum_account_signatures = false;
             let post_quantum_signature_crypto_verification = false;
             let identity_signature_commitment_policy = true;
@@ -2238,6 +2240,7 @@ pub mod pallet {
                 public_next_request_id_redacted,
                 public_registry_counts_redacted,
                 public_total_burned_redacted,
+                public_identity_metadata_redacted,
                 post_quantum_account_signatures,
                 post_quantum_signature_crypto_verification,
                 privacy_complete,
@@ -2332,58 +2335,23 @@ pub mod pallet {
             })
         }
 
+        fn redacted_public_identity() -> ChainPublicIdentity {
+            ChainPublicIdentity {
+                has_shielded_identity_commitment: false,
+                has_endpoint_commitment: false,
+                signature_commitment_recorded: false,
+                signature_challenge_bound: false,
+                signature_verified: false,
+                challenge_available: false,
+            }
+        }
+
         pub fn public_miner_identity(miner_id: MinerId) -> Option<ChainPublicIdentity> {
-            Miners::<T>::get(miner_id).map(|miner| {
-                let commitments = MinerIdentityCommitments::<T>::get(miner_id);
-                ChainPublicIdentity {
-                    has_shielded_identity_commitment: commitments
-                        .as_ref()
-                        .and_then(|identity| identity.shielded_identity_commitment)
-                        .is_some(),
-                    has_endpoint_commitment: commitments
-                        .as_ref()
-                        .and_then(|identity| identity.endpoint_commitment)
-                        .is_some(),
-                    signature_commitment_recorded: MinerIdentitySignatureBundles::<T>::contains_key(
-                        miner_id,
-                    ),
-                    signature_challenge_bound: Self::ensure_miner_signature_bundle_bound(
-                        miner_id, &miner,
-                    )
-                    .is_ok(),
-                    signature_verified: false,
-                    challenge_available: MinerIdentitySignatureChallenges::<T>::contains_key(
-                        miner_id,
-                    ),
-                }
-            })
+            Miners::<T>::contains_key(miner_id).then(Self::redacted_public_identity)
         }
 
         pub fn public_validator_identity(validator_id: ValidatorId) -> Option<ChainPublicIdentity> {
-            Validators::<T>::get(validator_id).map(|validator| {
-                let commitments = ValidatorIdentityCommitments::<T>::get(validator_id);
-                ChainPublicIdentity {
-                    has_shielded_identity_commitment: commitments
-                        .as_ref()
-                        .and_then(|identity| identity.shielded_identity_commitment)
-                        .is_some(),
-                    has_endpoint_commitment: commitments
-                        .as_ref()
-                        .and_then(|identity| identity.endpoint_commitment)
-                        .is_some(),
-                    signature_commitment_recorded:
-                        ValidatorIdentitySignatureBundles::<T>::contains_key(validator_id),
-                    signature_challenge_bound: Self::ensure_validator_signature_bundle_bound(
-                        validator_id,
-                        &validator,
-                    )
-                    .is_ok(),
-                    signature_verified: false,
-                    challenge_available: ValidatorIdentitySignatureChallenges::<T>::contains_key(
-                        validator_id,
-                    ),
-                }
-            })
+            Validators::<T>::contains_key(validator_id).then(Self::redacted_public_identity)
         }
 
         pub fn public_inference_request(

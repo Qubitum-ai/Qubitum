@@ -56,6 +56,17 @@ fn terms_blinding() -> [u8; 32] {
     commitment(91)
 }
 
+fn redacted_public_identity() -> ChainPublicIdentity {
+    ChainPublicIdentity {
+        has_shielded_identity_commitment: false,
+        has_endpoint_commitment: false,
+        signature_commitment_recorded: false,
+        signature_challenge_bound: false,
+        signature_verified: false,
+        challenge_available: false,
+    }
+}
+
 fn proof(seed: u8) -> ProofEnvelope {
     ProofEnvelope::risc_zero_v1(commitment(seed), commitment(seed + 1), commitment(seed + 2))
 }
@@ -640,6 +651,7 @@ fn protocol_params_expose_runtime_policy() {
         assert!(params.public_next_request_id_redacted);
         assert!(params.public_registry_counts_redacted);
         assert!(params.public_total_burned_redacted);
+        assert!(params.public_identity_metadata_redacted);
         assert!(!params.post_quantum_account_signatures);
         assert!(!params.post_quantum_signature_crypto_verification);
         assert!(!params.privacy_complete);
@@ -712,6 +724,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
         assert!(params.public_next_request_id_redacted);
         assert!(params.public_registry_counts_redacted);
         assert!(params.public_total_burned_redacted);
+        assert!(params.public_identity_metadata_redacted);
         assert!(
             params
                 .readiness_blockers
@@ -2267,17 +2280,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         );
         let miner_signature_challenge = MinerIdentitySignatureChallenges::<Test>::get(0).unwrap();
         let public_miner_identity = Qubitum::public_miner_identity(0).unwrap();
-        assert_eq!(
-            public_miner_identity,
-            ChainPublicIdentity {
-                has_shielded_identity_commitment: true,
-                has_endpoint_commitment: true,
-                signature_commitment_recorded: true,
-                signature_challenge_bound: true,
-                signature_verified: false,
-                challenge_available: true,
-            }
-        );
+        assert_eq!(public_miner_identity, redacted_public_identity());
         let encoded_public_miner_identity = public_miner_identity.encode();
         for hidden in [
             0_u64.encode(),
@@ -2317,17 +2320,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         let validator_signature_challenge =
             ValidatorIdentitySignatureChallenges::<Test>::get(0).unwrap();
         let public_validator_identity = Qubitum::public_validator_identity(0).unwrap();
-        assert_eq!(
-            public_validator_identity,
-            ChainPublicIdentity {
-                has_shielded_identity_commitment: true,
-                has_endpoint_commitment: true,
-                signature_commitment_recorded: true,
-                signature_challenge_bound: true,
-                signature_verified: false,
-                challenge_available: true,
-            }
-        );
+        assert_eq!(public_validator_identity, redacted_public_identity());
         let encoded_public_validator_identity = public_validator_identity.encode();
         for hidden in [
             0_u64.encode(),
@@ -2381,14 +2374,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         assert!(MinerIdentitySignatureChallenges::<Test>::get(0).is_none());
         assert_eq!(
             Qubitum::public_miner_identity(0),
-            Some(ChainPublicIdentity {
-                has_shielded_identity_commitment: false,
-                has_endpoint_commitment: false,
-                signature_commitment_recorded: false,
-                signature_challenge_bound: false,
-                signature_verified: false,
-                challenge_available: false,
-            })
+            Some(redacted_public_identity())
         );
         assert_noop!(
             Qubitum::set_validator_identity_commitments(
@@ -2415,14 +2401,7 @@ fn identity_commitments_are_operator_gated_and_commitment_only() {
         assert!(ValidatorIdentitySignatureChallenges::<Test>::get(0).is_none());
         assert_eq!(
             Qubitum::public_validator_identity(0),
-            Some(ChainPublicIdentity {
-                has_shielded_identity_commitment: false,
-                has_endpoint_commitment: false,
-                signature_commitment_recorded: false,
-                signature_challenge_bound: false,
-                signature_verified: false,
-                challenge_available: false,
-            })
+            Some(redacted_public_identity())
         );
         assert_eq!(Qubitum::public_miner_identity(999), None);
         assert_eq!(Qubitum::public_validator_identity(999), None);
@@ -2684,12 +2663,15 @@ fn identity_signature_commitments_are_not_reported_as_verified() {
         let validator_identity = Qubitum::public_validator_identity(0).unwrap();
         let params = Qubitum::protocol_params();
 
-        assert!(miner_identity.signature_commitment_recorded);
-        assert!(miner_identity.signature_challenge_bound);
-        assert!(!miner_identity.signature_verified);
-        assert!(validator_identity.signature_commitment_recorded);
-        assert!(validator_identity.signature_challenge_bound);
-        assert!(!validator_identity.signature_verified);
+        assert_eq!(miner_identity, redacted_public_identity());
+        assert_eq!(validator_identity, redacted_public_identity());
+        assert!(MinerIdentitySignatureBundles::<Test>::contains_key(0));
+        assert!(MinerIdentitySignatureChallenges::<Test>::contains_key(0));
+        assert!(ValidatorIdentitySignatureBundles::<Test>::contains_key(0));
+        assert!(ValidatorIdentitySignatureChallenges::<Test>::contains_key(
+            0
+        ));
+        assert!(Qubitum::next_route_availability(0).available);
         assert!(!params.identity_signature_verification);
         assert!(!params.post_quantum_signature_crypto_verification);
         assert!(
@@ -2716,9 +2698,9 @@ fn routing_and_proof_reject_unbound_identity_signature_bundles() {
         MinerIdentitySignatureBundles::<Test>::insert(0, post_quantum_signature_bundle());
 
         let public_identity = Qubitum::public_miner_identity(0).unwrap();
-        assert!(public_identity.signature_commitment_recorded);
-        assert!(public_identity.challenge_available);
-        assert!(!public_identity.signature_challenge_bound);
+        assert_eq!(public_identity, redacted_public_identity());
+        assert!(MinerIdentitySignatureBundles::<Test>::contains_key(0));
+        assert!(MinerIdentitySignatureChallenges::<Test>::contains_key(0));
         assert!(!Qubitum::next_route_availability(0).available);
         assert_noop!(
             submit_proof(RuntimeOrigin::signed(3), valid_submission(88)),
