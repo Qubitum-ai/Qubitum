@@ -3092,43 +3092,41 @@ fn public_registry_events_redact_operator_capital_model_and_exit_schedule() {
                 .iter()
                 .any(|event| matches!(event, crate::Event::SubnetCreated { subnet_id: 0 }))
         );
-        assert!(events.iter().any(|event| matches!(
-            event,
-            crate::Event::MinerRegistered {
-                miner_id: 0,
-                subnet_id: 0,
-            }
-        )));
         assert!(
             events
                 .iter()
-                .any(|event| matches!(event, crate::Event::MinerActivated { miner_id: 0 }))
+                .any(|event| matches!(event, crate::Event::MinerRegistered))
         );
-        assert!(events.iter().any(|event| matches!(
-            event,
-            crate::Event::ValidatorRegistered {
-                validator_id: 0,
-                subnet_id: 0,
-            }
-        )));
         assert!(
             events
                 .iter()
-                .any(|event| matches!(event, crate::Event::MinerExitStarted { miner_id: 0 }))
+                .any(|event| matches!(event, crate::Event::MinerActivated))
         );
-        assert!(events.iter().any(|event| matches!(
-            event,
-            crate::Event::ValidatorExitStarted { validator_id: 0 }
-        )));
         assert!(
             events
                 .iter()
-                .any(|event| matches!(event, crate::Event::MinerBondWithdrawn { miner_id: 0 }))
+                .any(|event| matches!(event, crate::Event::ValidatorRegistered))
         );
-        assert!(events.iter().any(|event| matches!(
-            event,
-            crate::Event::ValidatorStakeWithdrawn { validator_id: 0 }
-        )));
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::MinerExitStarted))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::ValidatorExitStarted))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::MinerBondWithdrawn))
+        );
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, crate::Event::ValidatorStakeWithdrawn))
+        );
 
         for encoded in events.iter().map(Encode::encode) {
             for hidden in [
@@ -3139,6 +3137,24 @@ fn public_registry_events_redact_operator_capital_model_and_exit_schedule() {
             ] {
                 assert!(!contains_subsequence(&encoded, &hidden));
             }
+        }
+        for encoded in events
+            .iter()
+            .filter(|event| {
+                matches!(
+                    event,
+                    crate::Event::MinerRegistered
+                        | crate::Event::MinerActivated
+                        | crate::Event::MinerExitStarted
+                        | crate::Event::MinerBondWithdrawn
+                        | crate::Event::ValidatorRegistered
+                        | crate::Event::ValidatorExitStarted
+                        | crate::Event::ValidatorStakeWithdrawn
+                )
+            })
+            .map(Encode::encode)
+        {
+            assert!(!contains_subsequence(&encoded, &0_u64.encode()));
         }
     });
 }

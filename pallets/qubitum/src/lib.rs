@@ -1156,25 +1156,19 @@ pub mod pallet {
         /// A subnet was created.
         SubnetCreated { subnet_id: SubnetId },
         /// A miner was registered.
-        MinerRegistered {
-            miner_id: MinerId,
-            subnet_id: SubnetId,
-        },
+        MinerRegistered,
         /// A miner bond was locked and activated.
-        MinerActivated { miner_id: MinerId },
+        MinerActivated,
         /// A miner started the bond exit cooldown.
-        MinerExitStarted { miner_id: MinerId },
+        MinerExitStarted,
         /// A miner bond was released after cooldown.
-        MinerBondWithdrawn { miner_id: MinerId },
+        MinerBondWithdrawn,
         /// A validator was registered and staked.
-        ValidatorRegistered {
-            validator_id: ValidatorId,
-            subnet_id: SubnetId,
-        },
+        ValidatorRegistered,
         /// A validator started the stake exit cooldown.
-        ValidatorExitStarted { validator_id: ValidatorId },
+        ValidatorExitStarted,
         /// A validator stake was released after cooldown.
-        ValidatorStakeWithdrawn { validator_id: ValidatorId },
+        ValidatorStakeWithdrawn,
         /// A miner published or cleared shielded identity commitments.
         MinerIdentityCommitmentsUpdated,
         /// A validator published or cleared shielded identity commitments.
@@ -1371,10 +1365,7 @@ pub mod pallet {
             };
 
             Miners::<T>::insert(miner_id, miner);
-            Self::deposit_event(Event::MinerRegistered {
-                miner_id,
-                subnet_id,
-            });
+            Self::deposit_event(Event::MinerRegistered);
             Ok(())
         }
 
@@ -1413,7 +1404,7 @@ pub mod pallet {
                 Ok(())
             })?;
 
-            Self::deposit_event(Event::MinerActivated { miner_id });
+            Self::deposit_event(Event::MinerActivated);
             Ok(())
         }
 
@@ -1455,10 +1446,7 @@ pub mod pallet {
             Self::insert_active_validator(subnet_id, validator_id)?;
             Validators::<T>::insert(validator_id, validator);
             ValidatorLockedStake::<T>::insert(validator_id, stake);
-            Self::deposit_event(Event::ValidatorRegistered {
-                validator_id,
-                subnet_id,
-            });
+            Self::deposit_event(Event::ValidatorRegistered);
             Ok(())
         }
 
@@ -1815,7 +1803,7 @@ pub mod pallet {
                 Ok(())
             })?;
 
-            Self::deposit_event(Event::MinerExitStarted { miner_id });
+            Self::deposit_event(Event::MinerExitStarted);
             Ok(())
         }
 
@@ -1852,7 +1840,7 @@ pub mod pallet {
                 Ok(())
             })?;
 
-            Self::deposit_event(Event::MinerBondWithdrawn { miner_id });
+            Self::deposit_event(Event::MinerBondWithdrawn);
             Ok(())
         }
 
@@ -1894,7 +1882,7 @@ pub mod pallet {
                 Ok(())
             })?;
 
-            Self::deposit_event(Event::ValidatorExitStarted { validator_id });
+            Self::deposit_event(Event::ValidatorExitStarted);
             Ok(())
         }
 
@@ -1939,7 +1927,7 @@ pub mod pallet {
                 Ok(())
             })?;
 
-            Self::deposit_event(Event::ValidatorStakeWithdrawn { validator_id });
+            Self::deposit_event(Event::ValidatorStakeWithdrawn);
             Ok(())
         }
 

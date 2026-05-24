@@ -286,13 +286,7 @@ mod benchmarks {
             )
         );
         assert_eq!(registered_miner.status, RegistryStatus::Pending);
-        assert_last_event::<T>(
-            Event::<T>::MinerRegistered {
-                miner_id: 0,
-                subnet_id: 0,
-            }
-            .into(),
-        );
+        assert_last_event::<T>(Event::<T>::MinerRegistered.into());
     }
 
     #[benchmark]
@@ -321,7 +315,7 @@ mod benchmarks {
             panic!("miner must be exiting");
         };
         assert!(exit_available_at >= T::MinerExitCooldownBlocks::get());
-        assert_last_event::<T>(Event::<T>::MinerExitStarted { miner_id: 0 }.into());
+        assert_last_event::<T>(Event::<T>::MinerExitStarted.into());
     }
 
     #[benchmark]
@@ -347,7 +341,7 @@ mod benchmarks {
                 registered_miner.status,
             )
         );
-        assert_last_event::<T>(Event::<T>::MinerBondWithdrawn { miner_id: 0 }.into());
+        assert_last_event::<T>(Event::<T>::MinerBondWithdrawn.into());
     }
 
     #[benchmark]
@@ -380,13 +374,7 @@ mod benchmarks {
             )
         );
         assert_eq!(registered_validator.status, RegistryStatus::Active);
-        assert_last_event::<T>(
-            Event::<T>::ValidatorRegistered {
-                validator_id: 0,
-                subnet_id: 0,
-            }
-            .into(),
-        );
+        assert_last_event::<T>(Event::<T>::ValidatorRegistered.into());
     }
 
     #[benchmark]
@@ -402,7 +390,7 @@ mod benchmarks {
             panic!("validator must be exiting");
         };
         assert!(exit_available_at >= T::ValidatorExitCooldownBlocks::get());
-        assert_last_event::<T>(Event::<T>::ValidatorExitStarted { validator_id: 0 }.into());
+        assert_last_event::<T>(Event::<T>::ValidatorExitStarted.into());
     }
 
     #[benchmark]
@@ -429,7 +417,7 @@ mod benchmarks {
                 registered_validator.status,
             )
         );
-        assert_last_event::<T>(Event::<T>::ValidatorStakeWithdrawn { validator_id: 0 }.into());
+        assert_last_event::<T>(Event::<T>::ValidatorStakeWithdrawn.into());
     }
 
     #[benchmark]
