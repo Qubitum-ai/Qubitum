@@ -2891,6 +2891,8 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
     assert!(!params.production_zk_verifier);
     assert!(!params.committed_request_payloads);
     assert!(!params.shielded_call_payloads);
+    assert!(!params.shield_submitter_origin_privacy);
+    assert!(!params.shield_key_window_privacy);
     assert!(!params.private_route_selection);
     assert!(!params.account_commitment_blinding);
     assert!(!params.private_routing_indexes);
@@ -2901,6 +2903,12 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
     assert!(params.readiness_blockers.production_zk_verifier_missing);
     assert!(params.readiness_blockers.committed_request_payloads_missing);
     assert!(params.readiness_blockers.shielded_call_payloads_missing);
+    assert!(
+        params
+            .readiness_blockers
+            .shield_submitter_origin_privacy_missing
+    );
+    assert!(params.readiness_blockers.shield_key_window_privacy_missing);
     assert!(params.readiness_blockers.private_route_selection_missing);
     assert!(
         params
