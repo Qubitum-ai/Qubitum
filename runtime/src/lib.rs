@@ -2881,6 +2881,9 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
     assert!(!params.shielded_call_payloads);
     assert!(!params.private_route_selection);
     assert!(!params.post_quantum_account_signatures);
+    assert!(!params.privacy_complete);
+    assert!(!params.post_quantum_complete);
+    assert!(!params.production_ready);
 }
 
 #[test]

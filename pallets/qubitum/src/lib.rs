@@ -799,6 +799,9 @@ pub mod pallet {
         pub shielded_call_payloads: bool,
         pub private_route_selection: bool,
         pub post_quantum_account_signatures: bool,
+        pub privacy_complete: bool,
+        pub post_quantum_complete: bool,
+        pub production_ready: bool,
         pub identity_signature_commitment_policy: bool,
         pub identity_signature_challenge_binding: bool,
         pub identity_signature_verification: bool,
@@ -2115,6 +2118,27 @@ pub mod pallet {
         }
 
         pub fn protocol_params() -> ChainProtocolParams<BalanceOf<T>> {
+            let proof_verifier_mode = T::ProofVerifier::mode();
+            let proof_settlement_enabled = proof_verifier_mode.proof_settlement_enabled();
+            let production_zk_verifier = proof_verifier_mode.production_zk_verifier();
+            let signature_mode = T::SignatureMode::get();
+            let committed_request_payloads = false;
+            let shielded_call_payloads = false;
+            let private_route_selection = false;
+            let post_quantum_account_signatures = false;
+            let identity_signature_commitment_policy = true;
+            let identity_signature_challenge_binding = true;
+            let identity_signature_verification = false;
+            let privacy_complete =
+                committed_request_payloads && shielded_call_payloads && private_route_selection;
+            let post_quantum_complete = signature_mode == SignatureMode::FullPostQuantum
+                && post_quantum_account_signatures
+                && identity_signature_verification;
+            let production_ready = proof_settlement_enabled
+                && production_zk_verifier
+                && privacy_complete
+                && post_quantum_complete;
+
             ChainProtocolParams {
                 subnet_creation_burn: T::SubnetCreationBurn::get(),
                 miner_registration_burn: T::MinerRegistrationBurn::get(),
@@ -2129,17 +2153,20 @@ pub mod pallet {
                 max_proof_size_bytes: T::MaxProofSizeBytes::get(),
                 max_verification_latency_ms: T::MaxVerificationLatencyMs::get(),
                 max_proof_submission_age_blocks: T::MaxProofSubmissionAgeBlocks::get(),
-                proof_verifier_mode: T::ProofVerifier::mode(),
-                proof_settlement_enabled: T::ProofVerifier::mode().proof_settlement_enabled(),
-                production_zk_verifier: T::ProofVerifier::mode().production_zk_verifier(),
-                signature_mode: T::SignatureMode::get(),
-                committed_request_payloads: false,
-                shielded_call_payloads: false,
-                private_route_selection: false,
-                post_quantum_account_signatures: false,
-                identity_signature_commitment_policy: true,
-                identity_signature_challenge_binding: true,
-                identity_signature_verification: false,
+                proof_verifier_mode,
+                proof_settlement_enabled,
+                production_zk_verifier,
+                signature_mode,
+                committed_request_payloads,
+                shielded_call_payloads,
+                private_route_selection,
+                post_quantum_account_signatures,
+                privacy_complete,
+                post_quantum_complete,
+                production_ready,
+                identity_signature_commitment_policy,
+                identity_signature_challenge_binding,
+                identity_signature_verification,
                 miner_exit_cooldown_blocks: T::MinerExitCooldownBlocks::get(),
                 validator_exit_cooldown_blocks: T::ValidatorExitCooldownBlocks::get(),
                 request_cancel_delay_blocks: T::RequestCancelDelayBlocks::get(),

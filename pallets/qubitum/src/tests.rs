@@ -625,6 +625,9 @@ fn protocol_params_expose_runtime_policy() {
         assert!(!params.shielded_call_payloads);
         assert!(!params.private_route_selection);
         assert!(!params.post_quantum_account_signatures);
+        assert!(!params.privacy_complete);
+        assert!(!params.post_quantum_complete);
+        assert!(!params.production_ready);
         assert!(params.identity_signature_commitment_policy);
         assert!(params.identity_signature_challenge_binding);
         assert!(!params.identity_signature_verification);
