@@ -784,6 +784,7 @@ pub mod pallet {
         pub private_route_selection_missing: bool,
         pub account_commitment_blinding_missing: bool,
         pub private_routing_indexes_missing: bool,
+        pub private_storage_keys_missing: bool,
         pub private_capital_accounting_missing: bool,
         pub private_event_metadata_missing: bool,
         pub signature_mode_not_full_post_quantum: bool,
@@ -802,6 +803,7 @@ pub mod pallet {
                 || self.private_route_selection_missing
                 || self.account_commitment_blinding_missing
                 || self.private_routing_indexes_missing
+                || self.private_storage_keys_missing
                 || self.private_capital_accounting_missing
                 || self.private_event_metadata_missing
         }
@@ -850,6 +852,7 @@ pub mod pallet {
         pub private_route_selection: bool,
         pub account_commitment_blinding: bool,
         pub private_routing_indexes: bool,
+        pub private_storage_keys: bool,
         pub private_capital_accounting: bool,
         pub private_event_metadata: bool,
         pub public_event_payloads_redacted: bool,
@@ -2153,6 +2156,7 @@ pub mod pallet {
             let private_route_selection = false;
             let account_commitment_blinding = false;
             let private_routing_indexes = false;
+            let private_storage_keys = false;
             let private_capital_accounting = false;
             let private_event_metadata = false;
             let public_event_payloads_redacted = true;
@@ -2173,6 +2177,7 @@ pub mod pallet {
                 private_route_selection_missing: !private_route_selection,
                 account_commitment_blinding_missing: !account_commitment_blinding,
                 private_routing_indexes_missing: !private_routing_indexes,
+                private_storage_keys_missing: !private_storage_keys,
                 private_capital_accounting_missing: !private_capital_accounting,
                 private_event_metadata_missing: !private_event_metadata,
                 signature_mode_not_full_post_quantum: signature_mode
@@ -2212,6 +2217,7 @@ pub mod pallet {
                 private_route_selection,
                 account_commitment_blinding,
                 private_routing_indexes,
+                private_storage_keys,
                 private_capital_accounting,
                 private_event_metadata,
                 public_event_payloads_redacted,

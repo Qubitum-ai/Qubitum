@@ -2896,6 +2896,7 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
     assert!(!params.private_route_selection);
     assert!(!params.account_commitment_blinding);
     assert!(!params.private_routing_indexes);
+    assert!(!params.private_storage_keys);
     assert!(!params.private_capital_accounting);
     assert!(!params.private_event_metadata);
     assert!(params.public_event_payloads_redacted);
@@ -2922,6 +2923,7 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
             .account_commitment_blinding_missing
     );
     assert!(params.readiness_blockers.private_routing_indexes_missing);
+    assert!(params.readiness_blockers.private_storage_keys_missing);
     assert!(params.readiness_blockers.private_capital_accounting_missing);
     assert!(params.readiness_blockers.private_event_metadata_missing);
     assert!(

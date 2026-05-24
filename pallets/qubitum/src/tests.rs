@@ -629,6 +629,7 @@ fn protocol_params_expose_runtime_policy() {
         assert!(!params.private_route_selection);
         assert!(!params.account_commitment_blinding);
         assert!(!params.private_routing_indexes);
+        assert!(!params.private_storage_keys);
         assert!(!params.private_capital_accounting);
         assert!(!params.private_event_metadata);
         assert!(params.public_event_payloads_redacted);
@@ -654,6 +655,7 @@ fn protocol_params_expose_runtime_policy() {
                 private_route_selection_missing: true,
                 account_commitment_blinding_missing: true,
                 private_routing_indexes_missing: true,
+                private_storage_keys_missing: true,
                 private_capital_accounting_missing: true,
                 private_event_metadata_missing: true,
                 signature_mode_not_full_post_quantum: false,
@@ -694,6 +696,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
         assert!(!params.shield_key_window_privacy);
         assert!(!params.account_commitment_blinding);
         assert!(!params.private_routing_indexes);
+        assert!(!params.private_storage_keys);
         assert!(!params.private_capital_accounting);
         assert!(!params.private_event_metadata);
         assert!(params.public_event_payloads_redacted);
@@ -711,6 +714,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
                 .account_commitment_blinding_missing
         );
         assert!(params.readiness_blockers.private_routing_indexes_missing);
+        assert!(params.readiness_blockers.private_storage_keys_missing);
         assert!(params.readiness_blockers.private_capital_accounting_missing);
         assert!(params.readiness_blockers.private_event_metadata_missing);
         assert!(params.readiness_blockers.privacy_blocked());
