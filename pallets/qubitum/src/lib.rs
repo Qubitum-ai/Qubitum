@@ -855,6 +855,7 @@ pub mod pallet {
         pub private_capital_accounting: bool,
         pub private_event_metadata: bool,
         pub public_event_payloads_redacted: bool,
+        pub public_query_ids_redacted: bool,
         pub post_quantum_account_signatures: bool,
         pub post_quantum_signature_crypto_verification: bool,
         pub privacy_complete: bool,
@@ -2156,6 +2157,7 @@ pub mod pallet {
             let private_capital_accounting = false;
             let private_event_metadata = false;
             let public_event_payloads_redacted = true;
+            let public_query_ids_redacted = true;
             let post_quantum_account_signatures = false;
             let post_quantum_signature_crypto_verification = false;
             let identity_signature_commitment_policy = true;
@@ -2213,6 +2215,7 @@ pub mod pallet {
                 private_capital_accounting,
                 private_event_metadata,
                 public_event_payloads_redacted,
+                public_query_ids_redacted,
                 post_quantum_account_signatures,
                 post_quantum_signature_crypto_verification,
                 privacy_complete,

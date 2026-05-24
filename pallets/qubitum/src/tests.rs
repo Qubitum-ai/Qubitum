@@ -632,6 +632,7 @@ fn protocol_params_expose_runtime_policy() {
         assert!(!params.private_capital_accounting);
         assert!(!params.private_event_metadata);
         assert!(params.public_event_payloads_redacted);
+        assert!(params.public_query_ids_redacted);
         assert!(!params.post_quantum_account_signatures);
         assert!(!params.post_quantum_signature_crypto_verification);
         assert!(!params.privacy_complete);
@@ -695,6 +696,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
         assert!(!params.private_capital_accounting);
         assert!(!params.private_event_metadata);
         assert!(params.public_event_payloads_redacted);
+        assert!(params.public_query_ids_redacted);
         assert!(
             params
                 .readiness_blockers
