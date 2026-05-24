@@ -6563,6 +6563,27 @@ fn fail_closed_verifier_never_accepts_shape_only_proofs() {
 }
 
 #[test]
+fn test_only_verifier_settles_but_keeps_production_zk_blocked() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(44);
+
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(44)));
+
+        let request = InferenceRequests::<Test>::get(44).unwrap();
+        let params = Qubitum::protocol_params();
+        assert_eq!(request.status, InferenceRequestStatus::Settled);
+        assert!(ProofRecords::<Test>::contains_key(44));
+        assert_eq!(params.proof_verifier_mode, ProofVerifierMode::TestOnly);
+        assert!(params.proof_settlement_enabled);
+        assert!(!params.production_zk_verifier);
+        assert!(params.readiness_blockers.production_zk_verifier_missing);
+        assert!(params.readiness_blockers.production_blocked());
+        assert!(!params.production_ready);
+    });
+}
+
+#[test]
 fn public_accounting_view_redacts_capital_totals() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
