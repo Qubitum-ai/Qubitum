@@ -861,7 +861,9 @@ pub mod pallet {
         pub private_event_metadata: bool,
         pub public_event_payloads_redacted: bool,
         pub public_query_ids_redacted: bool,
+        pub public_subnet_records_redacted: bool,
         pub route_availability_ids_redacted: bool,
+        pub public_route_availability_redacted: bool,
         pub public_accounting_totals_redacted: bool,
         pub public_request_status_counts_redacted: bool,
         pub public_registry_records_redacted: bool,
@@ -2174,7 +2176,9 @@ pub mod pallet {
             let private_event_metadata = false;
             let public_event_payloads_redacted = true;
             let public_query_ids_redacted = true;
+            let public_subnet_records_redacted = true;
             let route_availability_ids_redacted = true;
+            let public_route_availability_redacted = true;
             let public_accounting_totals_redacted = true;
             let public_request_status_counts_redacted = true;
             let public_registry_records_redacted = true;
@@ -2244,7 +2248,9 @@ pub mod pallet {
                 private_event_metadata,
                 public_event_payloads_redacted,
                 public_query_ids_redacted,
+                public_subnet_records_redacted,
                 route_availability_ids_redacted,
+                public_route_availability_redacted,
                 public_accounting_totals_redacted,
                 public_request_status_counts_redacted,
                 public_registry_records_redacted,
@@ -2320,19 +2326,12 @@ pub mod pallet {
             Self::route_assignment(subnet_id, RequestCount::<T>::get())
         }
 
-        pub fn next_route_availability(subnet_id: SubnetId) -> ChainRouteAvailability {
-            let request_id = RequestCount::<T>::get();
-            ChainRouteAvailability {
-                available: Self::route_assignment(subnet_id, request_id).is_some(),
-            }
+        pub fn next_route_availability(_subnet_id: SubnetId) -> ChainRouteAvailability {
+            ChainRouteAvailability { available: false }
         }
 
-        pub fn public_subnet(subnet_id: SubnetId) -> Option<ChainPublicSubnet> {
-            Subnets::<T>::get(subnet_id).map(|subnet| ChainPublicSubnet {
-                domain: subnet.domain,
-                proof_system: subnet.proof_system,
-                active: subnet.active,
-            })
+        pub fn public_subnet(_subnet_id: SubnetId) -> Option<ChainPublicSubnet> {
+            None
         }
 
         pub fn public_miner(_miner_id: MinerId) -> Option<ChainPublicMiner> {

@@ -2912,7 +2912,9 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
     assert!(!params.private_event_metadata);
     assert!(params.public_event_payloads_redacted);
     assert!(params.public_query_ids_redacted);
+    assert!(params.public_subnet_records_redacted);
     assert!(params.route_availability_ids_redacted);
+    assert!(params.public_route_availability_redacted);
     assert!(params.public_accounting_totals_redacted);
     assert!(params.public_request_status_counts_redacted);
     assert!(params.public_registry_records_redacted);

@@ -2,21 +2,20 @@
 
 use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, AutoRouteInferenceRequestParams,
-    CancelledInferenceRequestCount, ChainInferenceRequest, ChainMiner, ChainPublicSubnet,
-    ChainReadinessBlockers, ChainRequestStatusCounts, ChainRouteAvailability, ChainValidator,
-    Error, FailClosedProofVerifier, HoldReason, InferenceRequestCommitmentParams,
-    InferenceRequestParams, InferenceRequestStatus, InferenceRequestTerms,
-    InferenceRequestTermsWitness, InferenceRequestTimingWitness, InferenceRequests,
-    LegacyAccountingMigrationFailures, LegacyCapitalRecordMigrationFailures,
-    LegacyRoutingIndexMigrationFailures, MinerCount, MinerIdentityCommitments,
-    MinerIdentitySignatureBundles, MinerIdentitySignatureChallenges, MinerLockedBond, Miners,
-    PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests, ProofRecords,
-    ProofVerificationPolicy, ProofVerifierMode, PublicRegistryStatus,
-    RejectedInferenceRequestCount, RequestCount, SettledInferenceRequestCount, SubnetCount,
-    Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
-    TotalTreasuryFees, TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
-    ValidatorIdentitySignatureBundles, ValidatorIdentitySignatureChallenges, ValidatorLockedStake,
-    Validators, VerifyProof,
+    CancelledInferenceRequestCount, ChainInferenceRequest, ChainMiner, ChainReadinessBlockers,
+    ChainRequestStatusCounts, ChainRouteAvailability, ChainValidator, Error,
+    FailClosedProofVerifier, HoldReason, InferenceRequestCommitmentParams, InferenceRequestParams,
+    InferenceRequestStatus, InferenceRequestTerms, InferenceRequestTermsWitness,
+    InferenceRequestTimingWitness, InferenceRequests, LegacyAccountingMigrationFailures,
+    LegacyCapitalRecordMigrationFailures, LegacyRoutingIndexMigrationFailures, MinerCount,
+    MinerIdentityCommitments, MinerIdentitySignatureBundles, MinerIdentitySignatureChallenges,
+    MinerLockedBond, Miners, PendingInferenceRequestCount, PendingMinerRequests,
+    PendingValidatorRequests, ProofRecords, ProofVerificationPolicy, ProofVerifierMode,
+    PublicRegistryStatus, RejectedInferenceRequestCount, RequestCount,
+    SettledInferenceRequestCount, SubnetCount, Subnets, TotalBurned, TotalInferenceEscrowed,
+    TotalInferenceRefunded, TotalMinerPayouts, TotalTreasuryFees, TotalValidatorFees,
+    ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles,
+    ValidatorIdentitySignatureChallenges, ValidatorLockedStake, Validators, VerifyProof,
     mock::{
         Balances, Qubitum, RuntimeEvent, RuntimeOrigin, System, Test, new_test_ext,
         set_verification_outcome,
@@ -569,17 +568,10 @@ fn public_subnet_view_redacts_owner_and_economic_policy() {
             ProofSystem::RiscZeroStark
         ));
 
-        let public_subnet = Qubitum::public_subnet(0).unwrap();
-        assert_eq!(
-            public_subnet,
-            ChainPublicSubnet {
-                domain: SubnetDomain::Code,
-                proof_system: ProofSystem::RiscZeroStark,
-                active: true,
-            }
-        );
+        assert!(Subnets::<Test>::contains_key(0));
+        assert_eq!(Qubitum::public_subnet(0), None);
 
-        let encoded_subnet = public_subnet.encode();
+        let encoded_subnet = Qubitum::public_subnet(0).encode();
         for hidden in [
             0_u64.encode(),
             4_u64.encode(),
@@ -633,7 +625,9 @@ fn protocol_params_expose_runtime_policy() {
         assert!(!params.private_event_metadata);
         assert!(params.public_event_payloads_redacted);
         assert!(params.public_query_ids_redacted);
+        assert!(params.public_subnet_records_redacted);
         assert!(params.route_availability_ids_redacted);
+        assert!(params.public_route_availability_redacted);
         assert!(params.public_accounting_totals_redacted);
         assert!(params.public_request_status_counts_redacted);
         assert!(params.public_registry_records_redacted);
@@ -709,7 +703,9 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
         assert!(!params.private_event_metadata);
         assert!(params.public_event_payloads_redacted);
         assert!(params.public_query_ids_redacted);
+        assert!(params.public_subnet_records_redacted);
         assert!(params.route_availability_ids_redacted);
+        assert!(params.public_route_availability_redacted);
         assert!(params.public_accounting_totals_redacted);
         assert!(params.public_request_status_counts_redacted);
         assert!(params.public_registry_records_redacted);
@@ -874,6 +870,7 @@ fn routing_requires_post_quantum_identity_bundles() {
             miner_identity_signature_bundle(0, Some(commitment(120)), Some(commitment(121))),
         ));
         assert!(!Qubitum::next_route_availability(0).available);
+        assert!(Qubitum::next_route_assignment(0).is_none());
 
         assert_ok!(Qubitum::set_validator_identity_commitments(
             RuntimeOrigin::signed(3),
@@ -882,7 +879,8 @@ fn routing_requires_post_quantum_identity_bundles() {
             Some(commitment(123)),
             validator_identity_signature_bundle(0, Some(commitment(122)), Some(commitment(123))),
         ));
-        assert!(Qubitum::next_route_availability(0).available);
+        assert!(!Qubitum::next_route_availability(0).available);
+        assert!(Qubitum::next_route_assignment(0).is_some());
         assert_ok!(Qubitum::request_inference(
             RuntimeOrigin::signed(4),
             0,
@@ -2653,7 +2651,8 @@ fn identity_signature_commitments_are_not_reported_as_verified() {
         assert!(ValidatorIdentitySignatureChallenges::<Test>::contains_key(
             0
         ));
-        assert!(Qubitum::next_route_availability(0).available);
+        assert!(!Qubitum::next_route_availability(0).available);
+        assert!(Qubitum::next_route_assignment(0).is_some());
         assert!(!params.identity_signature_verification);
         assert!(!params.post_quantum_signature_crypto_verification);
         assert!(
@@ -2683,6 +2682,7 @@ fn routing_and_proof_reject_unbound_identity_signature_bundles() {
         assert!(MinerIdentitySignatureBundles::<Test>::contains_key(0));
         assert!(MinerIdentitySignatureChallenges::<Test>::contains_key(0));
         assert!(!Qubitum::next_route_availability(0).available);
+        assert!(Qubitum::next_route_assignment(0).is_none());
         assert_noop!(
             submit_proof(RuntimeOrigin::signed(3), valid_submission(88)),
             Error::<Test>::InvalidSignatureBundle
@@ -4928,9 +4928,10 @@ fn public_next_route_availability_does_not_expose_participant_assignment_or_futu
         register_active_miner_and_validator();
         RequestCount::<Test>::put(42);
 
+        assert!(Qubitum::next_route_assignment(0).is_some());
         assert_eq!(
             Qubitum::next_route_availability(0),
-            ChainRouteAvailability { available: true }
+            ChainRouteAvailability { available: false }
         );
         let encoded_available = Qubitum::next_route_availability(0).encode();
         for hidden in [42_u64.encode(), 0_u64.encode()] {
