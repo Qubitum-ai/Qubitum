@@ -859,6 +859,7 @@ pub mod pallet {
         pub public_query_ids_redacted: bool,
         pub route_availability_ids_redacted: bool,
         pub public_accounting_totals_redacted: bool,
+        pub public_request_status_counts_redacted: bool,
         pub post_quantum_account_signatures: bool,
         pub post_quantum_signature_crypto_verification: bool,
         pub privacy_complete: bool,
@@ -2164,6 +2165,7 @@ pub mod pallet {
             let public_query_ids_redacted = true;
             let route_availability_ids_redacted = true;
             let public_accounting_totals_redacted = true;
+            let public_request_status_counts_redacted = true;
             let post_quantum_account_signatures = false;
             let post_quantum_signature_crypto_verification = false;
             let identity_signature_commitment_policy = true;
@@ -2226,6 +2228,7 @@ pub mod pallet {
                 public_query_ids_redacted,
                 route_availability_ids_redacted,
                 public_accounting_totals_redacted,
+                public_request_status_counts_redacted,
                 post_quantum_account_signatures,
                 post_quantum_signature_crypto_verification,
                 privacy_complete,
@@ -2241,13 +2244,24 @@ pub mod pallet {
             }
         }
 
-        pub fn request_status_counts() -> ChainRequestStatusCounts {
+        #[cfg(any(test, feature = "try-runtime"))]
+        pub(crate) fn raw_request_status_counts() -> ChainRequestStatusCounts {
             ChainRequestStatusCounts {
                 pending: PendingInferenceRequestCount::<T>::get(),
                 settled: SettledInferenceRequestCount::<T>::get(),
                 cancelled: CancelledInferenceRequestCount::<T>::get(),
                 rejected: RejectedInferenceRequestCount::<T>::get(),
                 expired: ExpiredInferenceRequestCount::<T>::get(),
+            }
+        }
+
+        pub fn request_status_counts() -> ChainRequestStatusCounts {
+            ChainRequestStatusCounts {
+                pending: 0,
+                settled: 0,
+                cancelled: 0,
+                rejected: 0,
+                expired: 0,
             }
         }
 
@@ -4385,7 +4399,7 @@ pub mod pallet {
                 }
             }
             ensure!(
-                Self::request_status_counts() == expected_status_counts,
+                Self::raw_request_status_counts() == expected_status_counts,
                 "Qubitum request status counter mismatch"
             );
 

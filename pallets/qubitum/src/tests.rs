@@ -636,6 +636,7 @@ fn protocol_params_expose_runtime_policy() {
         assert!(params.public_query_ids_redacted);
         assert!(params.route_availability_ids_redacted);
         assert!(params.public_accounting_totals_redacted);
+        assert!(params.public_request_status_counts_redacted);
         assert!(!params.post_quantum_account_signatures);
         assert!(!params.post_quantum_signature_crypto_verification);
         assert!(!params.privacy_complete);
@@ -704,6 +705,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
         assert!(params.public_query_ids_redacted);
         assert!(params.route_availability_ids_redacted);
         assert!(params.public_accounting_totals_redacted);
+        assert!(params.public_request_status_counts_redacted);
         assert!(
             params
                 .readiness_blockers
@@ -1676,7 +1678,7 @@ fn request_id_overflow_does_not_escrow_or_increment_pending() {
         );
         assert_eq!(PendingInferenceRequestCount::<Test>::get(), 0);
         assert_eq!(
-            Qubitum::request_status_counts(),
+            Qubitum::raw_request_status_counts(),
             ChainRequestStatusCounts {
                 pending: 0,
                 settled: 0,
@@ -2837,7 +2839,7 @@ fn submit_proof_records_commitments_for_active_participants() {
         assert_eq!(TotalTreasuryFees::<Test>::get(), 5);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
         assert_eq!(
-            Qubitum::request_status_counts(),
+            Qubitum::raw_request_status_counts(),
             ChainRequestStatusCounts {
                 pending: 0,
                 settled: 1,
@@ -4262,7 +4264,7 @@ fn request_inference_escrows_payment() {
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
         assert_eq!(
-            Qubitum::request_status_counts(),
+            Qubitum::raw_request_status_counts(),
             ChainRequestStatusCounts {
                 pending: 1,
                 settled: 0,
@@ -5359,7 +5361,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
         assert_eq!(
-            Qubitum::request_status_counts(),
+            Qubitum::raw_request_status_counts(),
             ChainRequestStatusCounts {
                 pending: 1,
                 settled: 0,
@@ -5768,7 +5770,7 @@ fn cancel_inference_releases_pending_escrow() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 1_000);
         assert_eq!(
-            Qubitum::request_status_counts(),
+            Qubitum::raw_request_status_counts(),
             ChainRequestStatusCounts {
                 pending: 0,
                 settled: 0,
@@ -5848,7 +5850,7 @@ fn expire_inference_releases_stale_request_for_any_signed_caller() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 1_000);
         assert_eq!(
-            Qubitum::request_status_counts(),
+            Qubitum::raw_request_status_counts(),
             ChainRequestStatusCounts {
                 pending: 0,
                 settled: 0,
@@ -6340,6 +6342,39 @@ fn public_accounting_view_redacts_capital_totals() {
 }
 
 #[test]
+fn public_request_status_counts_redact_activity_totals() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(42);
+
+        assert_eq!(
+            Qubitum::raw_request_status_counts(),
+            ChainRequestStatusCounts {
+                pending: 1,
+                settled: 0,
+                cancelled: 0,
+                rejected: 0,
+                expired: 0,
+            }
+        );
+        assert_eq!(
+            Qubitum::request_status_counts(),
+            ChainRequestStatusCounts {
+                pending: 0,
+                settled: 0,
+                cancelled: 0,
+                rejected: 0,
+                expired: 0,
+            }
+        );
+        assert!(!contains_subsequence(
+            &Qubitum::request_status_counts().encode(),
+            &1_u64.encode()
+        ));
+    });
+}
+
+#[test]
 fn verifier_error_fails_closed_without_settlement_slash_or_refund_side_effects() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
@@ -6536,7 +6571,7 @@ fn verifier_rejection_slashes_and_refunds_request() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 1_000);
         assert_eq!(
-            Qubitum::request_status_counts(),
+            Qubitum::raw_request_status_counts(),
             ChainRequestStatusCounts {
                 pending: 0,
                 settled: 0,
