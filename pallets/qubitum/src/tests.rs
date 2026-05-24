@@ -1013,6 +1013,53 @@ fn slashed_validator_can_exit_with_remaining_stake() {
 }
 
 #[test]
+fn failed_root_slashes_preserve_locked_capital_status_and_routing() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+
+        let miner_before = Miners::<Test>::get(0).unwrap();
+        let validator_before = Validators::<Test>::get(0).unwrap();
+        let total_burned_before = TotalBurned::<Test>::get();
+        let miner_hold_before = Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2);
+        let validator_hold_before =
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3);
+
+        assert_noop!(
+            Qubitum::slash_miner(RuntimeOrigin::root(), 0, 99, 1_000),
+            Error::<Test>::NotOperator
+        );
+        assert_noop!(
+            Qubitum::slash_miner(RuntimeOrigin::root(), 0, 2, MIN_INVALID_PROOF_SLASH_BPS - 1),
+            Error::<Test>::InvalidSlashPercent
+        );
+        assert_noop!(
+            Qubitum::slash_validator(RuntimeOrigin::root(), 0, 88, 1_000),
+            Error::<Test>::NotOperator
+        );
+        assert_noop!(
+            Qubitum::slash_validator(RuntimeOrigin::root(), 0, 3, MIN_INVALID_PROOF_SLASH_BPS - 1),
+            Error::<Test>::InvalidSlashPercent
+        );
+
+        assert_eq!(Miners::<Test>::get(0), Some(miner_before));
+        assert_eq!(Validators::<Test>::get(0), Some(validator_before));
+        assert_eq!(MinerLockedBond::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            miner_hold_before
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            validator_hold_before
+        );
+        assert_eq!(TotalBurned::<Test>::get(), total_burned_before);
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+    });
+}
+
+#[test]
 fn participant_capital_lifecycle_uses_per_registry_record_amounts() {
     new_test_ext().execute_with(|| {
         assert_ok!(Qubitum::create_subnet(
