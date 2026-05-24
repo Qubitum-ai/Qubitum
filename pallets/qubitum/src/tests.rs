@@ -887,6 +887,69 @@ fn storage_keys_remain_linkable_until_private_keying_lands() {
 }
 
 #[test]
+fn active_routing_indexes_remain_storage_visible_until_private_indexes_land() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(30),
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            1,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(2),
+            1,
+            Some(commitment(130)),
+            Some(commitment(131)),
+            miner_identity_signature_bundle(1, Some(commitment(130)), Some(commitment(131))),
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(3),
+            0,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::set_validator_identity_commitments(
+            RuntimeOrigin::signed(3),
+            1,
+            Some(commitment(132)),
+            Some(commitment(133)),
+            validator_identity_signature_bundle(1, Some(commitment(132)), Some(commitment(133))),
+        ));
+
+        let params = Qubitum::protocol_params();
+        assert!(!params.private_routing_indexes);
+        assert!(params.route_availability_ids_redacted);
+        assert!(params.public_route_availability_redacted);
+        assert!(params.readiness_blockers.private_routing_indexes_missing);
+
+        let miner_index = ActiveMinersBySubnet::<Test>::get(0);
+        let validator_index = ActiveValidatorsBySubnet::<Test>::get(0);
+        assert_eq!(miner_index.to_vec(), vec![0, 1]);
+        assert_eq!(validator_index.to_vec(), vec![0, 1]);
+
+        assert!(contains_subsequence(&miner_index.encode(), &1_u64.encode()));
+        assert!(contains_subsequence(
+            &validator_index.encode(),
+            &1_u64.encode()
+        ));
+
+        assert_eq!(
+            Qubitum::next_route_availability(0),
+            ChainRouteAvailability { available: false }
+        );
+        assert!(!contains_subsequence(
+            &Qubitum::next_route_availability(0).encode(),
+            &1_u64.encode()
+        ));
+    });
+}
+
+#[test]
 fn protocol_params_are_policy_only_across_state_transitions() {
     new_test_ext().execute_with(|| {
         let baseline = Qubitum::protocol_params();
