@@ -1,6 +1,12 @@
 # Qubitum AI
 
-Qubitum is a post-quantum-ready protocol for private, verifiable AI inference. This repository imports OpenTensor/Subtensor history and adds Qubitum-specific protocol milestones on `main`.
+Qubitum is a protocol-track implementation for private, verifiable AI inference with a post-quantum migration path. This repository imports OpenTensor/Subtensor history and adds Qubitum-specific protocol milestones on `main`.
+
+Current readiness is intentionally exposed by runtime flags and tests:
+
+- `production_ready = false`: settlement and policy scaffolding exist, but a production ZK verifier and external audit are still required.
+- `privacy_complete = false`: public views are redacted and Qubitum calls are shield-gated, but committed request payloads, shielded call payloads, and private route selection are not complete.
+- `post_quantum_complete = false`: Qubitum identity bundles require post-quantum commitments, but chain account signatures and real signature verification are not fully post-quantum yet.
 
 Current Qubitum implementation entry points:
 

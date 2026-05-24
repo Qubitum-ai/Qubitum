@@ -120,9 +120,9 @@ fn ensure_shield_submit_mortal_era<Call: ContainsShieldSubmitEncrypted>(
 /// and identical SCALE encoding, so existing clients require no changes.
 ///
 /// Any `submit_encrypted` call signed with an immortal Era or a mortal Era period
-/// longer than [`MAX_SHIELD_ERA_PERIOD`] is rejected immediately at pool submission
-/// with `InvalidTransaction::Stale`, preventing pool bloat from long-lived
-/// encrypted transactions that can never be decrypted.
+/// longer than [`MAX_SHIELD_ERA_PERIOD`] is rejected during both pool validation
+/// and block preparation with `InvalidTransaction::Stale`, preventing long-lived
+/// encrypted transactions that can never be decrypted from entering or executing.
 #[freeze_struct("3cb7a665d55d00e5")]
 #[derive(Encode, Decode, DecodeWithMemTracking, Clone, Eq, PartialEq, TypeInfo)]
 #[scale_info(skip_type_params(T))]
@@ -295,6 +295,25 @@ mod tests {
                 ext.prepare((), &RuntimeOrigin::none(), &call, &info, 0),
                 Err(InvalidTransaction::Stale.into())
             );
+        });
+    }
+
+    #[test]
+    fn prepare_rejects_wrapped_shield_tx_with_immortal_era_before_substrate_mortality() {
+        new_test_ext().execute_with(|| {
+            for call in [
+                utility_wrapped_submit_encrypted_call(),
+                preimage_wrapped_submit_encrypted_call(),
+                deeply_nested_preimage_call(submit_encrypted_call()),
+            ] {
+                let info = call.get_dispatch_info();
+                let ext = CheckMortality::<Runtime>::from(Era::Immortal);
+
+                assert_eq!(
+                    ext.prepare((), &RuntimeOrigin::none(), &call, &info, 0),
+                    Err(InvalidTransaction::Stale.into())
+                );
+            }
         });
     }
 
