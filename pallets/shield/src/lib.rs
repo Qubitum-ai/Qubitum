@@ -222,9 +222,9 @@ pub mod pallet {
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
         /// Encrypted wrapper accepted.
-        EncryptedSubmitted { id: T::Hash, who: T::AccountId },
+        EncryptedSubmitted { id: T::Hash },
         /// Encrypted extrinsic was stored for later execution.
-        ExtrinsicStored { index: u32, who: T::AccountId },
+        ExtrinsicStored { index: u32 },
         /// Extrinsic decode failed during on_initialize.
         ExtrinsicDecodeFailed { index: u32 },
         /// Extrinsic dispatch failed during on_initialize.
@@ -378,16 +378,16 @@ pub mod pallet {
             origin: OriginFor<T>,
             ciphertext: BoundedVec<u8, ConstU32<8192>>,
         ) -> DispatchResult {
-            let who = ensure_signed(origin)?;
+            ensure_signed(origin)?;
             let shielded_tx = parse_valid_submit_encrypted_ciphertext(&ciphertext)
                 .ok_or(Error::<T>::BadCiphertext)?;
             ensure!(
                 Self::is_shielded_using_current_key(&shielded_tx.key_hash),
                 Error::<T>::InvalidShieldedTxPubKeyHash
             );
-            let id: T::Hash = T::Hashing::hash_of(&(who.clone(), &ciphertext));
+            let id: T::Hash = T::Hashing::hash_of(&ciphertext);
 
-            Self::deposit_event(Event::EncryptedSubmitted { id, who });
+            Self::deposit_event(Event::EncryptedSubmitted { id });
             Ok(())
         }
 
@@ -415,7 +415,7 @@ pub mod pallet {
 
             NextPendingExtrinsicIndex::<T>::put(index.saturating_add(1));
 
-            Self::deposit_event(Event::ExtrinsicStored { index, who });
+            Self::deposit_event(Event::ExtrinsicStored { index });
             Ok(())
         }
 

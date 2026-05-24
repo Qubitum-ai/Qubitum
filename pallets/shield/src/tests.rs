@@ -235,15 +235,41 @@ fn submit_encrypted_emits_event() {
             ciphertext.clone(),
         ));
 
-        let expected_id = <Test as frame_system::Config>::Hashing::hash_of(&(who, &ciphertext));
+        let expected_id = <Test as frame_system::Config>::Hashing::hash_of(&ciphertext);
 
         System::assert_last_event(
-            crate::Event::<Test>::EncryptedSubmitted {
-                id: expected_id,
-                who,
-            }
-            .into(),
+            crate::Event::<Test>::EncryptedSubmitted { id: expected_id }.into(),
         );
+    });
+}
+
+#[test]
+fn submit_encrypted_event_id_is_submitter_independent() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        install_pending_key();
+
+        let ciphertext = valid_submit_ciphertext();
+        let expected_id = <Test as frame_system::Config>::Hashing::hash_of(&ciphertext);
+
+        assert_ok!(MevShield::submit_encrypted(
+            RuntimeOrigin::signed(1),
+            ciphertext.clone(),
+        ));
+        assert_ok!(MevShield::submit_encrypted(
+            RuntimeOrigin::signed(2),
+            ciphertext,
+        ));
+
+        let ids = System::events()
+            .into_iter()
+            .filter_map(|record| match record.event {
+                RuntimeEvent::MevShield(crate::Event::EncryptedSubmitted { id }) => Some(id),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(ids, vec![expected_id, expected_id]);
     });
 }
 
@@ -652,10 +678,8 @@ mod encrypted_extrinsics_tests {
             assert_eq!(NextPendingExtrinsicIndex::<Test>::get(), 1);
             assert_eq!(PendingExtrinsics::<Test>::count(), 1);
 
-            // Verify event was emitted with index
-            System::assert_last_event(
-                crate::Event::<Test>::ExtrinsicStored { index: 0, who }.into(),
-            );
+            // Verify event was emitted with index only.
+            System::assert_last_event(crate::Event::<Test>::ExtrinsicStored { index: 0 }.into());
         });
     }
 

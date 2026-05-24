@@ -624,6 +624,7 @@ fn protocol_params_expose_runtime_policy() {
         assert_eq!(params.signature_mode, SignatureMode::FullPostQuantum);
         assert!(!params.committed_request_payloads);
         assert!(!params.shielded_call_payloads);
+        assert!(!params.shield_submitter_origin_privacy);
         assert!(!params.private_route_selection);
         assert!(!params.account_commitment_blinding);
         assert!(!params.private_routing_indexes);
@@ -641,6 +642,7 @@ fn protocol_params_expose_runtime_policy() {
                 production_zk_verifier_missing: true,
                 committed_request_payloads_missing: true,
                 shielded_call_payloads_missing: true,
+                shield_submitter_origin_privacy_missing: true,
                 private_route_selection_missing: true,
                 account_commitment_blinding_missing: true,
                 private_routing_indexes_missing: true,
@@ -677,8 +679,14 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
         register_active_miner_and_validator();
 
         let params = Qubitum::protocol_params();
+        assert!(!params.shield_submitter_origin_privacy);
         assert!(!params.account_commitment_blinding);
         assert!(!params.private_routing_indexes);
+        assert!(
+            params
+                .readiness_blockers
+                .shield_submitter_origin_privacy_missing
+        );
         assert!(
             params
                 .readiness_blockers
@@ -2619,6 +2627,47 @@ fn identity_signature_bundle_must_bind_current_challenge() {
             Some(commitment(63)),
             validator_identity_signature_bundle(0, Some(commitment(62)), Some(commitment(63))),
         ));
+    });
+}
+
+#[test]
+fn identity_signature_commitments_are_not_reported_as_verified() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(2),
+            0,
+            Some(commitment(64)),
+            Some(commitment(65)),
+            miner_identity_signature_bundle(0, Some(commitment(64)), Some(commitment(65))),
+        ));
+        assert_ok!(Qubitum::set_validator_identity_commitments(
+            RuntimeOrigin::signed(3),
+            0,
+            Some(commitment(66)),
+            Some(commitment(67)),
+            validator_identity_signature_bundle(0, Some(commitment(66)), Some(commitment(67))),
+        ));
+
+        let miner_identity = Qubitum::public_miner_identity(0).unwrap();
+        let validator_identity = Qubitum::public_validator_identity(0).unwrap();
+        let params = Qubitum::protocol_params();
+
+        assert!(miner_identity.signature_commitment_recorded);
+        assert!(miner_identity.signature_challenge_bound);
+        assert!(!miner_identity.signature_verified);
+        assert!(validator_identity.signature_commitment_recorded);
+        assert!(validator_identity.signature_challenge_bound);
+        assert!(!validator_identity.signature_verified);
+        assert!(!params.identity_signature_verification);
+        assert!(
+            params
+                .readiness_blockers
+                .identity_signature_verification_missing
+        );
+        assert!(params.readiness_blockers.post_quantum_blocked());
+        assert!(!params.post_quantum_complete);
     });
 }
 

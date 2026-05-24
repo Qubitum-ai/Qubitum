@@ -791,6 +791,7 @@ pub mod pallet {
         pub production_zk_verifier_missing: bool,
         pub committed_request_payloads_missing: bool,
         pub shielded_call_payloads_missing: bool,
+        pub shield_submitter_origin_privacy_missing: bool,
         pub private_route_selection_missing: bool,
         pub account_commitment_blinding_missing: bool,
         pub private_routing_indexes_missing: bool,
@@ -804,6 +805,7 @@ pub mod pallet {
         pub fn privacy_blocked(self) -> bool {
             self.committed_request_payloads_missing
                 || self.shielded_call_payloads_missing
+                || self.shield_submitter_origin_privacy_missing
                 || self.private_route_selection_missing
                 || self.account_commitment_blinding_missing
                 || self.private_routing_indexes_missing
@@ -847,6 +849,7 @@ pub mod pallet {
         pub signature_mode: SignatureMode,
         pub committed_request_payloads: bool,
         pub shielded_call_payloads: bool,
+        pub shield_submitter_origin_privacy: bool,
         pub private_route_selection: bool,
         pub account_commitment_blinding: bool,
         pub private_routing_indexes: bool,
@@ -2177,6 +2180,7 @@ pub mod pallet {
             let signature_mode = T::SignatureMode::get();
             let committed_request_payloads = false;
             let shielded_call_payloads = false;
+            let shield_submitter_origin_privacy = false;
             let private_route_selection = false;
             let account_commitment_blinding = false;
             let private_routing_indexes = false;
@@ -2189,6 +2193,7 @@ pub mod pallet {
                 production_zk_verifier_missing: !production_zk_verifier,
                 committed_request_payloads_missing: !committed_request_payloads,
                 shielded_call_payloads_missing: !shielded_call_payloads,
+                shield_submitter_origin_privacy_missing: !shield_submitter_origin_privacy,
                 private_route_selection_missing: !private_route_selection,
                 account_commitment_blinding_missing: !account_commitment_blinding,
                 private_routing_indexes_missing: !private_routing_indexes,
@@ -2222,6 +2227,7 @@ pub mod pallet {
                 signature_mode,
                 committed_request_payloads,
                 shielded_call_payloads,
+                shield_submitter_origin_privacy,
                 private_route_selection,
                 account_commitment_blinding,
                 private_routing_indexes,
