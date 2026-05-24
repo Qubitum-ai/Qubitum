@@ -800,6 +800,7 @@ pub mod pallet {
         pub private_event_metadata_missing: bool,
         pub signature_mode_not_full_post_quantum: bool,
         pub post_quantum_account_signatures_missing: bool,
+        pub post_quantum_signature_crypto_verification_missing: bool,
         pub identity_signature_verification_missing: bool,
         pub external_audit_missing: bool,
     }
@@ -820,6 +821,7 @@ pub mod pallet {
         pub fn post_quantum_blocked(self) -> bool {
             self.signature_mode_not_full_post_quantum
                 || self.post_quantum_account_signatures_missing
+                || self.post_quantum_signature_crypto_verification_missing
                 || self.identity_signature_verification_missing
         }
 
@@ -863,6 +865,7 @@ pub mod pallet {
         pub private_capital_accounting: bool,
         pub private_event_metadata: bool,
         pub post_quantum_account_signatures: bool,
+        pub post_quantum_signature_crypto_verification: bool,
         pub privacy_complete: bool,
         pub post_quantum_complete: bool,
         pub production_ready: bool,
@@ -2197,6 +2200,7 @@ pub mod pallet {
             let private_capital_accounting = false;
             let private_event_metadata = false;
             let post_quantum_account_signatures = false;
+            let post_quantum_signature_crypto_verification = false;
             let identity_signature_commitment_policy = true;
             let identity_signature_challenge_binding = true;
             let identity_signature_verification = false;
@@ -2215,6 +2219,8 @@ pub mod pallet {
                 signature_mode_not_full_post_quantum: signature_mode
                     != SignatureMode::FullPostQuantum,
                 post_quantum_account_signatures_missing: !post_quantum_account_signatures,
+                post_quantum_signature_crypto_verification_missing:
+                    !post_quantum_signature_crypto_verification,
                 identity_signature_verification_missing: !identity_signature_verification,
                 external_audit_missing: true,
             };
@@ -2250,6 +2256,7 @@ pub mod pallet {
                 private_capital_accounting,
                 private_event_metadata,
                 post_quantum_account_signatures,
+                post_quantum_signature_crypto_verification,
                 privacy_complete,
                 post_quantum_complete,
                 production_ready,

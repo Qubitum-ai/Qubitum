@@ -284,6 +284,23 @@ mod tests {
     }
 
     #[test]
+    fn full_post_quantum_policy_is_commitment_only_until_crypto_verifier_exists() {
+        let bundle = SignatureBundle {
+            classical: None,
+            post_quantum: Some(SignatureCommitment {
+                algorithm: SignatureAlgorithm::Dilithium3,
+                public_key_commitment: commitment(70),
+                signature_commitment: commitment(71),
+            }),
+        };
+
+        assert_eq!(
+            SignaturePolicy::new(SignatureMode::FullPostQuantum).validate(bundle),
+            Ok(bundle)
+        );
+    }
+
+    #[test]
     fn full_post_quantum_phase_rejects_classical_only() {
         let bundle = SignatureBundle {
             classical: Some(sig(SignatureAlgorithm::Ecdsa, 1)),

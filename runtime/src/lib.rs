@@ -2899,6 +2899,7 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
     assert!(!params.private_capital_accounting);
     assert!(!params.private_event_metadata);
     assert!(!params.post_quantum_account_signatures);
+    assert!(!params.post_quantum_signature_crypto_verification);
     assert!(!params.privacy_complete);
     assert!(!params.post_quantum_complete);
     assert!(!params.production_ready);
@@ -2929,6 +2930,11 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
         params
             .readiness_blockers
             .post_quantum_account_signatures_missing
+    );
+    assert!(
+        params
+            .readiness_blockers
+            .post_quantum_signature_crypto_verification_missing
     );
     assert!(
         params

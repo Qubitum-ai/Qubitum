@@ -632,6 +632,7 @@ fn protocol_params_expose_runtime_policy() {
         assert!(!params.private_capital_accounting);
         assert!(!params.private_event_metadata);
         assert!(!params.post_quantum_account_signatures);
+        assert!(!params.post_quantum_signature_crypto_verification);
         assert!(!params.privacy_complete);
         assert!(!params.post_quantum_complete);
         assert!(!params.production_ready);
@@ -654,6 +655,7 @@ fn protocol_params_expose_runtime_policy() {
                 private_event_metadata_missing: true,
                 signature_mode_not_full_post_quantum: false,
                 post_quantum_account_signatures_missing: true,
+                post_quantum_signature_crypto_verification_missing: true,
                 identity_signature_verification_missing: true,
                 external_audit_missing: true,
             }
@@ -2675,10 +2677,16 @@ fn identity_signature_commitments_are_not_reported_as_verified() {
         assert!(validator_identity.signature_challenge_bound);
         assert!(!validator_identity.signature_verified);
         assert!(!params.identity_signature_verification);
+        assert!(!params.post_quantum_signature_crypto_verification);
         assert!(
             params
                 .readiness_blockers
                 .identity_signature_verification_missing
+        );
+        assert!(
+            params
+                .readiness_blockers
+                .post_quantum_signature_crypto_verification_missing
         );
         assert!(params.readiness_blockers.post_quantum_blocked());
         assert!(!params.post_quantum_complete);
