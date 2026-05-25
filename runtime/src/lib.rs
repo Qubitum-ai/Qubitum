@@ -156,6 +156,7 @@ pub struct ShieldQueueCallFilter;
 impl Contains<RuntimeCall> for ShieldQueueCallFilter {
     fn contains(call: &RuntimeCall) -> bool {
         !contains_recursive_shield_queue_call(call, 0)
+            && !contains_persistent_private_queue_call(call, 0)
     }
 }
 
@@ -184,6 +185,58 @@ fn encoded_runtime_call_contains_recursive_shield_queue_call(bytes: &[u8], depth
                 )
                 .is_ok()
         }
+    }
+}
+
+fn encoded_runtime_call_contains_private_queue_call(bytes: &[u8], depth: u8) -> bool {
+    if depth >= MAX_SHIELD_QUEUE_CALL_SCAN_DEPTH {
+        return true;
+    }
+
+    let remaining_depth = (MAX_SHIELD_QUEUE_CALL_SCAN_DEPTH - depth) as u32;
+    match RuntimeCall::decode_all_with_depth_limit(remaining_depth, &mut &bytes[..]) {
+        Ok(call) => {
+            qubitum_privacy::CheckQubitumShielding::private_runtime_call_violation(&call).is_some()
+        }
+        Err(_) => {
+            if let Ok(call) = RuntimeCall::decode_with_depth_limit(remaining_depth, &mut &bytes[..])
+            {
+                return qubitum_privacy::CheckQubitumShielding::private_runtime_call_violation(
+                    &call,
+                )
+                .is_some();
+            }
+
+            RuntimeCall::decode_all_with_depth_limit(
+                MAX_SHIELD_QUEUE_PREIMAGE_DECODE_PROBE_DEPTH,
+                &mut &bytes[..],
+            )
+            .is_ok()
+                || RuntimeCall::decode_with_depth_limit(
+                    MAX_SHIELD_QUEUE_PREIMAGE_DECODE_PROBE_DEPTH,
+                    &mut &bytes[..],
+                )
+                .is_ok()
+        }
+    }
+}
+
+fn contains_persistent_private_queue_call(call: &RuntimeCall, depth: u8) -> bool {
+    if depth >= MAX_SHIELD_QUEUE_CALL_SCAN_DEPTH {
+        return true;
+    }
+
+    match call {
+        RuntimeCall::Scheduler(
+            pallet_scheduler::Call::schedule { call, .. }
+            | pallet_scheduler::Call::schedule_named { call, .. }
+            | pallet_scheduler::Call::schedule_after { call, .. }
+            | pallet_scheduler::Call::schedule_named_after { call, .. },
+        ) => qubitum_privacy::CheckQubitumShielding::private_runtime_call_violation(call).is_some(),
+        RuntimeCall::Preimage(pallet_preimage::Call::note_preimage { bytes }) => {
+            encoded_runtime_call_contains_private_queue_call(bytes, depth + 1)
+        }
+        _ => false,
     }
 }
 
@@ -3633,6 +3686,65 @@ fn shield_queue_call_filter_rejects_wrapped_recursive_shield_calls() {
 
     assert!(ShieldQueueCallFilter::contains(&RuntimeCall::System(
         frame_system::Call::remark { remark: vec![5] }
+    )));
+}
+
+#[test]
+fn shield_queue_call_filter_rejects_persistent_private_payloads() {
+    let private_call = || {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::create_subnet {
+            domain: qubitum_protocol::SubnetDomain::Code,
+            proof_system: qubitum_protocol::ProofSystem::RiscZeroStark,
+        })
+    };
+    let public_call = || RuntimeCall::System(frame_system::Call::remark { remark: vec![0x51] });
+
+    assert!(ShieldQueueCallFilter::contains(&private_call()));
+
+    let persistent_private_calls = vec![
+        RuntimeCall::Scheduler(pallet_scheduler::Call::schedule_named_after {
+            id: [7; 32],
+            after: 2,
+            maybe_periodic: None,
+            priority: 0,
+            call: Box::new(private_call()),
+        }),
+        RuntimeCall::Scheduler(pallet_scheduler::Call::schedule_after {
+            after: 2,
+            maybe_periodic: None,
+            priority: 0,
+            call: Box::new(RuntimeCall::Utility(pallet_utility::Call::batch {
+                calls: vec![private_call()],
+            })),
+        }),
+        RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+            bytes: private_call().encode(),
+        }),
+        RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+            bytes: RuntimeCall::Utility(pallet_utility::Call::batch {
+                calls: vec![private_call()],
+            })
+            .encode(),
+        }),
+    ];
+
+    for call in persistent_private_calls {
+        assert!(!ShieldQueueCallFilter::contains(&call));
+    }
+
+    assert!(ShieldQueueCallFilter::contains(&RuntimeCall::Scheduler(
+        pallet_scheduler::Call::schedule_named_after {
+            id: [8; 32],
+            after: 2,
+            maybe_periodic: None,
+            priority: 0,
+            call: Box::new(public_call()),
+        }
+    )));
+    assert!(ShieldQueueCallFilter::contains(&RuntimeCall::Preimage(
+        pallet_preimage::Call::note_preimage {
+            bytes: public_call().encode(),
+        }
     )));
 }
 
