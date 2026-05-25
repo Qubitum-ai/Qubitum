@@ -160,6 +160,7 @@ impl Contains<RuntimeCall> for ShieldQueueCallFilter {
     fn contains(call: &RuntimeCall) -> bool {
         !contains_recursive_shield_queue_call(call, 0)
             && !contains_persistent_private_queue_call(call, 0)
+            && !contains_unroutable_private_queue_call(call, 0)
     }
 }
 
@@ -275,6 +276,58 @@ fn contains_persistent_private_queue_call(call: &RuntimeCall, depth: u8) -> bool
             pallet_multisig::Call::as_multi_threshold_1 { call, .. }
             | pallet_multisig::Call::as_multi { call, .. },
         ) => contains_persistent_private_queue_call(call, depth + 1),
+        RuntimeCall::Scheduler(
+            pallet_scheduler::Call::schedule { call, .. }
+            | pallet_scheduler::Call::schedule_named { call, .. }
+            | pallet_scheduler::Call::schedule_after { call, .. }
+            | pallet_scheduler::Call::schedule_named_after { call, .. },
+        ) => qubitum_privacy::CheckQubitumShielding::private_runtime_call_violation(call).is_some(),
+        RuntimeCall::Preimage(pallet_preimage::Call::note_preimage { bytes }) => {
+            encoded_runtime_call_contains_private_queue_call(bytes, depth + 1)
+        }
+        _ => false,
+    }
+}
+
+fn contains_unroutable_private_queue_call(call: &RuntimeCall, depth: u8) -> bool {
+    if depth >= MAX_SHIELD_QUEUE_CALL_SCAN_DEPTH {
+        return true;
+    }
+
+    match call {
+        RuntimeCall::Qubitum(_) => false,
+        RuntimeCall::Utility(inner) => match inner {
+            pallet_utility::Call::batch { calls }
+            | pallet_utility::Call::batch_all { calls }
+            | pallet_utility::Call::force_batch { calls } => calls
+                .iter()
+                .any(|call| contains_unroutable_private_queue_call(call, depth + 1)),
+            pallet_utility::Call::if_else { main, fallback } => {
+                contains_unroutable_private_queue_call(main, depth + 1)
+                    || contains_unroutable_private_queue_call(fallback, depth + 1)
+            }
+            pallet_utility::Call::as_derivative { call, .. }
+            | pallet_utility::Call::dispatch_as { call, .. }
+            | pallet_utility::Call::with_weight { call, .. }
+            | pallet_utility::Call::dispatch_as_fallible { call, .. } => {
+                qubitum_privacy::CheckQubitumShielding::private_runtime_call_violation(call)
+                    .is_some()
+            }
+            _ => false,
+        },
+        RuntimeCall::Proxy(
+            pallet_proxy::Call::proxy { call, .. }
+            | pallet_proxy::Call::proxy_announced { call, .. },
+        )
+        | RuntimeCall::Sudo(
+            pallet_sudo::Call::sudo { call }
+            | pallet_sudo::Call::sudo_unchecked_weight { call, .. }
+            | pallet_sudo::Call::sudo_as { call, .. },
+        )
+        | RuntimeCall::Multisig(
+            pallet_multisig::Call::as_multi_threshold_1 { call, .. }
+            | pallet_multisig::Call::as_multi { call, .. },
+        ) => qubitum_privacy::CheckQubitumShielding::private_runtime_call_violation(call).is_some(),
         RuntimeCall::Scheduler(
             pallet_scheduler::Call::schedule { call, .. }
             | pallet_scheduler::Call::schedule_named { call, .. }
@@ -3812,6 +3865,108 @@ fn shield_queue_call_filter_rejects_persistent_private_payloads() {
     assert!(ShieldQueueCallFilter::contains(&RuntimeCall::Preimage(
         pallet_preimage::Call::note_preimage {
             bytes: public_call().encode(),
+        }
+    )));
+}
+
+#[test]
+fn shield_queue_call_filter_rejects_private_payloads_in_unroutable_wrappers() {
+    let private_call = || {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::create_subnet {
+            domain: qubitum_protocol::SubnetDomain::Code,
+            proof_system: qubitum_protocol::ProofSystem::RiscZeroStark,
+        })
+    };
+    let public_call = || RuntimeCall::System(frame_system::Call::remark { remark: vec![0x53] });
+    let account = |seed| AccountId32::new([seed; 32]);
+    let signed_origin = || {
+        Box::new(OriginCaller::system(frame_system::RawOrigin::Signed(
+            account(9),
+        )))
+    };
+
+    let routable_private_calls = vec![
+        private_call(),
+        RuntimeCall::Utility(pallet_utility::Call::batch {
+            calls: vec![private_call()],
+        }),
+        RuntimeCall::Utility(pallet_utility::Call::batch_all {
+            calls: vec![private_call()],
+        }),
+        RuntimeCall::Utility(pallet_utility::Call::force_batch {
+            calls: vec![private_call()],
+        }),
+        RuntimeCall::Utility(pallet_utility::Call::if_else {
+            main: Box::new(private_call()),
+            fallback: Box::new(public_call()),
+        }),
+    ];
+
+    for call in routable_private_calls {
+        assert!(ShieldQueueCallFilter::contains(&call));
+    }
+
+    let unroutable_private_calls = vec![
+        RuntimeCall::Utility(pallet_utility::Call::as_derivative {
+            index: 1,
+            call: Box::new(private_call()),
+        }),
+        RuntimeCall::Utility(pallet_utility::Call::dispatch_as {
+            as_origin: signed_origin(),
+            call: Box::new(private_call()),
+        }),
+        RuntimeCall::Utility(pallet_utility::Call::with_weight {
+            call: Box::new(private_call()),
+            weight: Weight::zero(),
+        }),
+        RuntimeCall::Utility(pallet_utility::Call::dispatch_as_fallible {
+            as_origin: signed_origin(),
+            call: Box::new(private_call()),
+        }),
+        RuntimeCall::Proxy(pallet_proxy::Call::proxy {
+            real: account(2).into(),
+            force_proxy_type: None,
+            call: Box::new(private_call()),
+        }),
+        RuntimeCall::Proxy(pallet_proxy::Call::proxy_announced {
+            delegate: account(2).into(),
+            real: account(3).into(),
+            force_proxy_type: None,
+            call: Box::new(private_call()),
+        }),
+        RuntimeCall::Sudo(pallet_sudo::Call::sudo {
+            call: Box::new(private_call()),
+        }),
+        RuntimeCall::Sudo(pallet_sudo::Call::sudo_unchecked_weight {
+            call: Box::new(private_call()),
+            weight: Weight::zero(),
+        }),
+        RuntimeCall::Sudo(pallet_sudo::Call::sudo_as {
+            who: account(4).into(),
+            call: Box::new(private_call()),
+        }),
+        RuntimeCall::Multisig(pallet_multisig::Call::as_multi_threshold_1 {
+            other_signatories: vec![account(5)],
+            call: Box::new(private_call()),
+        }),
+        RuntimeCall::Multisig(pallet_multisig::Call::as_multi {
+            threshold: 2,
+            other_signatories: vec![account(6)],
+            maybe_timepoint: None,
+            call: Box::new(private_call()),
+            max_weight: Weight::zero(),
+        }),
+    ];
+
+    for call in unroutable_private_calls {
+        assert!(!ShieldQueueCallFilter::contains(&call));
+    }
+
+    assert!(ShieldQueueCallFilter::contains(&RuntimeCall::Proxy(
+        pallet_proxy::Call::proxy {
+            real: account(7).into(),
+            force_proxy_type: None,
+            call: Box::new(public_call()),
         }
     )));
 }
