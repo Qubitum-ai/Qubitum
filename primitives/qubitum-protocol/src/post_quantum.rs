@@ -106,7 +106,7 @@ impl SignaturePolicy {
         match self.mode {
             SignatureMode::ClassicalEcdsa => {
                 require_classical(bundle.classical)?;
-                validate_optional_post_quantum(bundle.post_quantum)?;
+                validate_optional_dilithium(bundle.post_quantum)?;
             }
             SignatureMode::HybridDilithium => {
                 require_classical(bundle.classical)?;
@@ -150,11 +150,11 @@ fn reject_classical(signature: Option<SignatureCommitment>) -> Result<(), Protoc
     }
 }
 
-fn validate_optional_post_quantum(
+fn validate_optional_dilithium(
     signature: Option<SignatureCommitment>,
 ) -> Result<(), ProtocolError> {
     if let Some(signature) = signature {
-        validate_post_quantum(signature)?;
+        validate_dilithium(signature)?;
     }
     Ok(())
 }
@@ -162,15 +162,6 @@ fn validate_optional_post_quantum(
 fn validate_classical(signature: SignatureCommitment) -> Result<(), ProtocolError> {
     ensure_well_formed_commitments(signature)?;
     if signature.algorithm.is_classical() {
-        Ok(())
-    } else {
-        Err(ProtocolError::UnsupportedSignatureAlgorithm)
-    }
-}
-
-fn validate_post_quantum(signature: SignatureCommitment) -> Result<(), ProtocolError> {
-    ensure_well_formed_commitments(signature)?;
-    if signature.algorithm.is_post_quantum() {
         Ok(())
     } else {
         Err(ProtocolError::UnsupportedSignatureAlgorithm)
@@ -297,6 +288,20 @@ mod tests {
             };
             assert_eq!(
                 SignaturePolicy::new(SignatureMode::HybridDilithium).validate(bundle),
+                Err(ProtocolError::UnsupportedSignatureAlgorithm)
+            );
+        }
+    }
+
+    #[test]
+    fn classical_phase_rejects_optional_non_dilithium_post_quantum_signatures() {
+        for algorithm in NON_DILITHIUM_POST_QUANTUM_ALGORITHMS {
+            let bundle = SignatureBundle {
+                classical: Some(sig(SignatureAlgorithm::Ecdsa, 1)),
+                post_quantum: Some(sig(algorithm, 3)),
+            };
+            assert_eq!(
+                SignaturePolicy::new(SignatureMode::ClassicalEcdsa).validate(bundle),
                 Err(ProtocolError::UnsupportedSignatureAlgorithm)
             );
         }
