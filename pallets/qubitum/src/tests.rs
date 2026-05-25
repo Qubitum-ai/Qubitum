@@ -1835,12 +1835,18 @@ fn active_set_capacity_failures_rollback_locked_capital_and_ids() {
         ));
 
         let validator_limit = <Test as crate::Config>::MaxActiveValidatorsPerSubnet::get();
-        for _ in 0..validator_limit {
+        for index in 0..validator_limit {
             assert_ok!(Qubitum::register_validator(
                 RuntimeOrigin::signed(3),
                 0,
                 MIN_MINER_BOND
             ));
+            attest_validator(
+                u64::from(index),
+                3,
+                Some(commitment(122)),
+                Some(commitment(123)),
+            );
         }
         let validator_count_before = ValidatorCount::<Test>::get();
         let held_before = Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3);

@@ -1484,6 +1484,11 @@ pub mod pallet {
                 stake >= T::MinValidatorStake::get(),
                 Error::<T>::InvalidStake
             );
+            ensure!(
+                (ActiveValidatorsBySubnet::<T>::get(subnet_id).len() as u32)
+                    < T::MaxActiveValidatorsPerSubnet::get(),
+                Error::<T>::TooManyActiveValidators
+            );
             T::Currency::hold(&HoldReason::ValidatorStake.into(), &operator, stake)?;
 
             let validator_id = Self::next_validator_id()?;
@@ -1501,7 +1506,6 @@ pub mod pallet {
                 status,
             };
 
-            Self::insert_active_validator(subnet_id, validator_id)?;
             Validators::<T>::insert(validator_id, validator);
             ValidatorLockedStake::<T>::insert(validator_id, stake);
             Self::deposit_event(Event::ValidatorRegistered);
@@ -2132,6 +2136,7 @@ pub mod pallet {
         /// Publish or clear commitment-only validator identity metadata.
         #[pallet::call_index(15)]
         #[pallet::weight(T::WeightInfo::set_validator_identity_commitments())]
+        #[frame_support::transactional]
         pub fn set_validator_identity_commitments(
             origin: OriginFor<T>,
             validator_id: ValidatorId,
@@ -2145,6 +2150,9 @@ pub mod pallet {
             Self::ensure_validator_operator(&validator, &operator)?;
             Self::ensure_optional_commitment(shielded_identity_commitment)?;
             Self::ensure_optional_commitment(endpoint_commitment)?;
+            let should_index = (shielded_identity_commitment.is_some()
+                || endpoint_commitment.is_some())
+                && !ActiveValidatorsBySubnet::<T>::get(validator.subnet_id).contains(&validator_id);
 
             if shielded_identity_commitment.is_some() || endpoint_commitment.is_some() {
                 let challenge_commitment = Self::validator_identity_signature_challenge(
@@ -2169,6 +2177,27 @@ pub mod pallet {
                     validator_id,
                     challenge_commitment,
                 );
+                if should_index {
+                    Validators::<T>::try_mutate(
+                        validator_id,
+                        |maybe_validator| -> DispatchResult {
+                            let validator = maybe_validator
+                                .as_mut()
+                                .ok_or(Error::<T>::UnknownValidator)?;
+                            ensure!(
+                                validator.status == RegistryStatus::Active,
+                                Error::<T>::InvalidValidatorStatus
+                            );
+                            Self::insert_active_validator(validator.subnet_id, validator_id)?;
+                            validator.stake_commitment = Self::validator_stake_commitment(
+                                validator_id,
+                                validator.operator_commitment,
+                                validator.status,
+                            );
+                            Ok(())
+                        },
+                    )?;
+                }
             } else {
                 if ValidatorIdentityCommitments::<T>::contains_key(validator_id)
                     || ValidatorIdentitySignatureBundles::<T>::contains_key(validator_id)
