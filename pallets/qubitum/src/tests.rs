@@ -7727,6 +7727,83 @@ fn invalid_proof_challenge_slashes_miner_without_validator_self_slash() {
 }
 
 #[test]
+fn invalid_proof_challenge_rejects_stored_non_dilithium_identity_bundles_without_side_effects() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        register_active_miner_and_validator();
+        request_inference(54);
+        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
+
+        let original_miner_bundle = MinerIdentitySignatureBundles::<Test>::get(0).unwrap();
+        let miner_challenge = MinerIdentitySignatureChallenges::<Test>::get(0).unwrap();
+        MinerIdentitySignatureBundles::<Test>::insert(
+            0,
+            SignatureBundle {
+                classical: None,
+                post_quantum: Some(challenge_bound_signature(
+                    SignatureAlgorithm::Falcon512,
+                    184,
+                    miner_challenge,
+                )),
+            },
+        );
+
+        assert_noop!(
+            challenge_proof(RuntimeOrigin::signed(4), valid_submission(54)),
+            Error::<Test>::InvalidSignatureBundle
+        );
+
+        MinerIdentitySignatureBundles::<Test>::insert(0, original_miner_bundle);
+        let validator_challenge = ValidatorIdentitySignatureChallenges::<Test>::get(0).unwrap();
+        ValidatorIdentitySignatureBundles::<Test>::insert(
+            0,
+            SignatureBundle {
+                classical: None,
+                post_quantum: Some(challenge_bound_signature(
+                    SignatureAlgorithm::SphincsPlus,
+                    185,
+                    validator_challenge,
+                )),
+            },
+        );
+
+        assert_noop!(
+            challenge_proof(RuntimeOrigin::signed(4), valid_submission(54)),
+            Error::<Test>::InvalidSignatureBundle
+        );
+
+        assert!(ProofRecords::<Test>::get(54).is_none());
+        assert_eq!(
+            InferenceRequests::<Test>::get(54).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            1_000
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert!(System::events().iter().all(|record| !matches!(
+            record.event,
+            RuntimeEvent::Qubitum(crate::Event::ProofChallengeAccepted)
+                | RuntimeEvent::Qubitum(crate::Event::ProofRejected)
+                | RuntimeEvent::Qubitum(crate::Event::InferenceRefunded)
+                | RuntimeEvent::Qubitum(crate::Event::MinerSlashed)
+                | RuntimeEvent::Qubitum(crate::Event::ValidatorSlashed)
+        )));
+    });
+}
+
+#[test]
 fn invalid_proof_slashing_removes_participants_from_routing_but_preserves_pending_refunds() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
