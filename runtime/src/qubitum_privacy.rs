@@ -1265,6 +1265,67 @@ mod tests {
     }
 
     #[test]
+    fn prepare_rejects_privileged_wrapped_qubitum_calls() {
+        new_test_ext().execute_with(|| {
+            let calls = vec![
+                RuntimeCall::Proxy(pallet_subtensor_proxy::Call::proxy {
+                    real: account(2).into(),
+                    force_proxy_type: None,
+                    call: Box::new(direct_qubitum_call()),
+                }),
+                RuntimeCall::Proxy(pallet_subtensor_proxy::Call::proxy_announced {
+                    delegate: account(2).into(),
+                    real: account(3).into(),
+                    force_proxy_type: None,
+                    call: Box::new(direct_qubitum_call()),
+                }),
+                RuntimeCall::Sudo(pallet_sudo::Call::sudo {
+                    call: Box::new(direct_qubitum_call()),
+                }),
+                RuntimeCall::Sudo(pallet_sudo::Call::sudo_unchecked_weight {
+                    call: Box::new(direct_qubitum_call()),
+                    weight: Weight::zero(),
+                }),
+                RuntimeCall::Sudo(pallet_sudo::Call::sudo_as {
+                    who: account(2).into(),
+                    call: Box::new(direct_qubitum_call()),
+                }),
+                RuntimeCall::Multisig(pallet_multisig::Call::as_multi_threshold_1 {
+                    other_signatories: vec![account(2)],
+                    call: Box::new(direct_qubitum_call()),
+                }),
+                RuntimeCall::Multisig(pallet_multisig::Call::as_multi {
+                    threshold: 2,
+                    other_signatories: vec![account(2)],
+                    maybe_timepoint: None,
+                    call: Box::new(direct_qubitum_call()),
+                    max_weight: Weight::zero(),
+                }),
+                RuntimeCall::Scheduler(pallet_scheduler::Call::schedule {
+                    when: 2,
+                    maybe_periodic: None,
+                    priority: 0,
+                    call: Box::new(direct_qubitum_call()),
+                }),
+                RuntimeCall::Scheduler(pallet_scheduler::Call::schedule_named_after {
+                    id: [2; 32],
+                    after: 2,
+                    maybe_periodic: None,
+                    priority: 0,
+                    call: Box::new(direct_qubitum_call()),
+                }),
+            ];
+
+            for call in calls {
+                assert_eq!(
+                    prepare_ext(&call),
+                    Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+                );
+            }
+        });
+    }
+
+    #[test]
     fn prepare_rejects_proof_calls_even_when_safe_mode_whitelisted() {
         new_test_ext().execute_with(|| {
             for call in [proof_submission_call(), proof_challenge_call()] {
