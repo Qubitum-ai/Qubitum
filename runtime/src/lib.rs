@@ -2985,6 +2985,82 @@ fn qubitum_runtime_api_redacts_public_activity_aggregates() {
 }
 
 #[test]
+fn qubitum_runtime_api_redacts_nonzero_public_activity_and_accounting() {
+    let mut ext: sp_io::TestExternalities = RuntimeGenesisConfig {
+        sudo: pallet_sudo::GenesisConfig { key: None },
+        ..Default::default()
+    }
+    .build_storage()
+    .unwrap_or_else(|err| panic!("runtime genesis config should build: {err:?}"))
+    .into();
+
+    ext.execute_with(|| {
+        pallet_qubitum::SubnetCount::<Runtime>::put(7);
+        pallet_qubitum::MinerCount::<Runtime>::put(11);
+        pallet_qubitum::ValidatorCount::<Runtime>::put(13);
+        pallet_qubitum::RequestCount::<Runtime>::put(17);
+        pallet_qubitum::TotalBurned::<Runtime>::put(TaoBalance::new(19));
+        pallet_qubitum::TotalInferenceEscrowed::<Runtime>::put(TaoBalance::new(23));
+        pallet_qubitum::TotalMinerPayouts::<Runtime>::put(TaoBalance::new(29));
+        pallet_qubitum::TotalValidatorFees::<Runtime>::put(TaoBalance::new(31));
+        pallet_qubitum::TotalTreasuryFees::<Runtime>::put(TaoBalance::new(37));
+        pallet_qubitum::TotalInferenceRefunded::<Runtime>::put(TaoBalance::new(41));
+        pallet_qubitum::LegacyAccountingMigrationFailures::<Runtime>::put(43);
+        pallet_qubitum::LegacyRoutingIndexMigrationFailures::<Runtime>::put(47);
+        pallet_qubitum::LegacyCapitalRecordMigrationFailures::<Runtime>::put(53);
+        pallet_qubitum::PendingInferenceRequestCount::<Runtime>::put(59);
+        pallet_qubitum::SettledInferenceRequestCount::<Runtime>::put(61);
+        pallet_qubitum::CancelledInferenceRequestCount::<Runtime>::put(67);
+        pallet_qubitum::RejectedInferenceRequestCount::<Runtime>::put(71);
+        pallet_qubitum::ExpiredInferenceRequestCount::<Runtime>::put(73);
+
+        assert_eq!(
+            (
+                pallet_qubitum::RequestCount::<Runtime>::get(),
+                pallet_qubitum::SubnetCount::<Runtime>::get(),
+                pallet_qubitum::MinerCount::<Runtime>::get(),
+                pallet_qubitum::ValidatorCount::<Runtime>::get(),
+                pallet_qubitum::TotalBurned::<Runtime>::get(),
+            ),
+            (17, 7, 11, 13, TaoBalance::new(19))
+        );
+        assert_eq!(
+            qubitum_redacted_public_activity_aggregates(),
+            (0, (0, 0, 0), TaoBalance::ZERO)
+        );
+        assert_eq!(
+            pallet_qubitum::Pallet::<Runtime>::accounting(),
+            pallet_qubitum::ChainAccounting {
+                total_inference_escrowed: TaoBalance::ZERO,
+                total_miner_payouts: TaoBalance::ZERO,
+                total_validator_fees: TaoBalance::ZERO,
+                total_treasury_fees: TaoBalance::ZERO,
+                total_inference_refunded: TaoBalance::ZERO,
+                legacy_migration_failures: 0,
+            }
+        );
+        assert_eq!(
+            pallet_qubitum::Pallet::<Runtime>::migration_health(),
+            pallet_qubitum::ChainMigrationHealth {
+                legacy_accounting_failures: 0,
+                legacy_routing_index_failures: 0,
+                legacy_capital_record_failures: 0,
+            }
+        );
+        assert_eq!(
+            pallet_qubitum::Pallet::<Runtime>::request_status_counts(),
+            pallet_qubitum::ChainRequestStatusCounts {
+                pending: 0,
+                settled: 0,
+                cancelled: 0,
+                rejected: 0,
+                expired: 0,
+            }
+        );
+    });
+}
+
+#[test]
 fn mev_shield_pending_queue_fails_closed_without_runtime_decryptor() {
     use frame_support::pallet_prelude::BoundedVec;
     use frame_support::traits::Hooks;
