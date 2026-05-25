@@ -236,6 +236,79 @@ fn proxy_precompile_rejects_qubitum_call_bytes() {
 }
 
 #[test]
+fn proxy_precompile_rejects_runtime_call_prefix_with_trailing_bytes() {
+    new_test_ext().execute_with(|| {
+        let precompiles = Precompiles::<Runtime>::new();
+        let precompile_addr = addr_from_index(ProxyPrecompile::<Runtime>::INDEX);
+        let mut call = RuntimeCall::System(frame_system::Call::remark {
+            remark: vec![1, 2, 3],
+        })
+        .encode();
+        call.extend_from_slice(&[0xA5, 0x5A]);
+
+        let result = execute_precompile(
+            &precompiles,
+            precompile_addr,
+            addr_from_index(1),
+            encode_with_selector(
+                selector_u32("proxyCall(bytes32,uint8[],uint8[])"),
+                (H256::repeat_byte(2), Vec::<u8>::new(), call),
+            ),
+            U256::zero(),
+        )
+        .expect("expected proxy call to be routed to the proxy precompile");
+
+        let failure =
+            result.expect_err("expected strict SCALE call decoding to reject trailing bytes");
+        let message = match failure {
+            PrecompileFailure::Error {
+                exit_status: ExitError::Other(message),
+            } => message,
+            other => panic!("unexpected precompile failure: {other:?}"),
+        };
+        assert!(
+            message.contains("The raw call data not correctly encoded"),
+            "unexpected precompile failure: {message}"
+        );
+    });
+}
+
+#[test]
+fn proxy_precompile_rejects_qubitum_call_prefix_with_trailing_bytes() {
+    new_test_ext().execute_with(|| {
+        let precompiles = Precompiles::<Runtime>::new();
+        let precompile_addr = addr_from_index(ProxyPrecompile::<Runtime>::INDEX);
+        let mut call = qubitum_create_subnet_call().encode();
+        call.extend_from_slice(&[0xA5, 0x5A]);
+
+        let result = execute_precompile(
+            &precompiles,
+            precompile_addr,
+            addr_from_index(1),
+            encode_with_selector(
+                selector_u32("proxyCall(bytes32,uint8[],uint8[])"),
+                (H256::repeat_byte(2), Vec::<u8>::new(), call),
+            ),
+            U256::zero(),
+        )
+        .expect("expected proxy call to be routed to the proxy precompile");
+
+        let failure =
+            result.expect_err("expected strict SCALE call decoding to reject trailing bytes");
+        let message = match failure {
+            PrecompileFailure::Error {
+                exit_status: ExitError::Other(message),
+            } => message,
+            other => panic!("unexpected precompile failure: {other:?}"),
+        };
+        assert!(
+            message.contains("The raw call data not correctly encoded"),
+            "unexpected precompile failure: {message}"
+        );
+    });
+}
+
+#[test]
 fn contract_call_filter_rejects_proxy_wrapped_qubitum() {
     let real: AccountId = [2u8; 32].into();
     let private_proxy_call = RuntimeCall::Proxy(pallet_subtensor_proxy::Call::proxy {

@@ -167,7 +167,7 @@ where
     ) -> EvmResult<()> {
         let account_id = handle.caller_account_id::<R>();
 
-        let call = <R as pallet_proxy::Config>::RuntimeCall::decode_with_depth_limit(
+        let call = <R as pallet_proxy::Config>::RuntimeCall::decode_all_with_depth_limit(
             MAX_DECODE_DEPTH,
             &mut &call[..],
         )
