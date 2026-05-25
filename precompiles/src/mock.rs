@@ -488,7 +488,10 @@ impl frame_support::traits::InstanceFilter<RuntimeCall> for ProxyType {
 
 impl crate::ProxyRuntimeCallFilter for RuntimeCall {
     fn contains_private_runtime_call(&self) -> bool {
-        false
+        matches!(
+            self,
+            RuntimeCall::System(frame_system::Call::remark { remark }) if remark == b"private"
+        )
     }
 }
 

@@ -70,11 +70,20 @@ pub(crate) trait PrecompileHandleExt: PrecompileHandle {
             + IsSubType<pallet_balances::Call<R>>
             + IsSubType<pallet_subtensor::Call<R>>
             + IsSubType<pallet_shield::Call<R>>
-            + IsSubType<pallet_subtensor_proxy::Call<R>>,
+            + IsSubType<pallet_subtensor_proxy::Call<R>>
+            + crate::ProxyRuntimeCallFilter,
         <R as frame_system::Config>::RuntimeOrigin:
             From<RawOrigin<R::AccountId>> + AsSystemOriginSigner<R::AccountId> + Clone,
     {
         let call = <R as frame_system::Config>::RuntimeCall::from(call);
+        if crate::ProxyRuntimeCallFilter::contains_private_runtime_call(&call) {
+            return Err(PrecompileFailure::Error {
+                exit_status: ExitError::Other(
+                    "Precompile cannot dispatch private runtime call".into(),
+                ),
+            });
+        }
+
         let mut info = GetDispatchInfo::get_dispatch_info(&call);
         let subtensor_extension = SubtensorTransactionExtension::<R>::new();
         info.extension_weight = info
@@ -232,6 +241,9 @@ pub trait PrecompileExt<AccountId: From<[u8; 32]>>: Precompile {
 mod test {
     use super::*;
 
+    use crate::mock;
+    use frame_system::RawOrigin;
+    use pallet_evm::{ExitError, PrecompileFailure, PrecompileHandle};
     use sp_core::crypto::AccountId32;
 
     #[test]
@@ -246,6 +258,38 @@ mod test {
         );
     }
 
+    #[test]
+    fn dispatch_runtime_call_rejects_private_runtime_call_before_dispatch() {
+        mock::new_test_ext().execute_with(|| {
+            let precompiles = mock::precompiles::<TestPrecompile>();
+            let Some(result) = mock::execute_precompile(
+                &precompiles,
+                mock::addr_from_index(TestPrecompile::INDEX),
+                mock::addr_from_index(1),
+                mock::selector_u32("dispatchPrivate()")
+                    .to_be_bytes()
+                    .to_vec(),
+                U256::zero(),
+            ) else {
+                panic!("expected test precompile to execute");
+            };
+
+            let Err(failure) = result else {
+                panic!("expected shared precompile privacy guard rejection");
+            };
+            let message = match failure {
+                PrecompileFailure::Error {
+                    exit_status: ExitError::Other(message),
+                } => message,
+                other => panic!("unexpected precompile failure: {other:?}"),
+            };
+            assert!(
+                message.contains("Precompile cannot dispatch private runtime call"),
+                "unexpected precompile failure: {message}"
+            );
+        });
+    }
+
     struct TestPrecompile;
 
     impl PrecompileExt<AccountId32> for TestPrecompile {
@@ -253,5 +297,15 @@ mod test {
     }
 
     #[precompile_utils::precompile]
-    impl TestPrecompile {}
+    impl TestPrecompile {
+        #[precompile::public("dispatchPrivate()")]
+        fn dispatch_private(handle: &mut impl PrecompileHandle) -> EvmResult<()> {
+            handle.try_dispatch_runtime_call::<mock::Runtime, _>(
+                frame_system::Call::<mock::Runtime>::remark {
+                    remark: b"private".to_vec(),
+                },
+                RawOrigin::Signed(AccountId32::new([1; 32])),
+            )
+        }
+    }
 }

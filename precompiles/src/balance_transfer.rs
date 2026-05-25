@@ -30,7 +30,8 @@ where
         + IsSubType<pallet_balances::Call<R>>
         + IsSubType<pallet_subtensor::Call<R>>
         + IsSubType<pallet_shield::Call<R>>
-        + IsSubType<pallet_subtensor_proxy::Call<R>>,
+        + IsSubType<pallet_subtensor_proxy::Call<R>>
+        + crate::ProxyRuntimeCallFilter,
     <R as frame_system::Config>::RuntimeCall: From<pallet_balances::Call<R>>
         + GetDispatchInfo
         + Dispatchable<Info = DispatchInfo, PostInfo = PostDispatchInfo>,
@@ -59,7 +60,8 @@ where
         + IsSubType<pallet_balances::Call<R>>
         + IsSubType<pallet_subtensor::Call<R>>
         + IsSubType<pallet_shield::Call<R>>
-        + IsSubType<pallet_subtensor_proxy::Call<R>>,
+        + IsSubType<pallet_subtensor_proxy::Call<R>>
+        + crate::ProxyRuntimeCallFilter,
     <R as frame_system::Config>::RuntimeCall: From<pallet_balances::Call<R>>
         + GetDispatchInfo
         + Dispatchable<Info = DispatchInfo, PostInfo = PostDispatchInfo>,
