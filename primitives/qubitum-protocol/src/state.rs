@@ -8,6 +8,7 @@ use alloc::collections::BTreeMap;
 use alloc::vec;
 
 /// Balance accounting tracked by the protocol state machine.
+#[subtensor_macros::freeze_struct("357ebf621dc89702")]
 #[derive(
     codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Default, Eq, PartialEq,
 )]
@@ -25,6 +26,7 @@ impl AccountLedger {
 }
 
 /// Minimal state machine for Qubitum protocol transitions.
+#[subtensor_macros::freeze_struct("32eadcfb67bf5ff0")]
 #[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Debug, Eq, PartialEq)]
 pub struct ProtocolState {
     pub treasury_account: AccountId,

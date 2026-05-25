@@ -218,6 +218,7 @@ pub enum Visibility {
 }
 
 /// Expected visibility of a protocol element.
+#[subtensor_macros::freeze_struct("bd51aa94293486cf")]
 #[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PrivacyElement {
     pub element: PrivacyElementKind,
@@ -234,6 +235,7 @@ pub enum PrivacyElementKind {
 }
 
 /// Protocol emission split.
+#[subtensor_macros::freeze_struct("33ec8e7dc13bfa37")]
 #[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RewardSplit {
     pub miner_bps: u16,
@@ -285,6 +287,7 @@ impl RewardSplit {
 }
 
 /// Amounts emitted to each protocol recipient class.
+#[subtensor_macros::freeze_struct("e2ae7e094858d2b5")]
 #[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EmissionAllocation {
     pub miner: Balance,
@@ -293,6 +296,7 @@ pub struct EmissionAllocation {
 }
 
 /// Miner bond and slash policy.
+#[subtensor_macros::freeze_struct("1d9fb582f3541583")]
 #[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MinerBondPolicy {
     pub registration_burn: Balance,
@@ -344,6 +348,7 @@ impl MinerBondPolicy {
 }
 
 /// Runtime policy for a Qubitum subnet.
+#[subtensor_macros::freeze_struct("efd3dfa3d38f3b6d")]
 #[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SubnetPolicy {
     pub creation_burn: Balance,
@@ -386,6 +391,7 @@ impl SubnetPolicy {
 }
 
 /// Registered Qubitum subnet metadata.
+#[subtensor_macros::freeze_struct("86dd404b1bde08f6")]
 #[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Debug, Eq, PartialEq)]
 pub struct SubnetConfig {
     pub id: SubnetId,
@@ -396,6 +402,7 @@ pub struct SubnetConfig {
 }
 
 /// Registered miner metadata.
+#[subtensor_macros::freeze_struct("484d928a2d8cad8d")]
 #[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Debug, Eq, PartialEq)]
 pub struct MinerRegistration {
     pub id: MinerId,
@@ -430,6 +437,7 @@ impl MinerRegistration {
 }
 
 /// Registered validator metadata.
+#[subtensor_macros::freeze_struct("8044511d697d63e0")]
 #[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Debug, Eq, PartialEq)]
 pub struct ValidatorRegistration {
     pub id: ValidatorId,
@@ -448,6 +456,7 @@ impl ValidatorRegistration {
 }
 
 /// Proof submission routed from a miner through a validator.
+#[subtensor_macros::freeze_struct("286dc5425fb5a3dd")]
 #[derive(
     codec::Decode,
     codec::DecodeWithMemTracking,
@@ -475,6 +484,7 @@ pub struct InferenceProofSubmission {
 }
 
 /// Commitments and verifier metadata for an off-chain proof artifact.
+#[subtensor_macros::freeze_struct("81f0cf686fccd179")]
 #[derive(
     codec::Decode,
     codec::DecodeWithMemTracking,
@@ -559,6 +569,7 @@ pub enum VerificationOutcome {
 }
 
 /// Recorded successful inference.
+#[subtensor_macros::freeze_struct("b57ae60cc2ae9c1a")]
 #[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Debug, Eq, PartialEq)]
 pub struct InferenceRecord {
     pub request_id: RequestId,
@@ -587,6 +598,7 @@ impl InferenceRecord {
 }
 
 /// Payment settlement for a valid inference.
+#[subtensor_macros::freeze_struct("bbddd48a2f4dca4d")]
 #[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InferenceSettlement {
     pub miner_payment: Balance,

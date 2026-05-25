@@ -13,6 +13,7 @@ pub trait ProofVerifier {
 }
 
 /// Verifier that accepts any submission matching policy shape constraints.
+#[subtensor_macros::freeze_struct("8b1c07dc0f15411b")]
 #[derive(
     codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Default, Eq, PartialEq,
 )]
@@ -30,6 +31,7 @@ impl ProofVerifier for ShapeVerifier {
 }
 
 /// Deterministic verifier for local protocol tests.
+#[subtensor_macros::freeze_struct("49f2f9ea48619372")]
 #[derive(codec::Decode, codec::Encode, scale_info::TypeInfo, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MockVerifier {
     pub expected_proof_commitment: Option<Commitment>,

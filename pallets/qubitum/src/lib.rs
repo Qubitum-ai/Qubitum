@@ -323,6 +323,7 @@ pub mod pallet {
         Expired,
     }
 
+    #[subtensor_macros::freeze_struct("9f38ff9338c5277b")]
     #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
@@ -335,6 +336,7 @@ pub mod pallet {
         pub active: bool,
     }
 
+    #[subtensor_macros::freeze_struct("8d671dfda8ebbb59")]
     #[derive(Decode)]
     struct ChainSubnetV15<AccountId, Balance> {
         pub id: SubnetId,
@@ -348,6 +350,7 @@ pub mod pallet {
         pub active: bool,
     }
 
+    #[subtensor_macros::freeze_struct("dbd9c65e1b03c5c")]
     #[derive(
         Encode,
         Decode,
@@ -366,6 +369,7 @@ pub mod pallet {
         pub active: bool,
     }
 
+    #[subtensor_macros::freeze_struct("49f1e4ad5184763c")]
     #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
@@ -379,6 +383,7 @@ pub mod pallet {
         pub status: RegistryStatus,
     }
 
+    #[subtensor_macros::freeze_struct("9a0b002c063fb365")]
     #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
@@ -390,6 +395,7 @@ pub mod pallet {
         pub status: RegistryStatus,
     }
 
+    #[subtensor_macros::freeze_struct("313fbd89999fd1df")]
     #[derive(Decode)]
     struct ChainMinerV7<AccountId, Balance> {
         pub id: MinerId,
@@ -402,6 +408,7 @@ pub mod pallet {
         pub status: RegistryStatus,
     }
 
+    #[subtensor_macros::freeze_struct("adeecdad1df61c4c")]
     #[derive(Decode)]
     struct ChainValidatorV7<AccountId, Balance> {
         pub id: ValidatorId,
@@ -412,6 +419,7 @@ pub mod pallet {
         pub status: RegistryStatus,
     }
 
+    #[subtensor_macros::freeze_struct("50df9b4015250dd1")]
     #[derive(Decode)]
     struct ChainMinerV9<Balance> {
         pub id: MinerId,
@@ -424,6 +432,7 @@ pub mod pallet {
         pub status: RegistryStatus,
     }
 
+    #[subtensor_macros::freeze_struct("25ed5c51a458ec80")]
     #[derive(Decode)]
     struct ChainValidatorV9<Balance> {
         pub id: ValidatorId,
@@ -466,6 +475,7 @@ pub mod pallet {
         }
     }
 
+    #[subtensor_macros::freeze_struct("28f3739c73469f96")]
     #[derive(
         Encode,
         Decode,
@@ -483,6 +493,7 @@ pub mod pallet {
         pub status: PublicRegistryStatus,
     }
 
+    #[subtensor_macros::freeze_struct("8a5ac4035bcbbfb8")]
     #[derive(
         Encode,
         Decode,
@@ -499,6 +510,7 @@ pub mod pallet {
         pub status: PublicRegistryStatus,
     }
 
+    #[subtensor_macros::freeze_struct("3c08b8dfc39f1bb")]
     #[derive(
         Encode,
         Decode,
@@ -516,6 +528,7 @@ pub mod pallet {
         pub endpoint_commitment: Option<Commitment>,
     }
 
+    #[subtensor_macros::freeze_struct("117398c21baf8580")]
     #[derive(
         Encode,
         Decode,
@@ -537,6 +550,7 @@ pub mod pallet {
         pub challenge_available: bool,
     }
 
+    #[subtensor_macros::freeze_struct("2bd7236fc3f429db")]
     #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
@@ -548,6 +562,7 @@ pub mod pallet {
         pub proof_system: ProofSystem,
     }
 
+    #[subtensor_macros::freeze_struct("d2bcbb022b6e86ed")]
     #[derive(Decode)]
     struct ChainProofRecordV14 {
         pub request_id: RequestId,
@@ -564,6 +579,7 @@ pub mod pallet {
         pub accepted_at: BlockNumber,
     }
 
+    #[subtensor_macros::freeze_struct("5708a0cd1ef8a5d3")]
     #[derive(
         Encode,
         Decode,
@@ -580,6 +596,7 @@ pub mod pallet {
         pub proof_system: ProofSystem,
     }
 
+    #[subtensor_macros::freeze_struct("f4b80dadbfe0a525")]
     #[derive(Decode)]
     struct ChainProofRecordV4 {
         pub request_id: RequestId,
@@ -596,6 +613,7 @@ pub mod pallet {
         pub submitted_at: BlockNumber,
     }
 
+    #[subtensor_macros::freeze_struct("371f671da9eeb79d")]
     #[derive(Decode)]
     struct ChainProofRecordV11 {
         pub request_id: RequestId,
@@ -613,6 +631,7 @@ pub mod pallet {
         pub accepted_at: BlockNumber,
     }
 
+    #[subtensor_macros::freeze_struct("fee59bccb63bff5f")]
     #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
@@ -627,6 +646,7 @@ pub mod pallet {
         pub status: InferenceRequestStatus,
     }
 
+    #[subtensor_macros::freeze_struct("20edf071511dd773")]
     #[derive(Decode)]
     struct ChainInferenceRequestV13<Balance> {
         pub request_id: RequestId,
@@ -641,6 +661,7 @@ pub mod pallet {
         pub status: InferenceRequestStatus,
     }
 
+    #[subtensor_macros::freeze_struct("15263af0d647d012")]
     #[derive(Decode)]
     struct ChainInferenceRequestV12<Balance> {
         pub request_id: RequestId,
@@ -655,6 +676,7 @@ pub mod pallet {
         pub status: InferenceRequestStatus,
     }
 
+    #[subtensor_macros::freeze_struct("2344ffffeccde1d9")]
     #[derive(Decode)]
     struct ChainInferenceRequestV10<Balance> {
         pub request_id: RequestId,
@@ -670,6 +692,7 @@ pub mod pallet {
         pub status: InferenceRequestStatus,
     }
 
+    #[subtensor_macros::freeze_struct("7f82ec2cbbc92c4")]
     #[derive(Decode)]
     struct ChainInferenceRequestV8<AccountId, Balance> {
         pub request_id: RequestId,
@@ -685,6 +708,7 @@ pub mod pallet {
         pub status: InferenceRequestStatus,
     }
 
+    #[subtensor_macros::freeze_struct("195937ebd927e555")]
     #[derive(
         Encode,
         Decode,
@@ -701,6 +725,7 @@ pub mod pallet {
         pub status: InferenceRequestStatus,
     }
 
+    #[subtensor_macros::freeze_struct("7e8c89f1f353886b")]
     #[derive(
         Encode,
         Decode,
@@ -720,6 +745,7 @@ pub mod pallet {
         pub validator_id: ValidatorId,
     }
 
+    #[subtensor_macros::freeze_struct("57f1d16b0be8085f")]
     #[derive(
         Encode,
         Decode,
@@ -736,6 +762,7 @@ pub mod pallet {
         pub available: bool,
     }
 
+    #[subtensor_macros::freeze_struct("28c6b8a3fc1babd0")]
     #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
@@ -748,6 +775,7 @@ pub mod pallet {
         pub legacy_migration_failures: u32,
     }
 
+    #[subtensor_macros::freeze_struct("969bdd87c0c41b4f")]
     #[derive(
         Encode,
         Decode,
@@ -766,6 +794,7 @@ pub mod pallet {
         pub legacy_capital_record_failures: u32,
     }
 
+    #[subtensor_macros::freeze_struct("2026b8cb5063b8e0")]
     #[derive(
         Encode,
         Decode,
@@ -828,6 +857,7 @@ pub mod pallet {
         }
     }
 
+    #[subtensor_macros::freeze_struct("79ac04d35ba6d82")]
     #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
@@ -889,6 +919,7 @@ pub mod pallet {
         pub request_cancel_delay_blocks: BlockNumber,
     }
 
+    #[subtensor_macros::freeze_struct("6612a0d4ace7e9f2")]
     #[derive(
         Encode,
         Decode,
@@ -909,6 +940,7 @@ pub mod pallet {
         pub expired: RequestId,
     }
 
+    #[subtensor_macros::freeze_struct("d9891810f17d85a7")]
     #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
@@ -925,6 +957,7 @@ pub mod pallet {
         pub treasury_fee_bps: u16,
     }
 
+    #[subtensor_macros::freeze_struct("4b7cdb8148a0443d")]
     #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
@@ -939,6 +972,7 @@ pub mod pallet {
         pub treasury_fee_bps: u16,
     }
 
+    #[subtensor_macros::freeze_struct("8b4a3c45e18803d3")]
     #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
@@ -954,6 +988,7 @@ pub mod pallet {
         pub treasury_fee_bps: u16,
     }
 
+    #[subtensor_macros::freeze_struct("815023debd8cc288")]
     #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
@@ -963,6 +998,7 @@ pub mod pallet {
         pub treasury_fee_bps: u16,
     }
 
+    #[subtensor_macros::freeze_struct("c2cee8c4c050003a")]
     #[derive(
         Encode, Decode, DecodeWithMemTracking, TypeInfo, Clone, PartialEq, Eq, Debug, MaxEncodedLen,
     )]
@@ -971,6 +1007,7 @@ pub mod pallet {
         pub blinding: Commitment,
     }
 
+    #[subtensor_macros::freeze_struct("cdc754b0d0e440cf")]
     #[derive(
         Encode,
         Decode,

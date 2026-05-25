@@ -41,6 +41,7 @@ impl SignatureAlgorithm {
 }
 
 /// Commitment to a public key and signature payload.
+#[subtensor_macros::freeze_struct("6689c0d233ffc58")]
 #[derive(
     codec::Decode,
     codec::DecodeWithMemTracking,
@@ -60,6 +61,7 @@ pub struct SignatureCommitment {
 }
 
 /// Transaction signature bundle used during migration.
+#[subtensor_macros::freeze_struct("650274e59599a955")]
 #[derive(
     codec::Decode,
     codec::DecodeWithMemTracking,
@@ -78,6 +80,7 @@ pub struct SignatureBundle {
 }
 
 /// Enforces the roadmap phase for accepted account signatures.
+#[subtensor_macros::freeze_struct("41066137106ef495")]
 #[derive(
     codec::Decode,
     codec::DecodeWithMemTracking,

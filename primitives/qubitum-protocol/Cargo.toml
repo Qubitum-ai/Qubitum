@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 codec = { workspace = true, features = ["derive", "max-encoded-len"] }
 scale-info = { workspace = true, features = ["derive"] }
+subtensor-macros.workspace = true
 
 [features]
 default = ["std"]

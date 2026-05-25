@@ -161,6 +161,7 @@ fn contains_subsequence(haystack: &[u8], needle: &[u8]) -> bool {
         .any(|window| window == needle)
 }
 
+#[subtensor_macros::freeze_struct("e288157ba4f9798e")]
 #[derive(Encode)]
 struct LegacyChainProofRecordV4 {
     request_id: u64,
@@ -177,6 +178,7 @@ struct LegacyChainProofRecordV4 {
     submitted_at: u64,
 }
 
+#[subtensor_macros::freeze_struct("160a04fed40c47b9")]
 #[derive(Encode)]
 struct LegacyChainProofRecordV11 {
     request_id: u64,
@@ -194,6 +196,7 @@ struct LegacyChainProofRecordV11 {
     accepted_at: u64,
 }
 
+#[subtensor_macros::freeze_struct("42f1ec02f8f091b0")]
 #[derive(Encode)]
 struct LegacyChainProofRecordV14 {
     request_id: u64,
@@ -210,6 +213,7 @@ struct LegacyChainProofRecordV14 {
     accepted_at: u64,
 }
 
+#[subtensor_macros::freeze_struct("84f0aff25b0bbae5")]
 #[derive(Encode)]
 struct LegacyChainSubnetV15 {
     id: u16,
@@ -223,6 +227,7 @@ struct LegacyChainSubnetV15 {
     active: bool,
 }
 
+#[subtensor_macros::freeze_struct("de54dcd0a30b5b11")]
 #[derive(Encode)]
 struct LegacyChainMinerV7 {
     id: u64,
@@ -234,6 +239,7 @@ struct LegacyChainMinerV7 {
     status: RegistryStatus,
 }
 
+#[subtensor_macros::freeze_struct("e8dbdea8da0e7173")]
 #[derive(Encode)]
 struct LegacyChainValidatorV7 {
     id: u64,
@@ -243,6 +249,7 @@ struct LegacyChainValidatorV7 {
     status: RegistryStatus,
 }
 
+#[subtensor_macros::freeze_struct("8bebbd6493599a2")]
 #[derive(Encode)]
 struct LegacyChainMinerV9 {
     id: u64,
@@ -254,6 +261,7 @@ struct LegacyChainMinerV9 {
     status: RegistryStatus,
 }
 
+#[subtensor_macros::freeze_struct("7693a957e356f7e0")]
 #[derive(Encode)]
 struct LegacyChainValidatorV9 {
     id: u64,
@@ -263,6 +271,7 @@ struct LegacyChainValidatorV9 {
     status: RegistryStatus,
 }
 
+#[subtensor_macros::freeze_struct("4f6cd76082975b13")]
 #[derive(Encode)]
 struct LegacyChainInferenceRequestV8 {
     request_id: u64,
@@ -278,6 +287,7 @@ struct LegacyChainInferenceRequestV8 {
     status: InferenceRequestStatus,
 }
 
+#[subtensor_macros::freeze_struct("8b2aee16b5540b66")]
 #[derive(Encode)]
 struct LegacyChainInferenceRequestV10 {
     request_id: u64,
@@ -293,6 +303,7 @@ struct LegacyChainInferenceRequestV10 {
     status: InferenceRequestStatus,
 }
 
+#[subtensor_macros::freeze_struct("9bfbc096d7d218f")]
 #[derive(Encode)]
 struct LegacyChainInferenceRequestV12 {
     request_id: u64,
@@ -307,6 +318,7 @@ struct LegacyChainInferenceRequestV12 {
     status: InferenceRequestStatus,
 }
 
+#[subtensor_macros::freeze_struct("c15ac7abdafa7640")]
 #[derive(Encode)]
 struct LegacyChainInferenceRequestV13 {
     request_id: u64,

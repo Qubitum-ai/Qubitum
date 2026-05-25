@@ -10323,6 +10323,7 @@ dependencies = [
  "sp-io",
  "sp-runtime",
  "sp-std",
+ "subtensor-macros",
 ]
 
 [[package]]
@@ -13585,6 +13586,7 @@ version = "0.1.0"
 dependencies = [
  "parity-scale-codec",
  "scale-info",
+ "subtensor-macros",
 ]
 
 [[package]]
