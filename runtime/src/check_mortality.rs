@@ -36,11 +36,24 @@ fn encoded_runtime_call_contains_shield_submit(bytes: &[u8], depth: u8) -> bool 
     let remaining_depth = u32::from(MAX_SHIELD_CALL_SCAN_DEPTH - depth);
     match crate::RuntimeCall::decode_all_with_depth_limit(remaining_depth, &mut &bytes[..]) {
         Ok(call) => shield_submit_encrypted_at_depth(&call, depth),
-        Err(_) => crate::RuntimeCall::decode_all_with_depth_limit(
-            MAX_SHIELD_PREIMAGE_DECODE_PROBE_DEPTH,
-            &mut &bytes[..],
-        )
-        .is_ok(),
+        Err(_) => {
+            if let Ok(call) =
+                crate::RuntimeCall::decode_with_depth_limit(remaining_depth, &mut &bytes[..])
+            {
+                return shield_submit_encrypted_at_depth(&call, depth);
+            }
+
+            crate::RuntimeCall::decode_all_with_depth_limit(
+                MAX_SHIELD_PREIMAGE_DECODE_PROBE_DEPTH,
+                &mut &bytes[..],
+            )
+            .is_ok()
+                || crate::RuntimeCall::decode_with_depth_limit(
+                    MAX_SHIELD_PREIMAGE_DECODE_PROBE_DEPTH,
+                    &mut &bytes[..],
+                )
+                .is_ok()
+        }
     }
 }
 
@@ -258,10 +271,22 @@ mod tests {
         })
     }
 
+    fn preimage_wrapped_submit_encrypted_call_with_trailing_bytes() -> RuntimeCall {
+        let mut bytes = utility_wrapped_submit_encrypted_call().encode();
+        bytes.extend_from_slice(&[0xA5, 0x5A, 0xFF]);
+        RuntimeCall::Preimage(pallet_preimage::Call::note_preimage { bytes })
+    }
+
     fn deeply_nested_preimage_call(call: RuntimeCall) -> RuntimeCall {
         RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
             bytes: nested_utility_call(call, MAX_SHIELD_CALL_SCAN_DEPTH + 1).encode(),
         })
+    }
+
+    fn deeply_nested_preimage_call_with_trailing_bytes(call: RuntimeCall) -> RuntimeCall {
+        let mut bytes = nested_utility_call(call, MAX_SHIELD_CALL_SCAN_DEPTH + 1).encode();
+        bytes.extend_from_slice(&[0x01, 0x02]);
+        RuntimeCall::Preimage(pallet_preimage::Call::note_preimage { bytes })
     }
 
     fn remark_call() -> RuntimeCall {
@@ -352,12 +377,38 @@ mod tests {
     }
 
     #[test]
+    fn encoded_preimage_shield_tx_prefix_with_trailing_bytes_has_short_era_enforced() {
+        new_test_ext().execute_with(|| {
+            assert_eq!(
+                validate_era_check(
+                    Era::mortal(16, 1),
+                    &preimage_wrapped_submit_encrypted_call_with_trailing_bytes()
+                ),
+                Err(InvalidTransaction::Stale.into())
+            );
+        });
+    }
+
+    #[test]
     fn deeply_nested_encoded_preimage_shield_tx_with_long_era_fails_closed() {
         new_test_ext().execute_with(|| {
             assert_eq!(
                 validate_era_check(
                     Era::mortal(16, 1),
                     &deeply_nested_preimage_call(submit_encrypted_call())
+                ),
+                Err(InvalidTransaction::Stale.into())
+            );
+        });
+    }
+
+    #[test]
+    fn deeply_nested_encoded_preimage_prefix_with_trailing_bytes_fails_closed() {
+        new_test_ext().execute_with(|| {
+            assert_eq!(
+                validate_era_check(
+                    Era::mortal(16, 1),
+                    &deeply_nested_preimage_call_with_trailing_bytes(submit_encrypted_call())
                 ),
                 Err(InvalidTransaction::Stale.into())
             );

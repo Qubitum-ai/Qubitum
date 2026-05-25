@@ -38,11 +38,22 @@ impl CheckQubitumShielding {
         match RuntimeCall::decode_all_with_depth_limit(remaining_depth, &mut &bytes[..]) {
             Ok(call) => Self::privacy_violation_at_depth(&call, depth),
             Err(_) => {
+                if let Ok(call) =
+                    RuntimeCall::decode_with_depth_limit(remaining_depth, &mut &bytes[..])
+                {
+                    return Self::privacy_violation_at_depth(&call, depth);
+                }
+
                 if RuntimeCall::decode_all_with_depth_limit(
                     MAX_PREIMAGE_DECODE_PROBE_DEPTH,
                     &mut &bytes[..],
                 )
                 .is_ok()
+                    || RuntimeCall::decode_with_depth_limit(
+                        MAX_PREIMAGE_DECODE_PROBE_DEPTH,
+                        &mut &bytes[..],
+                    )
+                    .is_ok()
                 {
                     Some(CustomTransactionError::QubitumCallMustBeShielded)
                 } else {
@@ -989,6 +1000,64 @@ mod tests {
             });
             assert_eq!(
                 validate_ext(&call, TransactionSource::External),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+        });
+    }
+
+    #[test]
+    fn encoded_preimage_qubitum_call_prefix_with_trailing_bytes_must_be_shielded() {
+        new_test_ext().execute_with(|| {
+            let mut bytes = direct_qubitum_call().encode();
+            bytes.extend_from_slice(&[0xA5, 0x5A, 0xFF]);
+            let call = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage { bytes });
+
+            assert_eq!(
+                validate_ext(&call, TransactionSource::External),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+            assert_eq!(
+                prepare_ext(&call),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+        });
+    }
+
+    #[test]
+    fn encoded_preimage_wrapped_qubitum_prefix_with_trailing_bytes_must_be_shielded() {
+        new_test_ext().execute_with(|| {
+            let mut bytes = RuntimeCall::Utility(pallet_subtensor_utility::Call::batch {
+                calls: vec![remark_call(16), request_inference_call()],
+            })
+            .encode();
+            bytes.extend_from_slice(&[0x10, 0x20]);
+            let call = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage { bytes });
+
+            assert_eq!(
+                validate_ext(&call, TransactionSource::External),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+            assert_eq!(
+                prepare_ext(&call),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+        });
+    }
+
+    #[test]
+    fn encoded_preimage_deep_qubitum_prefix_with_trailing_bytes_fails_closed() {
+        new_test_ext().execute_with(|| {
+            let mut bytes =
+                nested_batch_call(direct_qubitum_call(), MAX_CALL_SCAN_DEPTH + 1).encode();
+            bytes.extend_from_slice(&[0x01, 0x02]);
+            let call = RuntimeCall::Preimage(pallet_preimage::Call::note_preimage { bytes });
+
+            assert_eq!(
+                validate_ext(&call, TransactionSource::External),
+                Err(CustomTransactionError::QubitumCallMustBeShielded.into())
+            );
+            assert_eq!(
+                prepare_ext(&call),
                 Err(CustomTransactionError::QubitumCallMustBeShielded.into())
             );
         });
