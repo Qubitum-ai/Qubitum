@@ -1564,6 +1564,32 @@ fn participant_capital_lifecycle_uses_per_registry_record_amounts() {
             0,
             MIN_MINER_BOND
         ));
+        ValidatorLockedStake::<Test>::remove(0);
+
+        assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 3, 1_000));
+
+        assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(90_000_000_000));
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            90_000_000_000
+        );
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Slashed
+        );
+    });
+
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::General,
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(3),
+            0,
+            MIN_MINER_BOND
+        ));
         assert_ok!(Qubitum::register_validator(
             RuntimeOrigin::signed(3),
             0,
@@ -1773,6 +1799,46 @@ fn register_validator_locks_stake() {
             Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
             MIN_MINER_BOND
         );
+    });
+}
+
+#[test]
+fn validator_identity_activation_rejects_missing_locked_stake_record() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::Vision,
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(3),
+            0,
+            MIN_MINER_BOND
+        ));
+        ValidatorLockedStake::<Test>::remove(0);
+
+        assert_noop!(
+            Qubitum::set_validator_identity_commitments(
+                RuntimeOrigin::signed(3),
+                0,
+                Some(commitment(122)),
+                Some(commitment(123)),
+                validator_identity_signature_bundle(
+                    0,
+                    Some(commitment(122)),
+                    Some(commitment(123))
+                ),
+            ),
+            Error::<Test>::MissingCapitalRecord
+        );
+
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Pending
+        );
+        assert!(ValidatorIdentityCommitments::<Test>::get(0).is_none());
+        assert!(ValidatorIdentitySignatureBundles::<Test>::get(0).is_none());
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
     });
 }
 
@@ -6523,6 +6589,27 @@ fn route_assignment_returns_active_participants_only() {
 }
 
 #[test]
+fn route_assignment_skips_validator_missing_locked_stake_record() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(3),
+            0,
+            MIN_MINER_BOND
+        ));
+        attest_validator(1, 3, Some(commitment(126)), Some(commitment(127)));
+        ValidatorLockedStake::<Test>::remove(0);
+
+        assert_eq!(
+            ActiveValidatorsBySubnet::<Test>::get(0).to_vec(),
+            vec![0, 1]
+        );
+        let assignment = Qubitum::route_assignment(0, 0).unwrap();
+        assert_eq!(assignment.validator_id, 1);
+    });
+}
+
+#[test]
 fn next_route_assignment_uses_chain_next_request_id() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
@@ -7145,6 +7232,22 @@ fn runtime_upgrade_does_not_reindex_identity_ineligible_participants() {
 }
 
 #[test]
+fn runtime_upgrade_does_not_reindex_validator_missing_locked_stake_record() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        ValidatorLockedStake::<Test>::remove(0);
+        StorageVersion::new(17).put::<crate::Pallet<Test>>();
+
+        <Qubitum as Hooks<u64>>::on_runtime_upgrade();
+
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
+        assert_eq!(LegacyCapitalRecordMigrationFailures::<Test>::get(), 1);
+        assert!(Qubitum::next_route_assignment(0).is_none());
+    });
+}
+
+#[test]
 fn runtime_upgrade_identity_missing_records_do_not_overflow_attested_routes() {
     new_test_ext().execute_with(|| {
         assert_ok!(Qubitum::create_subnet(
@@ -7236,6 +7339,7 @@ fn runtime_upgrade_identity_missing_records_do_not_overflow_attested_routes() {
                 status: RegistryStatus::Active,
             },
         );
+        ValidatorLockedStake::<Test>::insert(attested_validator_id, MIN_MINER_BOND);
         attest_validator(
             attested_validator_id,
             5,
@@ -7348,6 +7452,7 @@ fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_healt
                     status: RegistryStatus::Active,
                 },
             );
+            ValidatorLockedStake::<Test>::insert(validator_id, MIN_MINER_BOND);
             let shielded_identity_commitment =
                 Some(commitment((index.saturating_add(90) % 250) as u8));
             let endpoint_commitment = Some(commitment((index.saturating_add(120) % 250) as u8));
@@ -7604,10 +7709,10 @@ fn runtime_upgrade_reports_missing_legacy_capital_records() {
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
 
-        assert_eq!(LegacyCapitalRecordMigrationFailures::<Test>::get(), 2);
+        assert_eq!(LegacyCapitalRecordMigrationFailures::<Test>::get(), 3);
         assert_eq!(
             Qubitum::raw_migration_health().legacy_capital_record_failures,
-            2
+            3
         );
         assert_eq!(
             Qubitum::raw_migration_health().legacy_accounting_failures,
@@ -7624,7 +7729,7 @@ fn runtime_upgrade_reports_missing_legacy_capital_records() {
         assert_eq!(Qubitum::migration_health().legacy_accounting_failures, 0);
         assert_eq!(Qubitum::migration_health().legacy_routing_index_failures, 0);
         assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
-        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
             StorageVersion::new(18)

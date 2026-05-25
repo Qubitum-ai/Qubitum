@@ -2187,6 +2187,9 @@ pub mod pallet {
                     signature_bundle,
                     challenge_commitment,
                 )?;
+                if validator.status == RegistryStatus::Pending {
+                    Self::ensure_validator_locked_stake_record(validator_id)?;
+                }
                 ValidatorIdentityCommitments::<T>::insert(
                     validator_id,
                     ChainIdentityCommitments {
@@ -3230,10 +3233,20 @@ pub mod pallet {
             T::Currency::balance_on_hold(&HoldReason::ValidatorStake.into(), operator)
         }
 
-        fn capital_bearing_status(status: RegistryStatus) -> bool {
+        fn miner_capital_bearing_status(status: RegistryStatus) -> bool {
             matches!(
                 status,
                 RegistryStatus::Active | RegistryStatus::Slashed | RegistryStatus::Exiting { .. }
+            )
+        }
+
+        fn validator_capital_bearing_status(status: RegistryStatus) -> bool {
+            matches!(
+                status,
+                RegistryStatus::Pending
+                    | RegistryStatus::Active
+                    | RegistryStatus::Slashed
+                    | RegistryStatus::Exiting { .. }
             )
         }
 
@@ -3241,7 +3254,7 @@ pub mod pallet {
             Miners::<T>::iter()
                 .filter(|(_, miner)| {
                     miner.operator_commitment == operator_commitment
-                        && Self::capital_bearing_status(miner.status)
+                        && Self::miner_capital_bearing_status(miner.status)
                 })
                 .fold(0_u32, |count, _| count.saturating_add(1))
         }
@@ -3250,7 +3263,7 @@ pub mod pallet {
             Validators::<T>::iter()
                 .filter(|(_, validator)| {
                     validator.operator_commitment == operator_commitment
-                        && Self::capital_bearing_status(validator.status)
+                        && Self::validator_capital_bearing_status(validator.status)
                 })
                 .fold(0_u32, |count, _| count.saturating_add(1))
         }
@@ -3266,7 +3279,7 @@ pub mod pallet {
             let miner = Miners::<T>::get(miner_id).ok_or(Error::<T>::UnknownMiner)?;
             Self::ensure_miner_operator(&miner, operator)?;
             ensure!(
-                Self::capital_bearing_status(miner.status)
+                Self::miner_capital_bearing_status(miner.status)
                     && Self::miner_capital_record_count(miner.operator_commitment) == 1,
                 Error::<T>::MissingCapitalRecord
             );
@@ -3285,11 +3298,26 @@ pub mod pallet {
                 Validators::<T>::get(validator_id).ok_or(Error::<T>::UnknownValidator)?;
             Self::ensure_validator_operator(&validator, operator)?;
             ensure!(
-                Self::capital_bearing_status(validator.status)
+                Self::validator_capital_bearing_status(validator.status)
                     && Self::validator_capital_record_count(validator.operator_commitment) == 1,
                 Error::<T>::MissingCapitalRecord
             );
             Ok(Self::held_validator_stake(operator))
+        }
+
+        fn validator_has_active_locked_stake_record(validator_id: ValidatorId) -> bool {
+            match ValidatorLockedStake::<T>::get(validator_id) {
+                Some(stake) => stake >= T::MinValidatorStake::get(),
+                None => false,
+            }
+        }
+
+        fn ensure_validator_locked_stake_record(validator_id: ValidatorId) -> DispatchResult {
+            ensure!(
+                Self::validator_has_active_locked_stake_record(validator_id),
+                Error::<T>::MissingCapitalRecord
+            );
+            Ok(())
         }
 
         fn ensure_miner_operator(miner: &ChainMiner, operator: &T::AccountId) -> DispatchResult {
@@ -3610,6 +3638,7 @@ pub mod pallet {
                 };
                 if validator.subnet_id == subnet_id
                     && validator.status == RegistryStatus::Active
+                    && Self::validator_has_active_locked_stake_record(validator_id)
                     && validator.operator_commitment != miner_operator_commitment
                     && Self::ensure_validator_signature_bundle_bound(validator_id, &validator)
                         .is_ok()
@@ -3745,6 +3774,7 @@ pub mod pallet {
             for (validator_id, validator) in Validators::<T>::iter() {
                 validator_reads = validator_reads.saturating_add(1);
                 if validator.status == RegistryStatus::Active
+                    && Self::validator_has_active_locked_stake_record(validator_id)
                     && Self::ensure_validator_signature_bundle_bound(validator_id, &validator)
                         .is_ok()
                 {
@@ -3838,7 +3868,7 @@ pub mod pallet {
 
             for (miner_id, miner) in Miners::<T>::iter() {
                 miner_reads = miner_reads.saturating_add(1);
-                if Self::capital_bearing_status(miner.status) {
+                if Self::miner_capital_bearing_status(miner.status) {
                     miner_reads = miner_reads.saturating_add(1);
                     if !MinerLockedBond::<T>::contains_key(miner_id) {
                         missing = missing.saturating_add(1);
@@ -3848,7 +3878,7 @@ pub mod pallet {
 
             for (validator_id, validator) in Validators::<T>::iter() {
                 validator_reads = validator_reads.saturating_add(1);
-                if Self::capital_bearing_status(validator.status) {
+                if Self::validator_capital_bearing_status(validator.status) {
                     validator_reads = validator_reads.saturating_add(1);
                     if !ValidatorLockedStake::<T>::contains_key(validator_id) {
                         missing = missing.saturating_add(1);
@@ -4522,6 +4552,10 @@ pub mod pallet {
                         "Qubitum active validator index references inactive or wrong-subnet validator"
                     );
                     ensure!(
+                        Self::validator_has_active_locked_stake_record(validator_id),
+                        "Qubitum active validator index references undercapitalized validator"
+                    );
+                    ensure!(
                         Self::ensure_validator_signature_bundle_bound(validator_id, &validator)
                             .is_ok(),
                         "Qubitum active validator index references identity-ineligible validator"
@@ -4531,6 +4565,7 @@ pub mod pallet {
 
             for (validator_id, validator) in Validators::<T>::iter() {
                 if validator.status == RegistryStatus::Active
+                    && Self::validator_has_active_locked_stake_record(validator_id)
                     && Self::ensure_validator_signature_bundle_bound(validator_id, &validator)
                         .is_ok()
                 {
