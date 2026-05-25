@@ -1180,13 +1180,13 @@ pub mod pallet {
                 .saturating_add(Self::migrate_request_owner_commitments(on_chain))
                 .saturating_add(Self::migrate_request_timing_commitments(on_chain))
                 .saturating_add(Self::migrate_request_terms_commitments(on_chain))
+                .saturating_add(Self::migrate_identity_signature_challenges(on_chain))
                 .saturating_add(Self::rebuild_active_routing_indexes())
                 .saturating_add(Self::migrate_participant_capital_records(on_chain))
                 .saturating_add(Self::rebuild_request_status_counts())
                 .saturating_add(Self::migrate_proof_record_timestamps(on_chain))
                 .saturating_add(Self::migrate_proof_record_assignment_commitments(on_chain))
-                .saturating_add(Self::migrate_proof_record_audit_commitments(on_chain))
-                .saturating_add(Self::migrate_identity_signature_challenges(on_chain));
+                .saturating_add(Self::migrate_proof_record_audit_commitments(on_chain));
             STORAGE_VERSION.put::<Pallet<T>>();
             weight.saturating_add(T::DbWeight::get().reads_writes(1, 1))
         }
@@ -3688,7 +3688,9 @@ pub mod pallet {
 
             for (miner_id, miner) in Miners::<T>::iter() {
                 miner_reads = miner_reads.saturating_add(1);
-                if miner.status == RegistryStatus::Active {
+                if miner.status == RegistryStatus::Active
+                    && Self::ensure_miner_signature_bundle_bound(miner_id, &miner).is_ok()
+                {
                     match ActiveMinersBySubnet::<T>::try_mutate(miner.subnet_id, |ids| {
                         Self::insert_sorted_miner_id(ids, miner_id)
                     }) {
@@ -3707,7 +3709,10 @@ pub mod pallet {
 
             for (validator_id, validator) in Validators::<T>::iter() {
                 validator_reads = validator_reads.saturating_add(1);
-                if validator.status == RegistryStatus::Active {
+                if validator.status == RegistryStatus::Active
+                    && Self::ensure_validator_signature_bundle_bound(validator_id, &validator)
+                        .is_ok()
+                {
                     match ActiveValidatorsBySubnet::<T>::try_mutate(validator.subnet_id, |ids| {
                         Self::insert_sorted_validator_id(ids, validator_id)
                     }) {
@@ -4440,14 +4445,20 @@ pub mod pallet {
                         miner.subnet_id == subnet_id && miner.status == RegistryStatus::Active,
                         "Qubitum active miner index references inactive or wrong-subnet miner"
                     );
+                    ensure!(
+                        Self::ensure_miner_signature_bundle_bound(miner_id, &miner).is_ok(),
+                        "Qubitum active miner index references identity-ineligible miner"
+                    );
                 }
             }
 
             for (miner_id, miner) in Miners::<T>::iter() {
-                if miner.status == RegistryStatus::Active {
+                if miner.status == RegistryStatus::Active
+                    && Self::ensure_miner_signature_bundle_bound(miner_id, &miner).is_ok()
+                {
                     ensure!(
                         ActiveMinersBySubnet::<T>::get(miner.subnet_id).contains(&miner_id),
-                        "Qubitum active miner missing from route index"
+                        "Qubitum active identity-eligible miner missing from route index"
                     );
                 }
             }
@@ -4461,15 +4472,23 @@ pub mod pallet {
                             && validator.status == RegistryStatus::Active,
                         "Qubitum active validator index references inactive or wrong-subnet validator"
                     );
+                    ensure!(
+                        Self::ensure_validator_signature_bundle_bound(validator_id, &validator)
+                            .is_ok(),
+                        "Qubitum active validator index references identity-ineligible validator"
+                    );
                 }
             }
 
             for (validator_id, validator) in Validators::<T>::iter() {
-                if validator.status == RegistryStatus::Active {
+                if validator.status == RegistryStatus::Active
+                    && Self::ensure_validator_signature_bundle_bound(validator_id, &validator)
+                        .is_ok()
+                {
                     ensure!(
                         ActiveValidatorsBySubnet::<T>::get(validator.subnet_id)
                             .contains(&validator_id),
-                        "Qubitum active validator missing from route index"
+                        "Qubitum active identity-eligible validator missing from route index"
                     );
                 }
             }
