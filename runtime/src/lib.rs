@@ -1892,6 +1892,86 @@ fn qubitum_redacted_public_activity_aggregates() -> QubitumPublicActivityAggrega
     (0, (0, 0, 0), TaoBalance::ZERO)
 }
 
+fn qubitum_runtime_api_subnet(
+    subnet_id: qubitum_protocol::SubnetId,
+) -> Option<pallet_qubitum::ChainPublicSubnet> {
+    pallet_qubitum::Pallet::<Runtime>::public_subnet(subnet_id)
+}
+
+fn qubitum_runtime_api_miner(
+    miner_id: qubitum_protocol::MinerId,
+) -> Option<pallet_qubitum::ChainPublicMiner> {
+    pallet_qubitum::Pallet::<Runtime>::public_miner(miner_id)
+}
+
+fn qubitum_runtime_api_validator(
+    validator_id: qubitum_protocol::ValidatorId,
+) -> Option<pallet_qubitum::ChainPublicValidator> {
+    pallet_qubitum::Pallet::<Runtime>::public_validator(validator_id)
+}
+
+fn qubitum_runtime_api_miner_identity(
+    miner_id: qubitum_protocol::MinerId,
+) -> Option<pallet_qubitum::ChainPublicIdentity> {
+    pallet_qubitum::Pallet::<Runtime>::public_miner_identity(miner_id)
+}
+
+fn qubitum_runtime_api_validator_identity(
+    validator_id: qubitum_protocol::ValidatorId,
+) -> Option<pallet_qubitum::ChainPublicIdentity> {
+    pallet_qubitum::Pallet::<Runtime>::public_validator_identity(validator_id)
+}
+
+fn qubitum_runtime_api_inference_request(
+    request_id: qubitum_protocol::RequestId,
+) -> Option<pallet_qubitum::ChainPublicInferenceRequest> {
+    pallet_qubitum::Pallet::<Runtime>::public_inference_request(request_id)
+}
+
+fn qubitum_runtime_api_proof_record(
+    request_id: qubitum_protocol::RequestId,
+) -> Option<pallet_qubitum::ChainPublicProofRecord> {
+    pallet_qubitum::Pallet::<Runtime>::public_proof_record(request_id)
+}
+
+fn qubitum_runtime_api_next_route_availability(
+    subnet_id: qubitum_protocol::SubnetId,
+) -> pallet_qubitum::ChainRouteAvailability {
+    pallet_qubitum::Pallet::<Runtime>::next_route_availability(subnet_id)
+}
+
+fn qubitum_runtime_api_next_request_id() -> qubitum_protocol::RequestId {
+    qubitum_redacted_public_activity_aggregates().0
+}
+
+fn qubitum_runtime_api_counts() -> (
+    qubitum_protocol::SubnetId,
+    qubitum_protocol::MinerId,
+    qubitum_protocol::ValidatorId,
+) {
+    qubitum_redacted_public_activity_aggregates().1
+}
+
+fn qubitum_runtime_api_total_burned() -> TaoBalance {
+    qubitum_redacted_public_activity_aggregates().2
+}
+
+fn qubitum_runtime_api_accounting() -> pallet_qubitum::ChainAccounting<TaoBalance> {
+    pallet_qubitum::Pallet::<Runtime>::accounting()
+}
+
+fn qubitum_runtime_api_migration_health() -> pallet_qubitum::ChainMigrationHealth {
+    pallet_qubitum::Pallet::<Runtime>::migration_health()
+}
+
+fn qubitum_runtime_api_protocol_params() -> pallet_qubitum::ChainProtocolParams<TaoBalance> {
+    pallet_qubitum::Pallet::<Runtime>::protocol_params()
+}
+
+fn qubitum_runtime_api_request_status_counts() -> pallet_qubitum::ChainRequestStatusCounts {
+    pallet_qubitum::Pallet::<Runtime>::request_status_counts()
+}
+
 impl_runtime_apis! {
     impl sp_api::Core<Block> for Runtime {
         fn version() -> RuntimeVersion {
@@ -2624,53 +2704,53 @@ impl_runtime_apis! {
         fn qubitum_subnet(
             subnet_id: qubitum_protocol::SubnetId,
         ) -> Option<pallet_qubitum::ChainPublicSubnet> {
-            pallet_qubitum::Pallet::<Runtime>::public_subnet(subnet_id)
+            qubitum_runtime_api_subnet(subnet_id)
         }
 
         fn qubitum_miner(
             miner_id: qubitum_protocol::MinerId,
         ) -> Option<pallet_qubitum::ChainPublicMiner> {
-            pallet_qubitum::Pallet::<Runtime>::public_miner(miner_id)
+            qubitum_runtime_api_miner(miner_id)
         }
 
         fn qubitum_validator(
             validator_id: qubitum_protocol::ValidatorId,
         ) -> Option<pallet_qubitum::ChainPublicValidator> {
-            pallet_qubitum::Pallet::<Runtime>::public_validator(validator_id)
+            qubitum_runtime_api_validator(validator_id)
         }
 
         fn qubitum_miner_identity(
             miner_id: qubitum_protocol::MinerId,
         ) -> Option<pallet_qubitum::ChainPublicIdentity> {
-            pallet_qubitum::Pallet::<Runtime>::public_miner_identity(miner_id)
+            qubitum_runtime_api_miner_identity(miner_id)
         }
 
         fn qubitum_validator_identity(
             validator_id: qubitum_protocol::ValidatorId,
         ) -> Option<pallet_qubitum::ChainPublicIdentity> {
-            pallet_qubitum::Pallet::<Runtime>::public_validator_identity(validator_id)
+            qubitum_runtime_api_validator_identity(validator_id)
         }
 
         fn qubitum_inference_request(
             request_id: qubitum_protocol::RequestId,
         ) -> Option<pallet_qubitum::ChainPublicInferenceRequest> {
-            pallet_qubitum::Pallet::<Runtime>::public_inference_request(request_id)
+            qubitum_runtime_api_inference_request(request_id)
         }
 
         fn qubitum_proof_record(
             request_id: qubitum_protocol::RequestId,
         ) -> Option<pallet_qubitum::ChainPublicProofRecord> {
-            pallet_qubitum::Pallet::<Runtime>::public_proof_record(request_id)
+            qubitum_runtime_api_proof_record(request_id)
         }
 
         fn qubitum_next_route_availability(
             subnet_id: qubitum_protocol::SubnetId,
         ) -> pallet_qubitum::ChainRouteAvailability {
-            pallet_qubitum::Pallet::<Runtime>::next_route_availability(subnet_id)
+            qubitum_runtime_api_next_route_availability(subnet_id)
         }
 
         fn qubitum_next_request_id() -> qubitum_protocol::RequestId {
-            qubitum_redacted_public_activity_aggregates().0
+            qubitum_runtime_api_next_request_id()
         }
 
         fn qubitum_counts() -> (
@@ -2678,27 +2758,27 @@ impl_runtime_apis! {
             qubitum_protocol::MinerId,
             qubitum_protocol::ValidatorId,
         ) {
-            qubitum_redacted_public_activity_aggregates().1
+            qubitum_runtime_api_counts()
         }
 
         fn qubitum_total_burned() -> TaoBalance {
-            qubitum_redacted_public_activity_aggregates().2
+            qubitum_runtime_api_total_burned()
         }
 
         fn qubitum_accounting() -> pallet_qubitum::ChainAccounting<TaoBalance> {
-            pallet_qubitum::Pallet::<Runtime>::accounting()
+            qubitum_runtime_api_accounting()
         }
 
         fn qubitum_migration_health() -> pallet_qubitum::ChainMigrationHealth {
-            pallet_qubitum::Pallet::<Runtime>::migration_health()
+            qubitum_runtime_api_migration_health()
         }
 
         fn qubitum_protocol_params() -> pallet_qubitum::ChainProtocolParams<TaoBalance> {
-            pallet_qubitum::Pallet::<Runtime>::protocol_params()
+            qubitum_runtime_api_protocol_params()
         }
 
         fn qubitum_request_status_counts() -> pallet_qubitum::ChainRequestStatusCounts {
-            pallet_qubitum::Pallet::<Runtime>::request_status_counts()
+            qubitum_runtime_api_request_status_counts()
         }
     }
 
@@ -3173,6 +3253,178 @@ fn qubitum_runtime_api_redacts_nonzero_public_records() {
             pallet_qubitum::Pallet::<Runtime>::next_route_availability(0),
             pallet_qubitum::ChainRouteAvailability { available: false }
         );
+    });
+}
+
+#[test]
+fn qubitum_runtime_api_boundary_redacts_nonzero_public_state() {
+    let mut ext: sp_io::TestExternalities = RuntimeGenesisConfig {
+        sudo: pallet_sudo::GenesisConfig { key: None },
+        ..Default::default()
+    }
+    .build_storage()
+    .unwrap_or_else(|err| panic!("runtime genesis config should build: {err:?}"))
+    .into();
+
+    ext.execute_with(|| {
+        let commitment = |seed: u8| [seed; 32];
+        pallet_qubitum::SubnetCount::<Runtime>::put(7);
+        pallet_qubitum::MinerCount::<Runtime>::put(11);
+        pallet_qubitum::ValidatorCount::<Runtime>::put(13);
+        pallet_qubitum::RequestCount::<Runtime>::put(17);
+        pallet_qubitum::TotalBurned::<Runtime>::put(TaoBalance::new(19));
+        pallet_qubitum::TotalInferenceEscrowed::<Runtime>::put(TaoBalance::new(23));
+        pallet_qubitum::TotalMinerPayouts::<Runtime>::put(TaoBalance::new(29));
+        pallet_qubitum::TotalValidatorFees::<Runtime>::put(TaoBalance::new(31));
+        pallet_qubitum::TotalTreasuryFees::<Runtime>::put(TaoBalance::new(37));
+        pallet_qubitum::TotalInferenceRefunded::<Runtime>::put(TaoBalance::new(41));
+        pallet_qubitum::LegacyAccountingMigrationFailures::<Runtime>::put(43);
+        pallet_qubitum::LegacyRoutingIndexMigrationFailures::<Runtime>::put(47);
+        pallet_qubitum::LegacyCapitalRecordMigrationFailures::<Runtime>::put(53);
+        pallet_qubitum::PendingInferenceRequestCount::<Runtime>::put(59);
+        pallet_qubitum::SettledInferenceRequestCount::<Runtime>::put(61);
+        pallet_qubitum::CancelledInferenceRequestCount::<Runtime>::put(67);
+        pallet_qubitum::RejectedInferenceRequestCount::<Runtime>::put(71);
+        pallet_qubitum::ExpiredInferenceRequestCount::<Runtime>::put(73);
+        pallet_qubitum::Subnets::<Runtime>::insert(
+            0,
+            pallet_qubitum::ChainSubnet {
+                id: 0,
+                owner_commitment: commitment(1),
+                domain: qubitum_protocol::SubnetDomain::Code,
+                proof_system: qubitum_protocol::ProofSystem::RiscZeroStark,
+                policy_commitment: commitment(2),
+                active: true,
+            },
+        );
+        pallet_qubitum::Miners::<Runtime>::insert(
+            0,
+            pallet_qubitum::ChainMiner {
+                id: 0,
+                operator_commitment: commitment(3),
+                subnet_id: 0,
+                model_commitment: commitment(4),
+                proof_system: qubitum_protocol::ProofSystem::RiscZeroStark,
+                bond_commitment: commitment(5),
+                status: qubitum_protocol::RegistryStatus::Active,
+            },
+        );
+        pallet_qubitum::Validators::<Runtime>::insert(
+            0,
+            pallet_qubitum::ChainValidator {
+                id: 0,
+                operator_commitment: commitment(6),
+                subnet_id: 0,
+                stake_commitment: commitment(7),
+                status: qubitum_protocol::RegistryStatus::Active,
+            },
+        );
+        pallet_qubitum::MinerIdentityCommitments::<Runtime>::insert(
+            0,
+            pallet_qubitum::ChainIdentityCommitments {
+                shielded_identity_commitment: Some(commitment(8)),
+                endpoint_commitment: Some(commitment(9)),
+            },
+        );
+        pallet_qubitum::ValidatorIdentityCommitments::<Runtime>::insert(
+            0,
+            pallet_qubitum::ChainIdentityCommitments {
+                shielded_identity_commitment: Some(commitment(10)),
+                endpoint_commitment: Some(commitment(11)),
+            },
+        );
+        pallet_qubitum::InferenceRequests::<Runtime>::insert(
+            0,
+            pallet_qubitum::ChainInferenceRequest {
+                request_id: 0,
+                user_commitment: commitment(12),
+                subnet_id: 0,
+                assignment_commitment: commitment(13),
+                input_commitment: commitment(14),
+                terms_commitment: commitment(15),
+                timing_commitment: commitment(16),
+                status: pallet_qubitum::InferenceRequestStatus::Pending,
+            },
+        );
+        pallet_qubitum::ProofRecords::<Runtime>::insert(
+            0,
+            pallet_qubitum::ChainProofRecord {
+                request_id: 0,
+                subnet_id: 0,
+                assignment_commitment: commitment(17),
+                audit_commitment: commitment(18),
+                proof_system: qubitum_protocol::ProofSystem::RiscZeroStark,
+            },
+        );
+
+        assert_eq!(
+            (
+                pallet_qubitum::RequestCount::<Runtime>::get(),
+                pallet_qubitum::SubnetCount::<Runtime>::get(),
+                pallet_qubitum::MinerCount::<Runtime>::get(),
+                pallet_qubitum::ValidatorCount::<Runtime>::get(),
+                pallet_qubitum::TotalBurned::<Runtime>::get(),
+            ),
+            (17, 7, 11, 13, TaoBalance::new(19))
+        );
+        assert!(pallet_qubitum::Subnets::<Runtime>::contains_key(0));
+        assert!(pallet_qubitum::Miners::<Runtime>::contains_key(0));
+        assert!(pallet_qubitum::Validators::<Runtime>::contains_key(0));
+        assert!(pallet_qubitum::InferenceRequests::<Runtime>::contains_key(
+            0
+        ));
+        assert!(pallet_qubitum::ProofRecords::<Runtime>::contains_key(0));
+
+        assert_eq!(qubitum_runtime_api_subnet(0), None);
+        assert_eq!(qubitum_runtime_api_miner(0), None);
+        assert_eq!(qubitum_runtime_api_validator(0), None);
+        assert_eq!(qubitum_runtime_api_miner_identity(0), None);
+        assert_eq!(qubitum_runtime_api_validator_identity(0), None);
+        assert_eq!(qubitum_runtime_api_inference_request(0), None);
+        assert_eq!(qubitum_runtime_api_proof_record(0), None);
+        assert_eq!(
+            qubitum_runtime_api_next_route_availability(0),
+            pallet_qubitum::ChainRouteAvailability { available: false }
+        );
+        assert_eq!(qubitum_runtime_api_next_request_id(), 0);
+        assert_eq!(qubitum_runtime_api_counts(), (0, 0, 0));
+        assert_eq!(qubitum_runtime_api_total_burned(), TaoBalance::ZERO);
+        assert_eq!(
+            qubitum_runtime_api_accounting(),
+            pallet_qubitum::ChainAccounting {
+                total_inference_escrowed: TaoBalance::ZERO,
+                total_miner_payouts: TaoBalance::ZERO,
+                total_validator_fees: TaoBalance::ZERO,
+                total_treasury_fees: TaoBalance::ZERO,
+                total_inference_refunded: TaoBalance::ZERO,
+                legacy_migration_failures: 0,
+            }
+        );
+        assert_eq!(
+            qubitum_runtime_api_migration_health(),
+            pallet_qubitum::ChainMigrationHealth {
+                legacy_accounting_failures: 0,
+                legacy_routing_index_failures: 0,
+                legacy_capital_record_failures: 0,
+            }
+        );
+        assert_eq!(
+            qubitum_runtime_api_request_status_counts(),
+            pallet_qubitum::ChainRequestStatusCounts {
+                pending: 0,
+                settled: 0,
+                cancelled: 0,
+                rejected: 0,
+                expired: 0,
+            }
+        );
+        let params = qubitum_runtime_api_protocol_params();
+        assert!(params.public_query_ids_redacted);
+        assert!(params.public_registry_records_redacted);
+        assert!(params.public_request_records_redacted);
+        assert!(params.public_proof_records_redacted);
+        assert!(params.public_accounting_totals_redacted);
+        assert!(!params.production_ready);
     });
 }
 
