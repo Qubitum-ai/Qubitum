@@ -3143,6 +3143,70 @@ fn routing_and_proof_reject_unbound_identity_signature_bundles() {
 }
 
 #[test]
+fn routing_and_proof_reject_stored_non_dilithium_identity_bundles() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(89);
+
+        let original_miner_bundle = MinerIdentitySignatureBundles::<Test>::get(0).unwrap();
+        let miner_challenge = MinerIdentitySignatureChallenges::<Test>::get(0).unwrap();
+        MinerIdentitySignatureBundles::<Test>::insert(
+            0,
+            SignatureBundle {
+                classical: None,
+                post_quantum: Some(challenge_bound_signature(
+                    SignatureAlgorithm::Falcon512,
+                    182,
+                    miner_challenge,
+                )),
+            },
+        );
+
+        assert!(Qubitum::next_route_assignment(0).is_none());
+        assert_noop!(
+            submit_proof(RuntimeOrigin::signed(3), valid_submission(89)),
+            Error::<Test>::InvalidSignatureBundle
+        );
+        assert!(ProofRecords::<Test>::get(89).is_none());
+        assert_eq!(
+            InferenceRequests::<Test>::get(89).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+
+        MinerIdentitySignatureBundles::<Test>::insert(0, original_miner_bundle);
+        let validator_challenge = ValidatorIdentitySignatureChallenges::<Test>::get(0).unwrap();
+        ValidatorIdentitySignatureBundles::<Test>::insert(
+            0,
+            SignatureBundle {
+                classical: None,
+                post_quantum: Some(challenge_bound_signature(
+                    SignatureAlgorithm::SphincsPlus,
+                    183,
+                    validator_challenge,
+                )),
+            },
+        );
+
+        assert!(Qubitum::next_route_assignment(0).is_none());
+        assert_noop!(
+            submit_proof(RuntimeOrigin::signed(3), valid_submission(89)),
+            Error::<Test>::InvalidSignatureBundle
+        );
+        assert!(ProofRecords::<Test>::get(89).is_none());
+        assert_eq!(
+            InferenceRequests::<Test>::get(89).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
+        assert_eq!(TotalMinerPayouts::<Test>::get(), 0);
+        assert_eq!(TotalValidatorFees::<Test>::get(), 0);
+        assert_eq!(TotalTreasuryFees::<Test>::get(), 0);
+    });
+}
+
+#[test]
 fn validator_exit_requires_cooldown_and_releases_stake() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
