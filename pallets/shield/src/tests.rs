@@ -825,6 +825,75 @@ mod encrypted_extrinsics_tests {
     }
 
     #[test]
+    fn on_initialize_rejects_recursive_submit_encrypted_call() {
+        new_test_ext().execute_with(|| {
+            System::set_block_number(1);
+            install_pending_key();
+
+            let call = RuntimeCall::MevShield(crate::Call::submit_encrypted {
+                ciphertext: valid_submit_ciphertext(),
+            });
+
+            assert_ok!(MevShield::store_encrypted(
+                RuntimeOrigin::signed(1),
+                BoundedVec::truncate_from(call.encode()),
+            ));
+            System::reset_events();
+
+            MevShield::on_initialize(2);
+
+            assert!(PendingExtrinsics::<Test>::get(0).is_none());
+            assert_eq!(PendingExtrinsics::<Test>::count(), 0);
+            System::assert_has_event(
+                crate::Event::<Test>::ExtrinsicDispatchFailed {
+                    index: 0,
+                    error: Error::<Test>::RecursiveShieldCall.into(),
+                }
+                .into(),
+            );
+            assert!(System::events().iter().all(|record| !matches!(
+                record.event,
+                RuntimeEvent::MevShield(crate::Event::EncryptedSubmitted { .. })
+            )));
+        });
+    }
+
+    #[test]
+    fn on_initialize_rejects_recursive_store_encrypted_call() {
+        new_test_ext().execute_with(|| {
+            System::set_block_number(1);
+
+            let nested = RuntimeCall::System(frame_system::Call::remark { remark: vec![9] });
+            let call = RuntimeCall::MevShield(crate::Call::store_encrypted {
+                encrypted_call: BoundedVec::truncate_from(nested.encode()),
+            });
+
+            assert_ok!(MevShield::store_encrypted(
+                RuntimeOrigin::signed(1),
+                BoundedVec::truncate_from(call.encode()),
+            ));
+            System::reset_events();
+
+            MevShield::on_initialize(2);
+
+            assert!(PendingExtrinsics::<Test>::get(0).is_none());
+            assert_eq!(PendingExtrinsics::<Test>::count(), 0);
+            assert_eq!(NextPendingExtrinsicIndex::<Test>::get(), 1);
+            System::assert_has_event(
+                crate::Event::<Test>::ExtrinsicDispatchFailed {
+                    index: 0,
+                    error: Error::<Test>::RecursiveShieldCall.into(),
+                }
+                .into(),
+            );
+            assert!(System::events().iter().all(|record| !matches!(
+                record.event,
+                RuntimeEvent::MevShield(crate::Event::ExtrinsicStored { .. })
+            )));
+        });
+    }
+
+    #[test]
     fn store_encrypted_rejects_when_full() {
         new_test_ext().execute_with(|| {
             let max = MaxPendingExtrinsicsLimit::<Test>::get();

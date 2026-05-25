@@ -109,7 +109,8 @@ pub mod pallet {
         /// The overarching call type for dispatching stored extrinsics.
         type RuntimeCall: Parameter
             + Dispatchable<RuntimeOrigin = Self::RuntimeOrigin, PostInfo = PostDispatchInfo>
-            + GetDispatchInfo;
+            + GetDispatchInfo
+            + IsSubType<Call<Self>>;
 
         /// Decryptor for stored extrinsics.
         type ExtrinsicDecryptor: ExtrinsicDecryptor<<Self as pallet::Config>::RuntimeCall>;
@@ -261,6 +262,8 @@ pub mod pallet {
         TooManyPendingExtrinsics,
         /// Weight exceeds the absolute maximum (half of total block weight).
         WeightExceedsAbsoluteMax,
+        /// Decrypted queue payloads must not dispatch shield calls recursively.
+        RecursiveShieldCall,
     }
 
     #[pallet::hooks]
@@ -553,6 +556,18 @@ impl<T: Config> Pallet<T> {
                 continue;
             };
 
+            if Self::is_recursive_shield_call(&call) {
+                PendingExtrinsics::<T>::remove(index);
+                weight = weight.saturating_add(remove_weight);
+
+                Self::deposit_event(Event::ExtrinsicDispatchFailed {
+                    index,
+                    error: Error::<T>::RecursiveShieldCall.into(),
+                });
+
+                continue;
+            }
+
             // Check if dispatching would exceed weight limit
             let info = call.get_dispatch_info();
             let dispatch_weight = T::DbWeight::get()
@@ -604,6 +619,13 @@ impl<T: Config> Pallet<T> {
         }
 
         weight
+    }
+
+    fn is_recursive_shield_call(call: &<T as pallet::Config>::RuntimeCall) -> bool {
+        matches!(
+            IsSubType::<Call<T>>::is_sub_type(call),
+            Some(Call::submit_encrypted { .. } | Call::store_encrypted { .. })
+        )
     }
 
     pub fn try_decode_shielded_tx<Block: BlockT, Context: Default>(
