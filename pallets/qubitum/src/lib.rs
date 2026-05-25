@@ -2094,6 +2094,10 @@ pub mod pallet {
                 ActiveMinersBySubnet::<T>::get(miner.subnet_id).contains(&miner_id);
             let should_index =
                 setting_identity && miner.status == RegistryStatus::Active && !indexed_active;
+            ensure!(
+                PendingMinerRequests::<T>::get(miner_id) == 0,
+                Error::<T>::PendingAssignedRequests
+            );
 
             if setting_identity {
                 let challenge_commitment = Self::miner_identity_signature_challenge(
@@ -2134,10 +2138,6 @@ pub mod pallet {
                         challenge_commitment,
                     )?;
                 }
-                ensure!(
-                    PendingMinerRequests::<T>::get(miner_id) == 0,
-                    Error::<T>::PendingAssignedRequests
-                );
                 MinerIdentityCommitments::<T>::remove(miner_id);
                 MinerIdentitySignatureBundles::<T>::remove(miner_id);
                 MinerIdentitySignatureChallenges::<T>::remove(miner_id);
@@ -2172,6 +2172,10 @@ pub mod pallet {
             let indexed_active =
                 ActiveValidatorsBySubnet::<T>::get(validator.subnet_id).contains(&validator_id);
             let should_index = setting_identity && !indexed_active;
+            ensure!(
+                PendingValidatorRequests::<T>::get(validator_id) == 0,
+                Error::<T>::PendingAssignedRequests
+            );
 
             if setting_identity {
                 let challenge_commitment = Self::validator_identity_signature_challenge(
@@ -2233,10 +2237,6 @@ pub mod pallet {
                         challenge_commitment,
                     )?;
                 }
-                ensure!(
-                    PendingValidatorRequests::<T>::get(validator_id) == 0,
-                    Error::<T>::PendingAssignedRequests
-                );
                 ValidatorIdentityCommitments::<T>::remove(validator_id);
                 ValidatorIdentitySignatureBundles::<T>::remove(validator_id);
                 ValidatorIdentitySignatureChallenges::<T>::remove(validator_id);

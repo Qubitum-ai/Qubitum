@@ -2467,7 +2467,7 @@ fn clearing_identity_removes_active_routing_index_until_reattested() {
 }
 
 #[test]
-fn pending_assignment_blocks_identity_clear_and_preserves_routing() {
+fn pending_assignment_blocks_identity_updates_and_preserves_routing() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         request_inference(90);
@@ -2485,9 +2485,33 @@ fn pending_assignment_blocks_identity_clear_and_preserves_routing() {
             Qubitum::set_miner_identity_commitments(
                 RuntimeOrigin::signed(2),
                 0,
+                Some(commitment(140)),
+                Some(commitment(141)),
+                miner_identity_signature_bundle(0, Some(commitment(140)), Some(commitment(141))),
+            ),
+            Error::<Test>::PendingAssignedRequests
+        );
+        assert_noop!(
+            Qubitum::set_miner_identity_commitments(
+                RuntimeOrigin::signed(2),
+                0,
                 None,
                 None,
                 miner_identity_signature_bundle(0, None, None),
+            ),
+            Error::<Test>::PendingAssignedRequests
+        );
+        assert_noop!(
+            Qubitum::set_validator_identity_commitments(
+                RuntimeOrigin::signed(3),
+                0,
+                Some(commitment(142)),
+                Some(commitment(143)),
+                validator_identity_signature_bundle(
+                    0,
+                    Some(commitment(142)),
+                    Some(commitment(143))
+                ),
             ),
             Error::<Test>::PendingAssignedRequests
         );
@@ -2534,12 +2558,10 @@ fn pending_assignment_blocks_identity_clear_and_preserves_routing() {
 fn role_commitments_are_domain_separated_with_legacy_authorization() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
-        request_inference(12);
 
         let subnet = Subnets::<Test>::get(0).unwrap();
         let miner = Miners::<Test>::get(0).unwrap();
         let validator = Validators::<Test>::get(0).unwrap();
-        let request = InferenceRequests::<Test>::get(12).unwrap();
 
         assert_eq!(
             subnet.owner_commitment,
@@ -2556,20 +2578,12 @@ fn role_commitments_are_domain_separated_with_legacy_authorization() {
             validator.operator_commitment,
             Qubitum::account_commitment(&3)
         );
-        assert_eq!(
-            request.user_commitment,
-            Qubitum::request_user_commitment(&4)
-        );
-        assert_ne!(request.user_commitment, Qubitum::account_commitment(&4));
 
         Miners::<Test>::mutate(0, |maybe_miner| {
             maybe_miner.as_mut().unwrap().operator_commitment = Qubitum::account_commitment(&2);
         });
         Validators::<Test>::mutate(0, |maybe_validator| {
             maybe_validator.as_mut().unwrap().operator_commitment = Qubitum::account_commitment(&3);
-        });
-        InferenceRequests::<Test>::mutate(12, |maybe_request| {
-            maybe_request.as_mut().unwrap().user_commitment = Qubitum::account_commitment(&4);
         });
 
         assert_ok!(Qubitum::set_miner_identity_commitments(
@@ -2586,6 +2600,18 @@ fn role_commitments_are_domain_separated_with_legacy_authorization() {
             Some(commitment(23)),
             validator_identity_signature_bundle(0, Some(commitment(22)), Some(commitment(23))),
         ));
+        request_inference(12);
+
+        let request = InferenceRequests::<Test>::get(12).unwrap();
+        assert_eq!(
+            request.user_commitment,
+            Qubitum::request_user_commitment(&4)
+        );
+        assert_ne!(request.user_commitment, Qubitum::account_commitment(&4));
+        InferenceRequests::<Test>::mutate(12, |maybe_request| {
+            maybe_request.as_mut().unwrap().user_commitment = Qubitum::account_commitment(&4);
+        });
+
         System::set_block_number(10);
         assert_ok!(Qubitum::cancel_inference(
             RuntimeOrigin::signed(4),
