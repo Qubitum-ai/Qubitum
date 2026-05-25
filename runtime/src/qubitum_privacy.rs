@@ -539,6 +539,12 @@ mod tests {
         })
     }
 
+    fn encoded_preimage_call(call: RuntimeCall) -> RuntimeCall {
+        RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+            bytes: call.encode(),
+        })
+    }
+
     fn nested_batch_call(call: RuntimeCall, depth: u8) -> RuntimeCall {
         (0..depth).fold(call, |inner, _| {
             RuntimeCall::Utility(pallet_subtensor_utility::Call::batch { calls: vec![inner] })
@@ -1152,6 +1158,30 @@ mod tests {
             );
             assert_eq!(
                 validate_ext(&stale_key_shield_call(), TransactionSource::InBlock),
+                Err(CustomTransactionError::InvalidShieldedTxPubKeyHash.into())
+            );
+        });
+    }
+
+    #[test]
+    fn encoded_preimage_shield_envelope_requires_current_key() {
+        new_test_ext().execute_with(|| {
+            install_valid_shield_key();
+            let current_key_preimage = encoded_preimage_call(shield_call());
+            assert!(validate_ext(&current_key_preimage, TransactionSource::External).is_ok());
+            assert!(prepare_ext(&current_key_preimage).is_ok());
+
+            let stale_key_preimage = encoded_preimage_call(stale_key_shield_call());
+            assert_eq!(
+                validate_ext(&stale_key_preimage, TransactionSource::External),
+                Err(CustomTransactionError::InvalidShieldedTxPubKeyHash.into())
+            );
+            assert_eq!(
+                validate_ext(&stale_key_preimage, TransactionSource::InBlock),
+                Err(CustomTransactionError::InvalidShieldedTxPubKeyHash.into())
+            );
+            assert_eq!(
+                prepare_ext(&stale_key_preimage),
                 Err(CustomTransactionError::InvalidShieldedTxPubKeyHash.into())
             );
         });
