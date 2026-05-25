@@ -2075,6 +2075,7 @@ pub mod pallet {
         /// Publish or clear commitment-only miner identity metadata.
         #[pallet::call_index(14)]
         #[pallet::weight(T::WeightInfo::set_miner_identity_commitments())]
+        #[frame_support::transactional]
         pub fn set_miner_identity_commitments(
             origin: OriginFor<T>,
             miner_id: MinerId,
@@ -2087,8 +2088,14 @@ pub mod pallet {
             Self::ensure_miner_operator(&miner, &operator)?;
             Self::ensure_optional_commitment(shielded_identity_commitment)?;
             Self::ensure_optional_commitment(endpoint_commitment)?;
+            let setting_identity =
+                shielded_identity_commitment.is_some() || endpoint_commitment.is_some();
+            let indexed_active =
+                ActiveMinersBySubnet::<T>::get(miner.subnet_id).contains(&miner_id);
+            let should_index =
+                setting_identity && miner.status == RegistryStatus::Active && !indexed_active;
 
-            if shielded_identity_commitment.is_some() || endpoint_commitment.is_some() {
+            if setting_identity {
                 let challenge_commitment = Self::miner_identity_signature_challenge(
                     miner_id,
                     miner.operator_commitment,
@@ -2108,6 +2115,9 @@ pub mod pallet {
                 );
                 MinerIdentitySignatureBundles::<T>::insert(miner_id, signature_bundle);
                 MinerIdentitySignatureChallenges::<T>::insert(miner_id, challenge_commitment);
+                if should_index {
+                    Self::insert_active_miner(miner.subnet_id, miner_id)?;
+                }
             } else {
                 if MinerIdentityCommitments::<T>::contains_key(miner_id)
                     || MinerIdentitySignatureBundles::<T>::contains_key(miner_id)
@@ -2124,9 +2134,16 @@ pub mod pallet {
                         challenge_commitment,
                     )?;
                 }
+                ensure!(
+                    PendingMinerRequests::<T>::get(miner_id) == 0,
+                    Error::<T>::PendingAssignedRequests
+                );
                 MinerIdentityCommitments::<T>::remove(miner_id);
                 MinerIdentitySignatureBundles::<T>::remove(miner_id);
                 MinerIdentitySignatureChallenges::<T>::remove(miner_id);
+                if miner.status == RegistryStatus::Active && indexed_active {
+                    Self::remove_active_miner(miner.subnet_id, miner_id);
+                }
             }
 
             Self::deposit_event(Event::MinerIdentityCommitmentsUpdated);
@@ -2150,11 +2167,13 @@ pub mod pallet {
             Self::ensure_validator_operator(&validator, &operator)?;
             Self::ensure_optional_commitment(shielded_identity_commitment)?;
             Self::ensure_optional_commitment(endpoint_commitment)?;
-            let should_index = (shielded_identity_commitment.is_some()
-                || endpoint_commitment.is_some())
-                && !ActiveValidatorsBySubnet::<T>::get(validator.subnet_id).contains(&validator_id);
+            let setting_identity =
+                shielded_identity_commitment.is_some() || endpoint_commitment.is_some();
+            let indexed_active =
+                ActiveValidatorsBySubnet::<T>::get(validator.subnet_id).contains(&validator_id);
+            let should_index = setting_identity && !indexed_active;
 
-            if shielded_identity_commitment.is_some() || endpoint_commitment.is_some() {
+            if setting_identity {
                 let challenge_commitment = Self::validator_identity_signature_challenge(
                     validator_id,
                     validator.operator_commitment,
@@ -2214,9 +2233,16 @@ pub mod pallet {
                         challenge_commitment,
                     )?;
                 }
+                ensure!(
+                    PendingValidatorRequests::<T>::get(validator_id) == 0,
+                    Error::<T>::PendingAssignedRequests
+                );
                 ValidatorIdentityCommitments::<T>::remove(validator_id);
                 ValidatorIdentitySignatureBundles::<T>::remove(validator_id);
                 ValidatorIdentitySignatureChallenges::<T>::remove(validator_id);
+                if validator.status == RegistryStatus::Active && indexed_active {
+                    Self::remove_active_validator(validator.subnet_id, validator_id);
+                }
             }
 
             Self::deposit_event(Event::ValidatorIdentityCommitmentsUpdated);

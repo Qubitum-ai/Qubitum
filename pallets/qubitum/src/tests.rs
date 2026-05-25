@@ -2422,6 +2422,115 @@ fn accounting_overflows_fail_without_state_changes() {
 }
 
 #[test]
+fn clearing_identity_removes_active_routing_index_until_reattested() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(Qubitum::next_route_assignment(0).is_some());
+
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(2),
+            0,
+            None,
+            None,
+            miner_identity_signature_bundle(0, None, None),
+        ));
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(MinerIdentityCommitments::<Test>::get(0).is_none());
+        assert!(MinerIdentitySignatureBundles::<Test>::get(0).is_none());
+        assert!(Qubitum::next_route_assignment(0).is_none());
+
+        attest_miner(0, 2, Some(commitment(124)), Some(commitment(125)));
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(Qubitum::next_route_assignment(0).is_some());
+
+        assert_ok!(Qubitum::set_validator_identity_commitments(
+            RuntimeOrigin::signed(3),
+            0,
+            None,
+            None,
+            validator_identity_signature_bundle(0, None, None),
+        ));
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
+        assert!(ValidatorIdentityCommitments::<Test>::get(0).is_none());
+        assert!(ValidatorIdentitySignatureBundles::<Test>::get(0).is_none());
+        assert!(Qubitum::next_route_assignment(0).is_none());
+
+        attest_validator(0, 3, Some(commitment(126)), Some(commitment(127)));
+        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(Qubitum::next_route_assignment(0).is_some());
+    });
+}
+
+#[test]
+fn pending_assignment_blocks_identity_clear_and_preserves_routing() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(90);
+
+        let active_miners = ActiveMinersBySubnet::<Test>::get(0);
+        let active_validators = ActiveValidatorsBySubnet::<Test>::get(0);
+        let miner_commitments = MinerIdentityCommitments::<Test>::get(0);
+        let miner_signature = MinerIdentitySignatureBundles::<Test>::get(0);
+        let miner_challenge = MinerIdentitySignatureChallenges::<Test>::get(0);
+        let validator_commitments = ValidatorIdentityCommitments::<Test>::get(0);
+        let validator_signature = ValidatorIdentitySignatureBundles::<Test>::get(0);
+        let validator_challenge = ValidatorIdentitySignatureChallenges::<Test>::get(0);
+
+        assert_noop!(
+            Qubitum::set_miner_identity_commitments(
+                RuntimeOrigin::signed(2),
+                0,
+                None,
+                None,
+                miner_identity_signature_bundle(0, None, None),
+            ),
+            Error::<Test>::PendingAssignedRequests
+        );
+        assert_noop!(
+            Qubitum::set_validator_identity_commitments(
+                RuntimeOrigin::signed(3),
+                0,
+                None,
+                None,
+                validator_identity_signature_bundle(0, None, None),
+            ),
+            Error::<Test>::PendingAssignedRequests
+        );
+
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0), active_miners);
+        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0), active_validators);
+        assert_eq!(MinerIdentityCommitments::<Test>::get(0), miner_commitments);
+        assert_eq!(
+            MinerIdentitySignatureBundles::<Test>::get(0),
+            miner_signature
+        );
+        assert_eq!(
+            MinerIdentitySignatureChallenges::<Test>::get(0),
+            miner_challenge
+        );
+        assert_eq!(
+            ValidatorIdentityCommitments::<Test>::get(0),
+            validator_commitments
+        );
+        assert_eq!(
+            ValidatorIdentitySignatureBundles::<Test>::get(0),
+            validator_signature
+        );
+        assert_eq!(
+            ValidatorIdentitySignatureChallenges::<Test>::get(0),
+            validator_challenge
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+    });
+}
+
+#[test]
 fn role_commitments_are_domain_separated_with_legacy_authorization() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
