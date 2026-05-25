@@ -7860,6 +7860,87 @@ fn expire_inference_releases_stale_request_for_any_signed_caller() {
 }
 
 #[test]
+fn stale_request_without_private_witnesses_keeps_participants_pinned() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(11);
+        System::set_block_number(10);
+
+        let params = Qubitum::protocol_params();
+        assert!(params.readiness_blockers.committed_request_payloads_missing);
+        assert!(params.readiness_blockers.private_storage_keys_missing);
+        assert!(!params.production_ready);
+
+        assert_noop!(
+            Qubitum::expire_inference(
+                RuntimeOrigin::signed(5),
+                11,
+                4,
+                0,
+                0,
+                commitment(250),
+                timing_witness(0),
+                request_terms_witness()
+            ),
+            Error::<Test>::AssignmentMismatch
+        );
+        assert_noop!(
+            Qubitum::expire_inference(
+                RuntimeOrigin::signed(5),
+                11,
+                4,
+                0,
+                0,
+                assignment_blinding(),
+                timing_witness(9),
+                request_terms_witness()
+            ),
+            Error::<Test>::RequestMismatch
+        );
+        assert_noop!(
+            Qubitum::expire_inference(
+                RuntimeOrigin::signed(5),
+                11,
+                4,
+                0,
+                0,
+                assignment_blinding(),
+                timing_witness(0),
+                terms_witness(inference_terms(999, 250, 50), terms_blinding())
+            ),
+            Error::<Test>::RequestMismatch
+        );
+
+        assert_eq!(
+            InferenceRequests::<Test>::get(11).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            1_000
+        );
+        assert_noop!(
+            Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0),
+            Error::<Test>::PendingAssignedRequests
+        );
+        assert_noop!(
+            Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0),
+            Error::<Test>::PendingAssignedRequests
+        );
+        assert_noop!(
+            Qubitum::slash_miner(RuntimeOrigin::root(), 0, 2, MIN_INVALID_PROOF_SLASH_BPS),
+            Error::<Test>::PendingAssignedRequests
+        );
+        assert_noop!(
+            Qubitum::slash_validator(RuntimeOrigin::root(), 0, 3, MIN_INVALID_PROOF_SLASH_BPS),
+            Error::<Test>::PendingAssignedRequests
+        );
+    });
+}
+
+#[test]
 fn request_terms_witness_gates_payment_transitions() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
