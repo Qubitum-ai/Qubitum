@@ -1493,7 +1493,7 @@ pub mod pallet {
 
             let validator_id = Self::next_validator_id()?;
             let operator_commitment = Self::operator_commitment(&operator);
-            let status = RegistryStatus::Active;
+            let status = RegistryStatus::Pending;
             let validator = ChainValidator {
                 id: validator_id,
                 operator_commitment,
@@ -1915,7 +1915,7 @@ pub mod pallet {
                 ensure!(
                     matches!(
                         validator.status,
-                        RegistryStatus::Active | RegistryStatus::Slashed
+                        RegistryStatus::Pending | RegistryStatus::Active | RegistryStatus::Slashed
                     ),
                     Error::<T>::InvalidValidatorStatus
                 );
@@ -2171,7 +2171,6 @@ pub mod pallet {
                 shielded_identity_commitment.is_some() || endpoint_commitment.is_some();
             let indexed_active =
                 ActiveValidatorsBySubnet::<T>::get(validator.subnet_id).contains(&validator_id);
-            let should_index = setting_identity && !indexed_active;
             ensure!(
                 PendingValidatorRequests::<T>::get(validator_id) == 0,
                 Error::<T>::PendingAssignedRequests
@@ -2200,27 +2199,30 @@ pub mod pallet {
                     validator_id,
                     challenge_commitment,
                 );
-                if should_index {
-                    Validators::<T>::try_mutate(
+                Validators::<T>::try_mutate(validator_id, |maybe_validator| -> DispatchResult {
+                    let validator = maybe_validator
+                        .as_mut()
+                        .ok_or(Error::<T>::UnknownValidator)?;
+                    ensure!(
+                        matches!(
+                            validator.status,
+                            RegistryStatus::Active | RegistryStatus::Pending
+                        ),
+                        Error::<T>::InvalidValidatorStatus
+                    );
+                    if validator.status == RegistryStatus::Pending {
+                        validator.status = RegistryStatus::Active;
+                    }
+                    if !indexed_active {
+                        Self::insert_active_validator(validator.subnet_id, validator_id)?;
+                    }
+                    validator.stake_commitment = Self::validator_stake_commitment(
                         validator_id,
-                        |maybe_validator| -> DispatchResult {
-                            let validator = maybe_validator
-                                .as_mut()
-                                .ok_or(Error::<T>::UnknownValidator)?;
-                            ensure!(
-                                validator.status == RegistryStatus::Active,
-                                Error::<T>::InvalidValidatorStatus
-                            );
-                            Self::insert_active_validator(validator.subnet_id, validator_id)?;
-                            validator.stake_commitment = Self::validator_stake_commitment(
-                                validator_id,
-                                validator.operator_commitment,
-                                validator.status,
-                            );
-                            Ok(())
-                        },
-                    )?;
-                }
+                        validator.operator_commitment,
+                        validator.status,
+                    );
+                    Ok(())
+                })?;
             } else {
                 if ValidatorIdentityCommitments::<T>::contains_key(validator_id)
                     || ValidatorIdentitySignatureBundles::<T>::contains_key(validator_id)
@@ -2240,8 +2242,23 @@ pub mod pallet {
                 ValidatorIdentityCommitments::<T>::remove(validator_id);
                 ValidatorIdentitySignatureBundles::<T>::remove(validator_id);
                 ValidatorIdentitySignatureChallenges::<T>::remove(validator_id);
-                if validator.status == RegistryStatus::Active && indexed_active {
-                    Self::remove_active_validator(validator.subnet_id, validator_id);
+                if validator.status == RegistryStatus::Active {
+                    Validators::<T>::try_mutate(
+                        validator_id,
+                        |maybe_validator| -> DispatchResult {
+                            let validator = maybe_validator
+                                .as_mut()
+                                .ok_or(Error::<T>::UnknownValidator)?;
+                            Self::remove_active_validator(validator.subnet_id, validator_id);
+                            validator.status = RegistryStatus::Pending;
+                            validator.stake_commitment = Self::validator_stake_commitment(
+                                validator_id,
+                                validator.operator_commitment,
+                                validator.status,
+                            );
+                            Ok(())
+                        },
+                    )?;
                 }
             }
 

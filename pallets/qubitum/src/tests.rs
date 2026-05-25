@@ -1586,7 +1586,7 @@ fn participant_capital_lifecycle_uses_per_registry_record_amounts() {
         );
         assert_eq!(
             Validators::<Test>::get(1).unwrap().status,
-            RegistryStatus::Active
+            RegistryStatus::Pending
         );
 
         assert_ok!(Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0));
@@ -1608,7 +1608,7 @@ fn participant_capital_lifecycle_uses_per_registry_record_amounts() {
         );
         assert_eq!(
             Validators::<Test>::get(1).unwrap().status,
-            RegistryStatus::Active
+            RegistryStatus::Pending
         );
     });
 }
@@ -1724,11 +1724,11 @@ fn legacy_missing_capital_records_fallback_only_when_unambiguous() {
         );
         assert_eq!(
             Validators::<Test>::get(0).unwrap().status,
-            RegistryStatus::Active
+            RegistryStatus::Pending
         );
         assert_eq!(
             Validators::<Test>::get(1).unwrap().status,
-            RegistryStatus::Active
+            RegistryStatus::Pending
         );
     });
 }
@@ -1756,7 +1756,18 @@ fn register_validator_locks_stake() {
             validator.operator_commitment,
             Qubitum::account_commitment(&3)
         );
+        assert_eq!(validator.status, RegistryStatus::Pending);
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
+        assert_ok!(Qubitum::set_validator_identity_commitments(
+            RuntimeOrigin::signed(3),
+            0,
+            Some(commitment(122)),
+            Some(commitment(123)),
+            validator_identity_signature_bundle(0, Some(commitment(122)), Some(commitment(123))),
+        ));
+        let validator = Validators::<Test>::get(0).unwrap();
         assert_eq!(validator.status, RegistryStatus::Active);
+        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
         assert_eq!(ValidatorCount::<Test>::get(), 1);
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
@@ -2459,9 +2470,17 @@ fn clearing_identity_removes_active_routing_index_until_reattested() {
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert!(ValidatorIdentityCommitments::<Test>::get(0).is_none());
         assert!(ValidatorIdentitySignatureBundles::<Test>::get(0).is_none());
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Pending
+        );
         assert!(Qubitum::next_route_assignment(0).is_none());
 
         attest_validator(0, 3, Some(commitment(126)), Some(commitment(127)));
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
         assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
         assert!(Qubitum::next_route_assignment(0).is_some());
     });
@@ -6961,6 +6980,7 @@ fn submit_proof_rejects_self_validation_assignment() {
             0,
             MIN_MINER_BOND
         ));
+        attest_validator(0, 2, Some(commitment(122)), Some(commitment(123)));
         InferenceRequests::<Test>::insert(
             88,
             ChainInferenceRequest {
@@ -7109,12 +7129,16 @@ fn runtime_upgrade_does_not_reindex_identity_ineligible_participants() {
         );
         assert_eq!(
             Validators::<Test>::get(0).unwrap().status,
-            RegistryStatus::Active
+            RegistryStatus::Pending
         );
         assert_eq!(LegacyRoutingIndexMigrationFailures::<Test>::get(), 0);
 
         attest_miner(0, 2, Some(commitment(200)), Some(commitment(201)));
         attest_validator(0, 3, Some(commitment(202)), Some(commitment(203)));
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
+        );
         assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
         assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
     });
