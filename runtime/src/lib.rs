@@ -227,6 +227,37 @@ fn contains_persistent_private_queue_call(call: &RuntimeCall, depth: u8) -> bool
     }
 
     match call {
+        RuntimeCall::Utility(inner) => match inner {
+            pallet_utility::Call::batch { calls }
+            | pallet_utility::Call::batch_all { calls }
+            | pallet_utility::Call::force_batch { calls } => calls
+                .iter()
+                .any(|call| contains_persistent_private_queue_call(call, depth + 1)),
+            pallet_utility::Call::as_derivative { call, .. }
+            | pallet_utility::Call::dispatch_as { call, .. }
+            | pallet_utility::Call::with_weight { call, .. }
+            | pallet_utility::Call::dispatch_as_fallible { call, .. } => {
+                contains_persistent_private_queue_call(call, depth + 1)
+            }
+            pallet_utility::Call::if_else { main, fallback } => {
+                contains_persistent_private_queue_call(main, depth + 1)
+                    || contains_persistent_private_queue_call(fallback, depth + 1)
+            }
+            _ => false,
+        },
+        RuntimeCall::Proxy(
+            pallet_proxy::Call::proxy { call, .. }
+            | pallet_proxy::Call::proxy_announced { call, .. },
+        ) => contains_persistent_private_queue_call(call, depth + 1),
+        RuntimeCall::Sudo(
+            pallet_sudo::Call::sudo { call }
+            | pallet_sudo::Call::sudo_unchecked_weight { call, .. }
+            | pallet_sudo::Call::sudo_as { call, .. },
+        ) => contains_persistent_private_queue_call(call, depth + 1),
+        RuntimeCall::Multisig(
+            pallet_multisig::Call::as_multi_threshold_1 { call, .. }
+            | pallet_multisig::Call::as_multi { call, .. },
+        ) => contains_persistent_private_queue_call(call, depth + 1),
         RuntimeCall::Scheduler(
             pallet_scheduler::Call::schedule { call, .. }
             | pallet_scheduler::Call::schedule_named { call, .. }
@@ -3744,6 +3775,68 @@ fn shield_queue_call_filter_rejects_persistent_private_payloads() {
     assert!(ShieldQueueCallFilter::contains(&RuntimeCall::Preimage(
         pallet_preimage::Call::note_preimage {
             bytes: public_call().encode(),
+        }
+    )));
+}
+
+#[test]
+fn shield_queue_call_filter_rejects_nested_persistent_private_payloads() {
+    let private_call = || {
+        RuntimeCall::Qubitum(pallet_qubitum::Call::create_subnet {
+            domain: qubitum_protocol::SubnetDomain::Code,
+            proof_system: qubitum_protocol::ProofSystem::RiscZeroStark,
+        })
+    };
+    let public_call = || RuntimeCall::System(frame_system::Call::remark { remark: vec![0x52] });
+    let schedule_private = || {
+        RuntimeCall::Scheduler(pallet_scheduler::Call::schedule_named_after {
+            id: [9; 32],
+            after: 2,
+            maybe_periodic: None,
+            priority: 0,
+            call: Box::new(private_call()),
+        })
+    };
+    let preimage_private = || {
+        RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+            bytes: private_call().encode(),
+        })
+    };
+    let account = |seed| AccountId32::new([seed; 32]);
+
+    let nested_persistent_private_calls = vec![
+        RuntimeCall::Utility(pallet_utility::Call::batch {
+            calls: vec![schedule_private()],
+        }),
+        RuntimeCall::Utility(pallet_utility::Call::if_else {
+            main: Box::new(public_call()),
+            fallback: Box::new(preimage_private()),
+        }),
+        RuntimeCall::Proxy(pallet_proxy::Call::proxy {
+            real: account(5).into(),
+            force_proxy_type: None,
+            call: Box::new(schedule_private()),
+        }),
+        RuntimeCall::Sudo(pallet_sudo::Call::sudo_unchecked_weight {
+            call: Box::new(preimage_private()),
+            weight: Weight::zero(),
+        }),
+        RuntimeCall::Multisig(pallet_multisig::Call::as_multi {
+            threshold: 2,
+            other_signatories: vec![account(6)],
+            maybe_timepoint: None,
+            call: Box::new(schedule_private()),
+            max_weight: Weight::zero(),
+        }),
+    ];
+
+    for call in nested_persistent_private_calls {
+        assert!(!ShieldQueueCallFilter::contains(&call));
+    }
+
+    assert!(ShieldQueueCallFilter::contains(&RuntimeCall::Utility(
+        pallet_utility::Call::batch {
+            calls: vec![public_call()]
         }
     )));
 }
