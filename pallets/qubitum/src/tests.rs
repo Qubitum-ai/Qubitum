@@ -6087,6 +6087,71 @@ fn request_inference_rejects_non_next_request_id() {
 }
 
 #[test]
+fn request_inference_rejects_non_next_request_id_before_route_oracle() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::Code,
+            ProofSystem::RiscZeroStark
+        ));
+
+        let existing_events = System::events().len();
+        assert_eq!(RequestCount::<Test>::get(), 0);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
+
+        assert_noop!(
+            Qubitum::request_inference(
+                RuntimeOrigin::signed(4),
+                1,
+                InferenceRequestParams {
+                    subnet_id: 0,
+                    miner_id: 0,
+                    validator_id: 0,
+                    input_commitment: commitment(1),
+                    assignment_blinding: assignment_blinding(),
+                    timing_blinding: timing_blinding(),
+                    terms_blinding: terms_blinding(),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::InvalidRequestId
+        );
+        assert_noop!(
+            Qubitum::request_inference_auto_route(
+                RuntimeOrigin::signed(4),
+                1,
+                AutoRouteInferenceRequestParams {
+                    subnet_id: 0,
+                    input_commitment: commitment(2),
+                    assignment_blinding: assignment_blinding(),
+                    timing_blinding: timing_blinding(),
+                    terms_blinding: terms_blinding(),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::InvalidRequestId
+        );
+
+        assert_eq!(RequestCount::<Test>::get(), 0);
+        assert!(InferenceRequests::<Test>::get(1).is_none());
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            0
+        );
+        assert_eq!(PendingInferenceRequestCount::<Test>::get(), 0);
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 0);
+        assert_eq!(System::events().len(), existing_events);
+    });
+}
+
+#[test]
 fn request_inference_requires_active_assigned_participants() {
     new_test_ext().execute_with(|| {
         assert_ok!(Qubitum::create_subnet(
@@ -6094,6 +6159,7 @@ fn request_inference_requires_active_assigned_participants() {
             SubnetDomain::Code,
             ProofSystem::RiscZeroStark
         ));
+        RequestCount::<Test>::put(10);
 
         assert_noop!(
             Qubitum::request_inference(
@@ -6114,6 +6180,7 @@ fn request_inference_requires_active_assigned_participants() {
             ),
             Error::<Test>::NoRouteAvailable
         );
+        assert_eq!(RequestCount::<Test>::get(), 10);
 
         assert_ok!(Qubitum::register_miner(
             RuntimeOrigin::signed(2),
@@ -6311,6 +6378,7 @@ fn route_assignment_rejects_self_validation_operator() {
         ));
 
         assert_eq!(Qubitum::route_assignment(0, 42), None);
+        RequestCount::<Test>::put(42);
         assert_noop!(
             Qubitum::request_inference(
                 RuntimeOrigin::signed(4),
@@ -6330,6 +6398,7 @@ fn route_assignment_rejects_self_validation_operator() {
             ),
             Error::<Test>::NoRouteAvailable
         );
+        assert_eq!(RequestCount::<Test>::get(), 42);
     });
 }
 

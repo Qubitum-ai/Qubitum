@@ -1682,6 +1682,7 @@ pub mod pallet {
                 params.validator_fee_bps,
                 params.treasury_fee_bps,
             )?;
+            Self::ensure_request_id_matches_next(request_id)?;
             let assignment = Self::route_assignment(params.subnet_id, request_id)
                 .ok_or(Error::<T>::NoRouteAvailable)?;
             Self::open_inference_request(
@@ -1722,6 +1723,7 @@ pub mod pallet {
                 params.validator_fee_bps,
                 params.treasury_fee_bps,
             )?;
+            Self::ensure_request_id_matches_next(request_id)?;
             let assignment = Self::route_assignment(params.subnet_id, request_id)
                 .ok_or(Error::<T>::NoRouteAvailable)?;
             Self::open_inference_request(
@@ -2589,12 +2591,17 @@ pub mod pallet {
         }
 
         fn ensure_next_request_id(request_id: RequestId) -> DispatchResult {
-            let expected = RequestCount::<T>::get();
-            ensure!(request_id == expected, Error::<T>::InvalidRequestId);
+            Self::ensure_request_id_matches_next(request_id)?;
             let next = request_id
                 .checked_add(1)
                 .ok_or(Error::<T>::ArithmeticOverflow)?;
             RequestCount::<T>::put(next);
+            Ok(())
+        }
+
+        fn ensure_request_id_matches_next(request_id: RequestId) -> DispatchResult {
+            let expected = RequestCount::<T>::get();
+            ensure!(request_id == expected, Error::<T>::InvalidRequestId);
             Ok(())
         }
 
