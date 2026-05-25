@@ -3842,6 +3842,44 @@ fn shield_queue_call_filter_rejects_nested_persistent_private_payloads() {
 }
 
 #[test]
+fn shield_queue_direct_qubitum_dispatch_fails_closed_until_shield_origin_exists() {
+    let mut ext: sp_io::TestExternalities = RuntimeGenesisConfig {
+        sudo: pallet_sudo::GenesisConfig { key: None },
+        ..Default::default()
+    }
+    .build_storage()
+    .unwrap_or_else(|err| panic!("runtime genesis config should build: {err:?}"))
+    .into();
+
+    ext.execute_with(|| {
+        System::set_block_number(1);
+        let call = RuntimeCall::Qubitum(pallet_qubitum::Call::create_subnet {
+            domain: qubitum_protocol::SubnetDomain::Code,
+            proof_system: qubitum_protocol::ProofSystem::RiscZeroStark,
+        });
+
+        assert!(ShieldQueueCallFilter::contains(&call));
+
+        let dispatch_error = match call.dispatch(RuntimeOrigin::signed(AccountId32::new([9; 32]))) {
+            Ok(_) => {
+                panic!("direct Qubitum queue dispatch must stay blocked until shield origin lands")
+            }
+            Err(error) => error,
+        };
+
+        assert_eq!(
+            dispatch_error.error,
+            pallet_qubitum::Error::<Runtime>::PublicCallPayloadDisallowed.into()
+        );
+
+        let params = pallet_qubitum::Pallet::<Runtime>::protocol_params();
+        assert!(params.shielded_call_payloads);
+        assert!(params.readiness_blockers.shielded_call_payloads_missing);
+        assert!(!params.production_ready);
+    });
+}
+
+#[test]
 fn test_into_substrate_balance_valid() {
     // Valid conversion within u64 range
     let evm_balance: EvmBalance = 1_000_000_000_000_000_000u128.into(); // 1 TAO in EVM
