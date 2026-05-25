@@ -2,7 +2,7 @@
 #![allow(clippy::expect_used)]
 
 use fp_evm::{Context, ExitError, PrecompileFailure, PrecompileResult};
-use frame_support::traits::Contains;
+use frame_support::{BoundedVec, traits::Contains};
 use node_subtensor_runtime::{
     BuildStorage, ContractCallFilter, Runtime, RuntimeCall, RuntimeGenesisConfig, System,
 };
@@ -342,6 +342,55 @@ fn proxy_precompile_rejects_proxy_type_with_trailing_bytes() {
 }
 
 #[test]
+fn proxy_precompile_rejects_nested_private_call_bytes() {
+    new_test_ext().execute_with(|| {
+        let precompiles = Precompiles::<Runtime>::new();
+        let precompile_addr = addr_from_index(ProxyPrecompile::<Runtime>::INDEX);
+        let private_calls = vec![
+            RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: qubitum_create_subnet_call().encode(),
+            }),
+            RuntimeCall::MevShield(pallet_shield::Call::store_encrypted {
+                encrypted_call:
+                    BoundedVec::<u8, pallet_shield::MaxEncryptedCallSize>::truncate_from(
+                        qubitum_create_subnet_call().encode(),
+                    ),
+            }),
+        ];
+
+        for private_call in private_calls {
+            let result = execute_precompile(
+                &precompiles,
+                precompile_addr,
+                addr_from_index(1),
+                encode_with_selector(
+                    selector_u32("proxyCall(bytes32,uint8[],uint8[])"),
+                    (
+                        H256::repeat_byte(2),
+                        Vec::<u8>::new(),
+                        private_call.encode(),
+                    ),
+                ),
+                U256::zero(),
+            )
+            .expect("expected proxy call to be routed to the proxy precompile");
+
+            let failure = result.expect_err("expected nested private-call rejection");
+            let message = match failure {
+                PrecompileFailure::Error {
+                    exit_status: ExitError::Other(message),
+                } => message,
+                other => panic!("unexpected precompile failure: {other:?}"),
+            };
+            assert!(
+                message.contains("Proxy precompile cannot dispatch private runtime call"),
+                "unexpected precompile failure: {message}"
+            );
+        }
+    });
+}
+
+#[test]
 fn contract_call_filter_rejects_proxy_wrapped_qubitum() {
     let real: AccountId = [2u8; 32].into();
     let private_proxy_call = RuntimeCall::Proxy(pallet_subtensor_proxy::Call::proxy {
@@ -359,4 +408,28 @@ fn contract_call_filter_rejects_proxy_wrapped_qubitum() {
         })),
     });
     assert!(ContractCallFilter::contains(&safe_proxy_call));
+}
+
+#[test]
+fn contract_call_filter_rejects_proxy_wrapped_nested_private_calls() {
+    let real: AccountId = [2u8; 32].into();
+    let private_calls = vec![
+        RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+            bytes: qubitum_create_subnet_call().encode(),
+        }),
+        RuntimeCall::MevShield(pallet_shield::Call::store_encrypted {
+            encrypted_call: BoundedVec::<u8, pallet_shield::MaxEncryptedCallSize>::truncate_from(
+                qubitum_create_subnet_call().encode(),
+            ),
+        }),
+    ];
+
+    for private_call in private_calls {
+        let proxy_call = RuntimeCall::Proxy(pallet_subtensor_proxy::Call::proxy {
+            real: real.clone().into(),
+            force_proxy_type: None,
+            call: Box::new(private_call),
+        });
+        assert!(!ContractCallFilter::contains(&proxy_call));
+    }
 }
