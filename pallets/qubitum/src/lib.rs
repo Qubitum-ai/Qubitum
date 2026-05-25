@@ -2247,6 +2247,7 @@ pub mod pallet {
             let signature_mode = T::SignatureMode::get();
             let committed_request_payloads = false;
             let shielded_call_payloads = T::ShieldedCallPayloads::get();
+            let shielded_call_payload_execution = false;
             let shield_submitter_origin_privacy = false;
             let shield_key_window_privacy = false;
             let private_route_selection = false;
@@ -2280,7 +2281,7 @@ pub mod pallet {
                 proof_settlement_disabled: !proof_settlement_enabled,
                 production_zk_verifier_missing: !production_zk_verifier,
                 committed_request_payloads_missing: !committed_request_payloads,
-                shielded_call_payloads_missing: !shielded_call_payloads,
+                shielded_call_payloads_missing: !shielded_call_payload_execution,
                 shield_submitter_origin_privacy_missing: !shield_submitter_origin_privacy,
                 shield_key_window_privacy_missing: !shield_key_window_privacy,
                 private_route_selection_missing: !private_route_selection,

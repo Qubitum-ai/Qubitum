@@ -4939,7 +4939,7 @@ fn shielded_payload_mode_rejects_public_dispatchables_before_state_changes() {
 
         let params = Qubitum::protocol_params();
         assert!(params.shielded_call_payloads);
-        assert!(!params.readiness_blockers.shielded_call_payloads_missing);
+        assert!(params.readiness_blockers.shielded_call_payloads_missing);
         assert!(!params.production_ready);
 
         assert_noop!(
