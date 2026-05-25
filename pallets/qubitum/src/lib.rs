@@ -2443,20 +2443,52 @@ pub mod pallet {
                 return None;
             }
 
-            let miner_id = Self::route_active_miner(subnet_id, request_id)?;
-            let miner = Miners::<T>::get(miner_id)?;
-            let validator_seed = request_id.rotate_left(32) ^ u64::from(subnet_id);
-            let validator_id =
-                Self::route_active_validator(subnet_id, validator_seed, miner.operator_commitment)?;
-            let validator = Validators::<T>::get(validator_id)?;
-            Self::ensure_distinct_operators(&miner, &validator).ok()?;
+            let miner_ids = ActiveMinersBySubnet::<T>::get(subnet_id);
+            if miner_ids.is_empty() {
+                return None;
+            }
 
-            Some(ChainAssignment {
-                request_id,
-                subnet_id,
-                miner_id,
-                validator_id,
-            })
+            let miner_start = Self::route_index(request_id, miner_ids.len())?;
+            let validator_seed = request_id.rotate_left(32) ^ u64::from(subnet_id);
+
+            for offset in 0..miner_ids.len() {
+                let target = miner_start
+                    .checked_add(offset)?
+                    .checked_rem(miner_ids.len())?;
+                let Some(miner_id) = miner_ids.get(target).copied() else {
+                    continue;
+                };
+                let Some(miner) = Miners::<T>::get(miner_id) else {
+                    continue;
+                };
+                if miner.subnet_id != subnet_id
+                    || miner.status != RegistryStatus::Active
+                    || Self::ensure_miner_signature_bundle_bound(miner_id, &miner).is_err()
+                {
+                    continue;
+                }
+
+                let Some(validator_id) = Self::route_active_validator(
+                    subnet_id,
+                    validator_seed,
+                    miner.operator_commitment,
+                ) else {
+                    continue;
+                };
+                let Some(validator) = Validators::<T>::get(validator_id) else {
+                    continue;
+                };
+                Self::ensure_distinct_operators(&miner, &validator).ok()?;
+
+                return Some(ChainAssignment {
+                    request_id,
+                    subnet_id,
+                    miner_id,
+                    validator_id,
+                });
+            }
+
+            None
         }
 
         #[cfg(test)]
@@ -3538,32 +3570,6 @@ pub mod pallet {
             let signature_bundle = ValidatorIdentitySignatureBundles::<T>::get(validator_id)
                 .ok_or(Error::<T>::MissingSignatureBundle)?;
             Self::ensure_signature_bundle_bound_to_challenge(signature_bundle, expected_challenge)
-        }
-
-        fn route_active_miner(subnet_id: SubnetId, seed: u64) -> Option<MinerId> {
-            let ids = ActiveMinersBySubnet::<T>::get(subnet_id);
-            if ids.is_empty() {
-                return None;
-            }
-
-            let start = Self::route_index(seed, ids.len())?;
-            for offset in 0..ids.len() {
-                let target = start.checked_add(offset)?.checked_rem(ids.len())?;
-                let Some(miner_id) = ids.get(target).copied() else {
-                    continue;
-                };
-                let Some(miner) = Miners::<T>::get(miner_id) else {
-                    continue;
-                };
-                if miner.subnet_id == subnet_id
-                    && miner.status == RegistryStatus::Active
-                    && Self::ensure_miner_signature_bundle_bound(miner_id, &miner).is_ok()
-                {
-                    return Some(miner_id);
-                }
-            }
-
-            None
         }
 
         fn route_active_validator(

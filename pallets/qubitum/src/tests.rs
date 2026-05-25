@@ -6743,6 +6743,78 @@ fn route_assignment_skips_self_validation_validator_when_alternative_exists() {
 }
 
 #[test]
+fn route_assignment_scans_to_next_miner_when_seeded_miner_self_validates() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::Code,
+            ProofSystem::RiscZeroStark
+        ));
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(10),
+            ProofSystem::RiscZeroStark
+        ));
+        attest_miner(0, 2, Some(commitment(120)), Some(commitment(121)));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(3),
+            0,
+            commitment(11),
+            ProofSystem::RiscZeroStark
+        ));
+        attest_miner(1, 3, Some(commitment(122)), Some(commitment(123)));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(3),
+            1,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(2),
+            0,
+            MIN_MINER_BOND
+        ));
+        attest_validator(0, 2, Some(commitment(124)), Some(commitment(125)));
+
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0, 1]);
+        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+
+        let assignment = Qubitum::route_assignment(0, 0).unwrap();
+        assert_eq!(assignment.miner_id, 1);
+        assert_eq!(assignment.validator_id, 0);
+
+        RequestCount::<Test>::put(0);
+        assert_ok!(Qubitum::request_inference(
+            RuntimeOrigin::signed(4),
+            0,
+            InferenceRequestParams {
+                subnet_id: 0,
+                miner_id: 0,
+                validator_id: 0,
+                input_commitment: commitment(1),
+                assignment_blinding: assignment_blinding(),
+                timing_blinding: timing_blinding(),
+                terms_blinding: terms_blinding(),
+                payment: 1_000,
+                validator_fee_bps: 250,
+                treasury_fee_bps: 50,
+            },
+        ));
+        assert_eq!(
+            InferenceRequests::<Test>::get(0)
+                .unwrap()
+                .assignment_commitment,
+            Qubitum::request_assignment_commitment(0, 0, 1, 0, assignment_blinding())
+        );
+    });
+}
+
+#[test]
 fn route_assignment_scans_past_sixteen_self_validation_conflicts() {
     new_test_ext().execute_with(|| {
         assert_ok!(Qubitum::create_subnet(
