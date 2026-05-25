@@ -11,7 +11,7 @@ use chacha20poly1305::{
 use frame_support::{
     dispatch::{GetDispatchInfo, PostDispatchInfo},
     pallet_prelude::*,
-    traits::{ConstU64, IsSubType},
+    traits::{ConstU64, Contains, IsSubType},
 };
 use frame_system::{ensure_none, ensure_root, ensure_signed, pallet_prelude::*};
 use ml_kem::{
@@ -111,6 +111,9 @@ pub mod pallet {
             + Dispatchable<RuntimeOrigin = Self::RuntimeOrigin, PostInfo = PostDispatchInfo>
             + GetDispatchInfo
             + IsSubType<Call<Self>>;
+
+        /// Filter applied to decrypted queue payloads before dispatch.
+        type QueueCallFilter: Contains<<Self as pallet::Config>::RuntimeCall>;
 
         /// Decryptor for stored extrinsics.
         type ExtrinsicDecryptor: ExtrinsicDecryptor<<Self as pallet::Config>::RuntimeCall>;
@@ -556,7 +559,7 @@ impl<T: Config> Pallet<T> {
                 continue;
             };
 
-            if Self::is_recursive_shield_call(&call) {
+            if Self::is_recursive_shield_call(&call) || !T::QueueCallFilter::contains(&call) {
                 PendingExtrinsics::<T>::remove(index);
                 weight = weight.saturating_add(remove_weight);
 

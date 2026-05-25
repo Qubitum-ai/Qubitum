@@ -19,7 +19,7 @@ pub mod transaction_payment_wrapper;
 
 extern crate alloc;
 
-use codec::{Compact, Decode, Encode};
+use codec::{Compact, Decode, DecodeLimit, Encode};
 use ethereum::AuthorizationList;
 use frame_support::{
     PalletId,
@@ -148,10 +148,104 @@ impl pallet_shield::FindAuthors<Runtime> for FindAuraAuthors {
     }
 }
 
+const MAX_SHIELD_QUEUE_CALL_SCAN_DEPTH: u8 = 8;
+const MAX_SHIELD_QUEUE_PREIMAGE_DECODE_PROBE_DEPTH: u32 = 32;
+
+pub struct ShieldQueueCallFilter;
+
+impl Contains<RuntimeCall> for ShieldQueueCallFilter {
+    fn contains(call: &RuntimeCall) -> bool {
+        !contains_recursive_shield_queue_call(call, 0)
+    }
+}
+
+fn encoded_runtime_call_contains_recursive_shield_queue_call(bytes: &[u8], depth: u8) -> bool {
+    if depth >= MAX_SHIELD_QUEUE_CALL_SCAN_DEPTH {
+        return true;
+    }
+
+    let remaining_depth = (MAX_SHIELD_QUEUE_CALL_SCAN_DEPTH - depth) as u32;
+    match RuntimeCall::decode_all_with_depth_limit(remaining_depth, &mut &bytes[..]) {
+        Ok(call) => contains_recursive_shield_queue_call(&call, depth),
+        Err(_) => {
+            if let Ok(call) = RuntimeCall::decode_with_depth_limit(remaining_depth, &mut &bytes[..])
+            {
+                return contains_recursive_shield_queue_call(&call, depth);
+            }
+
+            RuntimeCall::decode_all_with_depth_limit(
+                MAX_SHIELD_QUEUE_PREIMAGE_DECODE_PROBE_DEPTH,
+                &mut &bytes[..],
+            )
+            .is_ok()
+                || RuntimeCall::decode_with_depth_limit(
+                    MAX_SHIELD_QUEUE_PREIMAGE_DECODE_PROBE_DEPTH,
+                    &mut &bytes[..],
+                )
+                .is_ok()
+        }
+    }
+}
+
+fn contains_recursive_shield_queue_call(call: &RuntimeCall, depth: u8) -> bool {
+    if depth >= MAX_SHIELD_QUEUE_CALL_SCAN_DEPTH {
+        return true;
+    }
+
+    match call {
+        RuntimeCall::MevShield(
+            pallet_shield::Call::submit_encrypted { .. }
+            | pallet_shield::Call::store_encrypted { .. },
+        ) => true,
+        RuntimeCall::Utility(inner) => match inner {
+            pallet_utility::Call::batch { calls }
+            | pallet_utility::Call::batch_all { calls }
+            | pallet_utility::Call::force_batch { calls } => calls
+                .iter()
+                .any(|call| contains_recursive_shield_queue_call(call, depth + 1)),
+            pallet_utility::Call::as_derivative { call, .. }
+            | pallet_utility::Call::dispatch_as { call, .. }
+            | pallet_utility::Call::with_weight { call, .. }
+            | pallet_utility::Call::dispatch_as_fallible { call, .. } => {
+                contains_recursive_shield_queue_call(call, depth + 1)
+            }
+            pallet_utility::Call::if_else { main, fallback } => {
+                contains_recursive_shield_queue_call(main, depth + 1)
+                    || contains_recursive_shield_queue_call(fallback, depth + 1)
+            }
+            _ => false,
+        },
+        RuntimeCall::Proxy(
+            pallet_proxy::Call::proxy { call, .. }
+            | pallet_proxy::Call::proxy_announced { call, .. },
+        ) => contains_recursive_shield_queue_call(call, depth + 1),
+        RuntimeCall::Sudo(
+            pallet_sudo::Call::sudo { call }
+            | pallet_sudo::Call::sudo_unchecked_weight { call, .. }
+            | pallet_sudo::Call::sudo_as { call, .. },
+        ) => contains_recursive_shield_queue_call(call, depth + 1),
+        RuntimeCall::Multisig(
+            pallet_multisig::Call::as_multi_threshold_1 { call, .. }
+            | pallet_multisig::Call::as_multi { call, .. },
+        ) => contains_recursive_shield_queue_call(call, depth + 1),
+        RuntimeCall::Scheduler(
+            pallet_scheduler::Call::schedule { call, .. }
+            | pallet_scheduler::Call::schedule_named { call, .. }
+            | pallet_scheduler::Call::schedule_after { call, .. }
+            | pallet_scheduler::Call::schedule_named_after { call, .. },
+        ) => contains_recursive_shield_queue_call(call, depth + 1),
+        RuntimeCall::Preimage(pallet_preimage::Call::note_preimage { bytes }) => {
+            encoded_runtime_call_contains_recursive_shield_queue_call(bytes, depth + 1)
+        }
+        _ => false,
+    }
+}
+
 impl pallet_shield::Config for Runtime {
     type AuthorityId = AuraId;
     type FindAuthors = FindAuraAuthors;
     type RuntimeCall = RuntimeCall;
+    type QueueCallFilter = ShieldQueueCallFilter;
     type ExtrinsicDecryptor = ();
     type WeightInfo = pallet_shield::weights::SubstrateWeight<Runtime>;
 }
@@ -3470,6 +3564,76 @@ fn mev_shield_pending_queue_fails_closed_without_runtime_decryptor() {
             pallet_shield::Event::ExtrinsicDecodeFailed { index: 0 },
         ));
     });
+}
+
+#[test]
+fn shield_queue_call_filter_rejects_wrapped_recursive_shield_calls() {
+    use frame_support::pallet_prelude::BoundedVec;
+
+    let store_call = || {
+        RuntimeCall::MevShield(pallet_shield::Call::store_encrypted {
+            encrypted_call: BoundedVec::<u8, pallet_shield::MaxEncryptedCallSize>::truncate_from(
+                vec![0xAA; 64],
+            ),
+        })
+    };
+    let submit_call = || {
+        RuntimeCall::MevShield(pallet_shield::Call::submit_encrypted {
+            ciphertext: BoundedVec::<u8, pallet_shield::MaxEncryptedCallSize>::truncate_from(vec![
+                0xBB;
+                64
+            ]),
+        })
+    };
+    let account = |seed| AccountId32::new([seed; 32]);
+
+    let calls = vec![
+        submit_call(),
+        store_call(),
+        RuntimeCall::Utility(pallet_utility::Call::batch {
+            calls: vec![store_call()],
+        }),
+        RuntimeCall::Utility(pallet_utility::Call::if_else {
+            main: Box::new(RuntimeCall::System(frame_system::Call::remark {
+                remark: vec![1],
+            })),
+            fallback: Box::new(store_call()),
+        }),
+        RuntimeCall::Proxy(pallet_proxy::Call::proxy {
+            real: account(2).into(),
+            force_proxy_type: None,
+            call: Box::new(store_call()),
+        }),
+        RuntimeCall::Sudo(pallet_sudo::Call::sudo_unchecked_weight {
+            call: Box::new(store_call()),
+            weight: Weight::zero(),
+        }),
+        RuntimeCall::Multisig(pallet_multisig::Call::as_multi {
+            threshold: 2,
+            other_signatories: vec![account(3)],
+            maybe_timepoint: None,
+            call: Box::new(store_call()),
+            max_weight: Weight::zero(),
+        }),
+        RuntimeCall::Scheduler(pallet_scheduler::Call::schedule_named_after {
+            id: [4; 32],
+            after: 2,
+            maybe_periodic: None,
+            priority: 0,
+            call: Box::new(store_call()),
+        }),
+        RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+            bytes: store_call().encode(),
+        }),
+    ];
+
+    for call in calls {
+        assert!(!ShieldQueueCallFilter::contains(&call));
+    }
+
+    assert!(ShieldQueueCallFilter::contains(&RuntimeCall::System(
+        frame_system::Call::remark { remark: vec![5] }
+    )));
 }
 
 #[test]

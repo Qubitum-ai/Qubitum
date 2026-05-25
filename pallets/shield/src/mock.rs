@@ -2,7 +2,7 @@ use crate as pallet_shield;
 use stp_shield::MLKEM768_ENC_KEY_LEN;
 
 use frame_support::pallet_prelude::DispatchError;
-use frame_support::traits::{ConstBool, ConstU64};
+use frame_support::traits::{ConstBool, ConstU64, Contains};
 use frame_support::{BoundedVec, construct_runtime, derive_impl, parameter_types};
 use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_core::sr25519;
@@ -95,10 +95,51 @@ impl pallet_shield::ExtrinsicDecryptor<RuntimeCall> for MockDecryptor {
     }
 }
 
+pub struct MockQueueCallFilter;
+
+impl Contains<RuntimeCall> for MockQueueCallFilter {
+    fn contains(call: &RuntimeCall) -> bool {
+        !contains_recursive_shield_call(call, 0)
+    }
+}
+
+fn contains_recursive_shield_call(call: &RuntimeCall, depth: u8) -> bool {
+    if depth >= 8 {
+        return true;
+    }
+
+    match call {
+        RuntimeCall::MevShield(
+            pallet_shield::Call::submit_encrypted { .. }
+            | pallet_shield::Call::store_encrypted { .. },
+        ) => true,
+        RuntimeCall::Utility(inner) => match inner {
+            pallet_subtensor_utility::Call::batch { calls }
+            | pallet_subtensor_utility::Call::batch_all { calls }
+            | pallet_subtensor_utility::Call::force_batch { calls } => calls
+                .iter()
+                .any(|call| contains_recursive_shield_call(call, depth + 1)),
+            pallet_subtensor_utility::Call::as_derivative { call, .. }
+            | pallet_subtensor_utility::Call::dispatch_as { call, .. }
+            | pallet_subtensor_utility::Call::with_weight { call, .. }
+            | pallet_subtensor_utility::Call::dispatch_as_fallible { call, .. } => {
+                contains_recursive_shield_call(call, depth + 1)
+            }
+            pallet_subtensor_utility::Call::if_else { main, fallback } => {
+                contains_recursive_shield_call(main, depth + 1)
+                    || contains_recursive_shield_call(fallback, depth + 1)
+            }
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 impl pallet_shield::Config for Test {
     type AuthorityId = AuraId;
     type FindAuthors = MockFindAuthors;
     type RuntimeCall = RuntimeCall;
+    type QueueCallFilter = MockQueueCallFilter;
     type ExtrinsicDecryptor = MockDecryptor;
     type WeightInfo = ();
 }

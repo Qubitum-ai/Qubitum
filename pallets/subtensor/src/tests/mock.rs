@@ -102,6 +102,7 @@ impl pallet_shield::Config for Test {
     type AuthorityId = sp_core::sr25519::Public;
     type FindAuthors = ();
     type RuntimeCall = RuntimeCall;
+    type QueueCallFilter = Everything;
     type ExtrinsicDecryptor = ();
     type WeightInfo = ();
 }
