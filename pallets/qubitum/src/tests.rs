@@ -27,11 +27,11 @@ use frame_support::{
     traits::{Hooks, StorageVersion, fungible::InspectHold},
 };
 use qubitum_protocol::{
-    InferenceProofSubmission, MAX_INVALID_PROOF_SLASH_BPS, MAX_MINER_BOND,
-    MIN_INVALID_PROOF_SLASH_BPS, MIN_MINER_BOND, MINER_REGISTRATION_BURN, ProofEnvelope,
+    Commitment, InferenceProofSubmission, MAX_INVALID_PROOF_SLASH_BPS, MAX_MINER_BOND,
+    MIN_INVALID_PROOF_SLASH_BPS, MIN_MINER_BOND, MINER_REGISTRATION_BURN, MinerId, ProofEnvelope,
     ProofSystem, ProofVerifierVersion, RegistryStatus, SignatureAlgorithm, SignatureBundle,
     SignatureCommitment, SignatureMode, SubnetDomain, TARGET_PROOF_SIZE_MAX_BYTES,
-    TARGET_PROOF_SIZE_MIN_BYTES, TARGET_VERIFICATION_MS, VerificationOutcome,
+    TARGET_PROOF_SIZE_MIN_BYTES, TARGET_VERIFICATION_MS, ValidatorId, VerificationOutcome,
 };
 
 fn commitment(seed: u8) -> [u8; 32] {
@@ -345,6 +345,7 @@ fn register_active_miner_and_validator() {
         commitment(10),
         ProofSystem::RiscZeroStark
     ));
+    attest_miner(0, 2, Some(commitment(120)), Some(commitment(121)));
     assert_ok!(Qubitum::activate_miner(
         RuntimeOrigin::signed(2),
         0,
@@ -358,21 +359,47 @@ fn register_active_miner_and_validator() {
     attest_active_miner_and_validator();
 }
 
-fn attest_active_miner_and_validator() {
+fn attest_miner(
+    miner_id: MinerId,
+    operator: u64,
+    shielded_identity_commitment: Option<Commitment>,
+    endpoint_commitment: Option<Commitment>,
+) {
     assert_ok!(Qubitum::set_miner_identity_commitments(
-        RuntimeOrigin::signed(2),
-        0,
-        Some(commitment(120)),
-        Some(commitment(121)),
-        miner_identity_signature_bundle(0, Some(commitment(120)), Some(commitment(121))),
+        RuntimeOrigin::signed(operator),
+        miner_id,
+        shielded_identity_commitment,
+        endpoint_commitment,
+        miner_identity_signature_bundle(
+            miner_id,
+            shielded_identity_commitment,
+            endpoint_commitment
+        ),
     ));
+}
+
+fn attest_validator(
+    validator_id: ValidatorId,
+    operator: u64,
+    shielded_identity_commitment: Option<Commitment>,
+    endpoint_commitment: Option<Commitment>,
+) {
     assert_ok!(Qubitum::set_validator_identity_commitments(
-        RuntimeOrigin::signed(3),
-        0,
-        Some(commitment(122)),
-        Some(commitment(123)),
-        validator_identity_signature_bundle(0, Some(commitment(122)), Some(commitment(123))),
+        RuntimeOrigin::signed(operator),
+        validator_id,
+        shielded_identity_commitment,
+        endpoint_commitment,
+        validator_identity_signature_bundle(
+            validator_id,
+            shielded_identity_commitment,
+            endpoint_commitment
+        ),
     ));
+}
+
+fn attest_active_miner_and_validator() {
+    attest_miner(0, 2, Some(commitment(120)), Some(commitment(121)));
+    attest_validator(0, 3, Some(commitment(122)), Some(commitment(123)));
 }
 
 fn valid_submission(request_id: u64) -> InferenceProofSubmission {
@@ -908,6 +935,7 @@ fn active_routing_indexes_remain_storage_visible_until_private_indexes_land() {
             commitment(30),
             ProofSystem::RiscZeroStark
         ));
+        attest_miner(1, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             1,
@@ -1041,6 +1069,7 @@ fn routing_requires_post_quantum_identity_bundles() {
             commitment(10),
             ProofSystem::RiscZeroStark
         ));
+        attest_miner(0, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             0,
@@ -1154,6 +1183,7 @@ fn register_and_activate_miner_locks_bond() {
             commitment(10),
             ProofSystem::RiscZeroStark
         ));
+        attest_miner(0, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             0,
@@ -1194,6 +1224,8 @@ fn participant_capital_commitments_do_not_dictionary_encode_amounts() {
                 ProofSystem::RiscZeroStark
             ));
         }
+        attest_miner(0, 2, Some(commitment(120)), Some(commitment(121)));
+        attest_miner(1, 2, Some(commitment(122)), Some(commitment(123)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             0,
@@ -1253,6 +1285,10 @@ fn activate_miner_rejects_bad_operator_and_bad_bond() {
             Qubitum::activate_miner(RuntimeOrigin::signed(2), 0, MAX_MINER_BOND + 1),
             Error::<Test>::InvalidBond
         );
+        assert_noop!(
+            Qubitum::activate_miner(RuntimeOrigin::signed(2), 0, MIN_MINER_BOND),
+            Error::<Test>::MissingSignatureBundle
+        );
     });
 }
 
@@ -1270,6 +1306,7 @@ fn activate_miner_rejects_duplicate_activation() {
             commitment(10),
             ProofSystem::RiscZeroStark
         ));
+        attest_miner(0, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             0,
@@ -1463,11 +1500,13 @@ fn participant_capital_lifecycle_uses_per_registry_record_amounts() {
                 ProofSystem::RiscZeroStark
             ));
         }
+        attest_miner(0, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             0,
             MIN_MINER_BOND
         ));
+        attest_miner(1, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             1,
@@ -1587,6 +1626,7 @@ fn legacy_missing_capital_records_fallback_only_when_unambiguous() {
             commitment(10),
             ProofSystem::RiscZeroStark
         ));
+        attest_miner(0, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             0,
@@ -1621,11 +1661,13 @@ fn legacy_missing_capital_records_fallback_only_when_unambiguous() {
                 ProofSystem::RiscZeroStark
             ));
         }
+        attest_miner(0, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             0,
             MIN_MINER_BOND
         ));
+        attest_miner(1, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             1,
@@ -1739,6 +1781,12 @@ fn active_set_capacity_failures_rollback_locked_capital_and_ids() {
                 commitment(index.saturating_add(10) as u8),
                 ProofSystem::RiscZeroStark
             ));
+            attest_miner(
+                u64::from(index),
+                2,
+                Some(commitment(120)),
+                Some(commitment(121)),
+            );
             assert_ok!(Qubitum::activate_miner(
                 RuntimeOrigin::signed(2),
                 u64::from(index),
@@ -1753,6 +1801,12 @@ fn active_set_capacity_failures_rollback_locked_capital_and_ids() {
             ProofSystem::RiscZeroStark
         ));
         let overflow_miner_id = MinerCount::<Test>::get().saturating_sub(1);
+        attest_miner(
+            overflow_miner_id,
+            2,
+            Some(commitment(120)),
+            Some(commitment(121)),
+        );
         let held_before = Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2);
 
         assert_noop!(
@@ -3663,6 +3717,7 @@ fn public_registry_events_redact_operator_capital_model_and_exit_schedule() {
             commitment(44),
             ProofSystem::RiscZeroStark
         ));
+        attest_miner(0, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             0,
@@ -4856,6 +4911,7 @@ fn request_storage_commits_route_assignment_without_raw_participant_ids() {
             commitment(12),
             ProofSystem::RiscZeroStark
         ));
+        attest_miner(1, 1, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(1),
             1,
@@ -6349,6 +6405,7 @@ fn route_selection_is_deterministic_until_private_selection_lands() {
             commitment(12),
             ProofSystem::RiscZeroStark
         ));
+        attest_miner(1, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             1,
@@ -6431,6 +6488,7 @@ fn route_assignment_rejects_self_validation_operator() {
             commitment(10),
             ProofSystem::RiscZeroStark
         ));
+        attest_miner(0, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             0,
@@ -6481,6 +6539,7 @@ fn route_assignment_skips_self_validation_validator_when_alternative_exists() {
             commitment(10),
             ProofSystem::RiscZeroStark
         ));
+        attest_miner(0, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             0,
@@ -6555,6 +6614,7 @@ fn route_assignment_scans_past_sixteen_self_validation_conflicts() {
             commitment(10),
             ProofSystem::RiscZeroStark
         ));
+        attest_miner(0, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             0,
@@ -6644,11 +6704,14 @@ fn active_miner_index_stays_sorted_by_id() {
             ProofSystem::RiscZeroStark
         ));
 
+        attest_miner(1, 2, Some(commitment(120)), Some(commitment(121)));
+
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             1,
             MIN_MINER_BOND
         ));
+        attest_miner(0, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             0,
@@ -6673,6 +6736,7 @@ fn submit_proof_rejects_self_validation_assignment() {
             commitment(10),
             ProofSystem::RiscZeroStark
         ));
+        attest_miner(0, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             0,
@@ -7050,6 +7114,7 @@ fn request_inference_rejects_public_participant_ids() {
             commitment(10),
             ProofSystem::RiscZeroStark
         ));
+        attest_miner(1, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             1,
@@ -8029,6 +8094,7 @@ fn submit_proof_rejects_unassigned_participants() {
             commitment(10),
             ProofSystem::RiscZeroStark
         ));
+        attest_miner(1, 2, Some(commitment(120)), Some(commitment(121)));
         assert_ok!(Qubitum::activate_miner(
             RuntimeOrigin::signed(2),
             1,

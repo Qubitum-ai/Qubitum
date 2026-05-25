@@ -1451,6 +1451,7 @@ pub mod pallet {
                     bond >= T::MinMinerBond::get() && bond <= T::MaxMinerBond::get(),
                     Error::<T>::InvalidBond
                 );
+                Self::ensure_miner_signature_bundle_bound(miner_id, miner)?;
 
                 T::Currency::hold(&HoldReason::MinerBond.into(), &operator, bond)?;
                 Self::insert_active_miner(miner.subnet_id, miner_id)?;
