@@ -5512,6 +5512,78 @@ fn shielded_payload_mode_rejects_stateful_public_dispatchables_without_mutation(
 }
 
 #[test]
+fn shielded_payload_mode_rejects_matured_public_withdrawals_without_releasing_funds() {
+    new_test_ext().execute_with(|| {
+        System::set_block_number(1);
+        register_active_miner_and_validator();
+
+        assert_ok!(Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0));
+        assert_ok!(Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0));
+        System::set_block_number(25);
+
+        let existing_miner = Miners::<Test>::get(0);
+        let existing_validator = Validators::<Test>::get(0);
+        let existing_miner_locked_bond = MinerLockedBond::<Test>::get(0);
+        let existing_validator_locked_stake = ValidatorLockedStake::<Test>::get(0);
+        let existing_active_miners = ActiveMinersBySubnet::<Test>::get(0);
+        let existing_active_validators = ActiveValidatorsBySubnet::<Test>::get(0);
+        let existing_miner_hold = Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2);
+        let existing_validator_hold =
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3);
+        let existing_balances = [Balances::free_balance(2), Balances::free_balance(3)];
+        let existing_events = System::events().len();
+
+        assert!(existing_miner_hold > 0);
+        assert!(existing_validator_hold > 0);
+        assert!(matches!(
+            existing_miner.as_ref().unwrap().status,
+            RegistryStatus::Exiting { .. }
+        ));
+        assert!(matches!(
+            existing_validator.as_ref().unwrap().status,
+            RegistryStatus::Exiting { .. }
+        ));
+
+        ShieldedCallPayloads::set(true);
+
+        assert_noop!(
+            Qubitum::withdraw_miner_bond(RuntimeOrigin::signed(2), 0),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::withdraw_validator_stake(RuntimeOrigin::signed(3), 0),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+
+        assert_eq!(Miners::<Test>::get(0), existing_miner);
+        assert_eq!(Validators::<Test>::get(0), existing_validator);
+        assert_eq!(MinerLockedBond::<Test>::get(0), existing_miner_locked_bond);
+        assert_eq!(
+            ValidatorLockedStake::<Test>::get(0),
+            existing_validator_locked_stake
+        );
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0), existing_active_miners);
+        assert_eq!(
+            ActiveValidatorsBySubnet::<Test>::get(0),
+            existing_active_validators
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            existing_miner_hold
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            existing_validator_hold
+        );
+        assert_eq!(
+            [Balances::free_balance(2), Balances::free_balance(3)],
+            existing_balances
+        );
+        assert_eq!(System::events().len(), existing_events);
+    });
+}
+
+#[test]
 fn request_commitment_call_rejects_unverifiable_committed_payloads_without_state_changes() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
