@@ -3061,6 +3061,122 @@ fn qubitum_runtime_api_redacts_nonzero_public_activity_and_accounting() {
 }
 
 #[test]
+fn qubitum_runtime_api_redacts_nonzero_public_records() {
+    let mut ext: sp_io::TestExternalities = RuntimeGenesisConfig {
+        sudo: pallet_sudo::GenesisConfig { key: None },
+        ..Default::default()
+    }
+    .build_storage()
+    .unwrap_or_else(|err| panic!("runtime genesis config should build: {err:?}"))
+    .into();
+
+    ext.execute_with(|| {
+        let commitment = |seed: u8| [seed; 32];
+        pallet_qubitum::Subnets::<Runtime>::insert(
+            0,
+            pallet_qubitum::ChainSubnet {
+                id: 0,
+                owner_commitment: commitment(1),
+                domain: qubitum_protocol::SubnetDomain::Code,
+                proof_system: qubitum_protocol::ProofSystem::RiscZeroStark,
+                policy_commitment: commitment(2),
+                active: true,
+            },
+        );
+        pallet_qubitum::Miners::<Runtime>::insert(
+            0,
+            pallet_qubitum::ChainMiner {
+                id: 0,
+                operator_commitment: commitment(3),
+                subnet_id: 0,
+                model_commitment: commitment(4),
+                proof_system: qubitum_protocol::ProofSystem::RiscZeroStark,
+                bond_commitment: commitment(5),
+                status: qubitum_protocol::RegistryStatus::Active,
+            },
+        );
+        pallet_qubitum::Validators::<Runtime>::insert(
+            0,
+            pallet_qubitum::ChainValidator {
+                id: 0,
+                operator_commitment: commitment(6),
+                subnet_id: 0,
+                stake_commitment: commitment(7),
+                status: qubitum_protocol::RegistryStatus::Active,
+            },
+        );
+        pallet_qubitum::MinerIdentityCommitments::<Runtime>::insert(
+            0,
+            pallet_qubitum::ChainIdentityCommitments {
+                shielded_identity_commitment: Some(commitment(8)),
+                endpoint_commitment: Some(commitment(9)),
+            },
+        );
+        pallet_qubitum::ValidatorIdentityCommitments::<Runtime>::insert(
+            0,
+            pallet_qubitum::ChainIdentityCommitments {
+                shielded_identity_commitment: Some(commitment(10)),
+                endpoint_commitment: Some(commitment(11)),
+            },
+        );
+        pallet_qubitum::InferenceRequests::<Runtime>::insert(
+            0,
+            pallet_qubitum::ChainInferenceRequest {
+                request_id: 0,
+                user_commitment: commitment(12),
+                subnet_id: 0,
+                assignment_commitment: commitment(13),
+                input_commitment: commitment(14),
+                terms_commitment: commitment(15),
+                timing_commitment: commitment(16),
+                status: pallet_qubitum::InferenceRequestStatus::Pending,
+            },
+        );
+        pallet_qubitum::ProofRecords::<Runtime>::insert(
+            0,
+            pallet_qubitum::ChainProofRecord {
+                request_id: 0,
+                subnet_id: 0,
+                assignment_commitment: commitment(17),
+                audit_commitment: commitment(18),
+                proof_system: qubitum_protocol::ProofSystem::RiscZeroStark,
+            },
+        );
+
+        assert!(pallet_qubitum::Subnets::<Runtime>::contains_key(0));
+        assert!(pallet_qubitum::Miners::<Runtime>::contains_key(0));
+        assert!(pallet_qubitum::Validators::<Runtime>::contains_key(0));
+        assert!(pallet_qubitum::InferenceRequests::<Runtime>::contains_key(
+            0
+        ));
+        assert!(pallet_qubitum::ProofRecords::<Runtime>::contains_key(0));
+        assert_eq!(pallet_qubitum::Pallet::<Runtime>::public_subnet(0), None);
+        assert_eq!(pallet_qubitum::Pallet::<Runtime>::public_miner(0), None);
+        assert_eq!(pallet_qubitum::Pallet::<Runtime>::public_validator(0), None);
+        assert_eq!(
+            pallet_qubitum::Pallet::<Runtime>::public_miner_identity(0),
+            None
+        );
+        assert_eq!(
+            pallet_qubitum::Pallet::<Runtime>::public_validator_identity(0),
+            None
+        );
+        assert_eq!(
+            pallet_qubitum::Pallet::<Runtime>::public_inference_request(0),
+            None
+        );
+        assert_eq!(
+            pallet_qubitum::Pallet::<Runtime>::public_proof_record(0),
+            None
+        );
+        assert_eq!(
+            pallet_qubitum::Pallet::<Runtime>::next_route_availability(0),
+            pallet_qubitum::ChainRouteAvailability { available: false }
+        );
+    });
+}
+
+#[test]
 fn mev_shield_pending_queue_fails_closed_without_runtime_decryptor() {
     use frame_support::pallet_prelude::BoundedVec;
     use frame_support::traits::Hooks;
