@@ -114,7 +114,7 @@ impl SignaturePolicy {
             }
             SignatureMode::FullPostQuantum => {
                 reject_classical(bundle.classical)?;
-                require_post_quantum(bundle.post_quantum)?;
+                require_dilithium(bundle.post_quantum)?;
             }
         }
 
@@ -128,13 +128,12 @@ fn require_classical(signature: Option<SignatureCommitment>) -> Result<(), Proto
     validate_classical(signature)
 }
 
-fn require_post_quantum(signature: Option<SignatureCommitment>) -> Result<(), ProtocolError> {
-    let signature = signature.ok_or(ProtocolError::MissingPostQuantumSignature)?;
-    validate_post_quantum(signature)
-}
-
 fn require_dilithium(signature: Option<SignatureCommitment>) -> Result<(), ProtocolError> {
     let signature = signature.ok_or(ProtocolError::MissingPostQuantumSignature)?;
+    validate_dilithium(signature)
+}
+
+fn validate_dilithium(signature: SignatureCommitment) -> Result<(), ProtocolError> {
     ensure_well_formed_commitments(signature)?;
     if signature.algorithm.is_dilithium() {
         Ok(())
@@ -225,6 +224,14 @@ mod tests {
         SignatureAlgorithm::Falcon512,
         SignatureAlgorithm::SphincsPlus,
     ];
+    const DILITHIUM_ALGORITHMS: [SignatureAlgorithm; 2] = [
+        SignatureAlgorithm::Dilithium3,
+        SignatureAlgorithm::Dilithium5,
+    ];
+    const NON_DILITHIUM_POST_QUANTUM_ALGORITHMS: [SignatureAlgorithm; 2] = [
+        SignatureAlgorithm::Falcon512,
+        SignatureAlgorithm::SphincsPlus,
+    ];
     const ALL_ALGORITHMS: [SignatureAlgorithm; 7] = [
         SignatureAlgorithm::Ecdsa,
         SignatureAlgorithm::Sr25519,
@@ -283,10 +290,7 @@ mod tests {
 
     #[test]
     fn hybrid_phase_rejects_non_dilithium_post_quantum_signatures() {
-        for algorithm in [
-            SignatureAlgorithm::Falcon512,
-            SignatureAlgorithm::SphincsPlus,
-        ] {
+        for algorithm in NON_DILITHIUM_POST_QUANTUM_ALGORITHMS {
             let bundle = SignatureBundle {
                 classical: Some(sig(SignatureAlgorithm::Ecdsa, 1)),
                 post_quantum: Some(sig(algorithm, 3)),
@@ -309,6 +313,20 @@ mod tests {
             SignaturePolicy::new(SignatureMode::FullPostQuantum).validate(bundle),
             Ok(bundle)
         );
+    }
+
+    #[test]
+    fn full_post_quantum_phase_rejects_non_dilithium_post_quantum_signatures() {
+        for algorithm in NON_DILITHIUM_POST_QUANTUM_ALGORITHMS {
+            let bundle = SignatureBundle {
+                classical: None,
+                post_quantum: Some(sig(algorithm, 3)),
+            };
+            assert_eq!(
+                SignaturePolicy::new(SignatureMode::FullPostQuantum).validate(bundle),
+                Err(ProtocolError::UnsupportedSignatureAlgorithm)
+            );
+        }
     }
 
     #[test]
@@ -469,7 +487,7 @@ mod tests {
             );
         }
 
-        for (index, algorithm) in POST_QUANTUM_ALGORITHMS.iter().copied().enumerate() {
+        for (index, algorithm) in DILITHIUM_ALGORITHMS.iter().copied().enumerate() {
             let bundle = SignatureBundle {
                 classical: None,
                 post_quantum: Some(sig(algorithm, index as u8 + 20)),
