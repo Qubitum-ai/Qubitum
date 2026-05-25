@@ -67,6 +67,7 @@ parameter_types! {
     pub const SignatureMode: qubitum_protocol::SignatureMode =
         qubitum_protocol::SignatureMode::FullPostQuantum;
     pub static ShieldedCallPayloads: bool = false;
+    pub static ShieldedCallPayloadExecution: bool = false;
     pub const ProtocolTreasury: AccountId = 99;
     pub const MinerExitCooldownBlocks: u64 = 20;
     pub const ValidatorExitCooldownBlocks: u64 = 20;
@@ -116,6 +117,7 @@ impl pallet_qubitum::Config for Test {
     type MaxProofSubmissionAgeBlocks = MaxProofSubmissionAgeBlocks;
     type SignatureMode = SignatureMode;
     type ShieldedCallPayloads = ShieldedCallPayloads;
+    type ShieldedCallPayloadExecution = ShieldedCallPayloadExecution;
     type ShieldedOrigin = frame_support::traits::NeverEnsureOrigin<AccountId>;
     type RuntimeHoldReason = RuntimeHoldReason;
     type WeightInfo = ();

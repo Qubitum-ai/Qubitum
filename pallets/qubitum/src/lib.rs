@@ -271,6 +271,10 @@ pub mod pallet {
         #[pallet::constant]
         type ShieldedCallPayloads: Get<bool>;
 
+        /// Whether the runtime can decrypt and dispatch shielded Qubitum payloads.
+        #[pallet::constant]
+        type ShieldedCallPayloadExecution: Get<bool>;
+
         /// Origin that proves a Qubitum dispatchable came from a decrypted shield queue payload.
         type ShieldedOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = Self::AccountId>;
 
@@ -2238,7 +2242,8 @@ pub mod pallet {
             let signature_mode = T::SignatureMode::get();
             let committed_request_payloads = false;
             let shielded_call_payloads = T::ShieldedCallPayloads::get();
-            let shielded_call_payload_execution = false;
+            let shielded_call_payload_execution =
+                shielded_call_payloads && T::ShieldedCallPayloadExecution::get();
             let shield_submitter_origin_privacy = false;
             let shield_key_window_privacy = false;
             let private_route_selection = false;

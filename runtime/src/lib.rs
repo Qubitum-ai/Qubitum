@@ -838,6 +838,7 @@ impl pallet_qubitum::Config for Runtime {
     type MaxProofSubmissionAgeBlocks = QubitumMaxProofSubmissionAgeBlocks;
     type SignatureMode = QubitumSignatureMode;
     type ShieldedCallPayloads = ConstBool<true>;
+    type ShieldedCallPayloadExecution = ConstBool<true>;
     type ShieldedOrigin = EnsureShieldedQubitumOrigin;
     type RuntimeHoldReason = RuntimeHoldReason;
     type WeightInfo = pallet_qubitum::weights::SubstrateWeight<Runtime>;
@@ -3287,7 +3288,7 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
     assert!(!params.production_ready);
     assert!(params.readiness_blockers.production_zk_verifier_missing);
     assert!(params.readiness_blockers.committed_request_payloads_missing);
-    assert!(params.readiness_blockers.shielded_call_payloads_missing);
+    assert!(!params.readiness_blockers.shielded_call_payloads_missing);
     assert!(
         params
             .readiness_blockers
@@ -4103,7 +4104,7 @@ fn shielded_qubitum_origin_unblocks_payload_gate_after_queue_filter() {
 
         let params = pallet_qubitum::Pallet::<Runtime>::protocol_params();
         assert!(params.shielded_call_payloads);
-        assert!(params.readiness_blockers.shielded_call_payloads_missing);
+        assert!(!params.readiness_blockers.shielded_call_payloads_missing);
         assert!(!params.production_ready);
     });
 }
