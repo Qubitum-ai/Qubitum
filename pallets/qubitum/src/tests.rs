@@ -1922,6 +1922,71 @@ fn request_id_overflow_does_not_escrow_or_increment_pending() {
 }
 
 #[test]
+fn request_id_overflow_rejects_before_route_oracle() {
+    new_test_ext().execute_with(|| {
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::Code,
+            ProofSystem::RiscZeroStark
+        ));
+        RequestCount::<Test>::put(u64::MAX);
+
+        let existing_events = System::events().len();
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
+
+        assert_noop!(
+            Qubitum::request_inference(
+                RuntimeOrigin::signed(4),
+                u64::MAX,
+                InferenceRequestParams {
+                    subnet_id: 0,
+                    miner_id: 0,
+                    validator_id: 0,
+                    input_commitment: commitment(1),
+                    assignment_blinding: assignment_blinding(),
+                    timing_blinding: timing_blinding(),
+                    terms_blinding: terms_blinding(),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::ArithmeticOverflow
+        );
+        assert_noop!(
+            Qubitum::request_inference_auto_route(
+                RuntimeOrigin::signed(4),
+                u64::MAX,
+                AutoRouteInferenceRequestParams {
+                    subnet_id: 0,
+                    input_commitment: commitment(2),
+                    assignment_blinding: assignment_blinding(),
+                    timing_blinding: timing_blinding(),
+                    terms_blinding: terms_blinding(),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::ArithmeticOverflow
+        );
+
+        assert!(InferenceRequests::<Test>::get(u64::MAX).is_none());
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            0
+        );
+        assert_eq!(PendingInferenceRequestCount::<Test>::get(), 0);
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 0);
+        assert_eq!(RequestCount::<Test>::get(), u64::MAX);
+        assert_eq!(System::events().len(), existing_events);
+    });
+}
+
+#[test]
 fn accounting_overflows_fail_without_state_changes() {
     new_test_ext().execute_with(|| {
         TotalBurned::<Test>::put(u128::MAX);
