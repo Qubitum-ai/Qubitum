@@ -2120,6 +2120,7 @@ pub mod pallet {
                 MinerIdentitySignatureBundles::<T>::insert(miner_id, signature_bundle);
                 MinerIdentitySignatureChallenges::<T>::insert(miner_id, challenge_commitment);
                 if should_index {
+                    Self::ensure_miner_locked_bond_record(miner_id)?;
                     Self::insert_active_miner(miner.subnet_id, miner_id)?;
                 }
             } else {
@@ -2483,6 +2484,7 @@ pub mod pallet {
                 };
                 if miner.subnet_id != subnet_id
                     || miner.status != RegistryStatus::Active
+                    || !Self::miner_has_active_locked_bond_record(miner_id)
                     || Self::ensure_miner_signature_bundle_bound(miner_id, &miner).is_err()
                 {
                     continue;
@@ -3286,6 +3288,21 @@ pub mod pallet {
             Ok(Self::held_miner_bond(operator))
         }
 
+        fn miner_has_active_locked_bond_record(miner_id: MinerId) -> bool {
+            match MinerLockedBond::<T>::get(miner_id) {
+                Some(bond) => bond >= T::MinMinerBond::get(),
+                None => false,
+            }
+        }
+
+        fn ensure_miner_locked_bond_record(miner_id: MinerId) -> DispatchResult {
+            ensure!(
+                Self::miner_has_active_locked_bond_record(miner_id),
+                Error::<T>::MissingCapitalRecord
+            );
+            Ok(())
+        }
+
         fn locked_validator_stake(
             validator_id: ValidatorId,
             operator: &T::AccountId,
@@ -3743,6 +3760,7 @@ pub mod pallet {
             for (miner_id, miner) in Miners::<T>::iter() {
                 miner_reads = miner_reads.saturating_add(1);
                 if miner.status == RegistryStatus::Active
+                    && Self::miner_has_active_locked_bond_record(miner_id)
                     && Self::ensure_miner_signature_bundle_bound(miner_id, &miner).is_ok()
                 {
                     miner_reads = miner_reads.saturating_add(1);
@@ -4523,6 +4541,10 @@ pub mod pallet {
                         "Qubitum active miner index references inactive or wrong-subnet miner"
                     );
                     ensure!(
+                        Self::miner_has_active_locked_bond_record(miner_id),
+                        "Qubitum active miner index references undercapitalized miner"
+                    );
+                    ensure!(
                         Self::ensure_miner_signature_bundle_bound(miner_id, &miner).is_ok(),
                         "Qubitum active miner index references identity-ineligible miner"
                     );
@@ -4531,6 +4553,7 @@ pub mod pallet {
 
             for (miner_id, miner) in Miners::<T>::iter() {
                 if miner.status == RegistryStatus::Active
+                    && Self::miner_has_active_locked_bond_record(miner_id)
                     && Self::ensure_miner_signature_bundle_bound(miner_id, &miner).is_ok()
                 {
                     let active_miners = ActiveMinersBySubnet::<T>::get(miner.subnet_id);

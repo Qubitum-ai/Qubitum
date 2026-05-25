@@ -379,6 +379,66 @@ fn attest_miner(
     ));
 }
 
+fn insert_legacy_miner_identity(
+    miner_id: MinerId,
+    operator_commitment: Commitment,
+    shielded_identity_commitment: Option<Commitment>,
+    endpoint_commitment: Option<Commitment>,
+) {
+    let signature_bundle = miner_identity_signature_bundle(
+        miner_id,
+        shielded_identity_commitment,
+        endpoint_commitment,
+    );
+    MinerIdentityCommitments::<Test>::insert(
+        miner_id,
+        ChainIdentityCommitments {
+            shielded_identity_commitment,
+            endpoint_commitment,
+        },
+    );
+    MinerIdentitySignatureBundles::<Test>::insert(miner_id, signature_bundle);
+    MinerIdentitySignatureChallenges::<Test>::insert(
+        miner_id,
+        Qubitum::miner_identity_signature_challenge(
+            miner_id,
+            operator_commitment,
+            shielded_identity_commitment,
+            endpoint_commitment,
+        ),
+    );
+}
+
+fn insert_legacy_validator_identity(
+    validator_id: ValidatorId,
+    operator_commitment: Commitment,
+    shielded_identity_commitment: Option<Commitment>,
+    endpoint_commitment: Option<Commitment>,
+) {
+    let signature_bundle = validator_identity_signature_bundle(
+        validator_id,
+        shielded_identity_commitment,
+        endpoint_commitment,
+    );
+    ValidatorIdentityCommitments::<Test>::insert(
+        validator_id,
+        ChainIdentityCommitments {
+            shielded_identity_commitment,
+            endpoint_commitment,
+        },
+    );
+    ValidatorIdentitySignatureBundles::<Test>::insert(validator_id, signature_bundle);
+    ValidatorIdentitySignatureChallenges::<Test>::insert(
+        validator_id,
+        Qubitum::validator_identity_signature_challenge(
+            validator_id,
+            operator_commitment,
+            shielded_identity_commitment,
+            endpoint_commitment,
+        ),
+    );
+}
+
 fn attest_validator(
     validator_id: ValidatorId,
     operator: u64,
@@ -1321,6 +1381,40 @@ fn activate_miner_rejects_duplicate_activation() {
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
             MIN_MINER_BOND
+        );
+    });
+}
+
+#[test]
+fn miner_identity_reindex_rejects_missing_locked_bond_record() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        assert_ok!(Qubitum::set_miner_identity_commitments(
+            RuntimeOrigin::signed(2),
+            0,
+            None,
+            None,
+            miner_identity_signature_bundle(0, None, None),
+        ));
+        MinerLockedBond::<Test>::remove(0);
+
+        assert_noop!(
+            Qubitum::set_miner_identity_commitments(
+                RuntimeOrigin::signed(2),
+                0,
+                Some(commitment(124)),
+                Some(commitment(125)),
+                miner_identity_signature_bundle(0, Some(commitment(124)), Some(commitment(125))),
+            ),
+            Error::<Test>::MissingCapitalRecord
+        );
+
+        assert!(MinerIdentityCommitments::<Test>::get(0).is_none());
+        assert!(MinerIdentitySignatureBundles::<Test>::get(0).is_none());
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().status,
+            RegistryStatus::Active
         );
     });
 }
@@ -6610,6 +6704,30 @@ fn route_assignment_skips_validator_missing_locked_stake_record() {
 }
 
 #[test]
+fn route_assignment_skips_miner_missing_locked_bond_record() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(11),
+            ProofSystem::RiscZeroStark
+        ));
+        attest_miner(1, 2, Some(commitment(126)), Some(commitment(127)));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            1,
+            MIN_MINER_BOND
+        ));
+        MinerLockedBond::<Test>::remove(0);
+
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0, 1]);
+        let assignment = Qubitum::route_assignment(0, 0).unwrap();
+        assert_eq!(assignment.miner_id, 1);
+    });
+}
+
+#[test]
 fn next_route_assignment_uses_chain_next_request_id() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
@@ -7317,6 +7435,7 @@ fn runtime_upgrade_identity_missing_records_do_not_overflow_attested_routes() {
                 status: RegistryStatus::Active,
             },
         );
+        MinerLockedBond::<Test>::insert(attested_miner_id, MIN_MINER_BOND);
         attest_miner(
             attested_miner_id,
             4,
@@ -7407,6 +7526,7 @@ fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_healt
                     status: RegistryStatus::Active,
                 },
             );
+            MinerLockedBond::<Test>::insert(miner_id, MIN_MINER_BOND);
             let shielded_identity_commitment =
                 Some(commitment((index.saturating_add(30) % 250) as u8));
             let endpoint_commitment = Some(commitment((index.saturating_add(60) % 250) as u8));
@@ -7703,8 +7823,18 @@ fn runtime_upgrade_reports_missing_legacy_capital_records() {
                 status: RegistryStatus::Pending,
             },
         );
-        attest_miner(0, 2, Some(commitment(208)), Some(commitment(209)));
-        attest_validator(0, 3, Some(commitment(210)), Some(commitment(211)));
+        insert_legacy_miner_identity(
+            0,
+            miner_operator_commitment,
+            Some(commitment(208)),
+            Some(commitment(209)),
+        );
+        insert_legacy_validator_identity(
+            0,
+            validator_operator_commitment,
+            Some(commitment(210)),
+            Some(commitment(211)),
+        );
         StorageVersion::new(17).put::<crate::Pallet<Test>>();
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
@@ -7728,7 +7858,7 @@ fn runtime_upgrade_reports_missing_legacy_capital_records() {
         );
         assert_eq!(Qubitum::migration_health().legacy_accounting_failures, 0);
         assert_eq!(Qubitum::migration_health().legacy_routing_index_failures, 0);
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
