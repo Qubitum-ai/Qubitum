@@ -116,6 +116,7 @@ impl pallet_qubitum::Config for Test {
     type MaxProofSubmissionAgeBlocks = MaxProofSubmissionAgeBlocks;
     type SignatureMode = SignatureMode;
     type ShieldedCallPayloads = ShieldedCallPayloads;
+    type ShieldedOrigin = frame_support::traits::NeverEnsureOrigin<AccountId>;
     type RuntimeHoldReason = RuntimeHoldReason;
     type WeightInfo = ();
     type ProofVerifier = TestProofVerifier;

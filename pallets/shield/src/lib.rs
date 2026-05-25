@@ -75,6 +75,24 @@ pub trait ExtrinsicDecryptor<RuntimeCall> {
     fn decrypt(data: &[u8]) -> Result<RuntimeCall, DispatchError>;
 }
 
+/// Chooses the origin used when dispatching a decrypted queue payload.
+pub trait QueueOrigin<RuntimeCall, RuntimeOrigin, AccountId> {
+    fn origin_for(who: AccountId, call: &RuntimeCall) -> RuntimeOrigin;
+}
+
+/// Default queue origin: dispatch decrypted payloads as the submitting signer.
+pub struct SignedQueueOrigin;
+
+impl<RuntimeCall, RuntimeOrigin, AccountId> QueueOrigin<RuntimeCall, RuntimeOrigin, AccountId>
+    for SignedQueueOrigin
+where
+    RuntimeOrigin: From<frame_system::RawOrigin<AccountId>>,
+{
+    fn origin_for(who: AccountId, _call: &RuntimeCall) -> RuntimeOrigin {
+        frame_system::RawOrigin::Signed(who).into()
+    }
+}
+
 /// Decode a decrypted runtime call using the same depth limit as shielded extrinsics.
 pub fn decode_runtime_call_with_depth_limit<RuntimeCall: Decode>(
     data: &[u8],
@@ -115,6 +133,9 @@ pub mod pallet {
         /// Filter applied to decrypted queue payloads before dispatch.
         type QueueCallFilter: Contains<<Self as pallet::Config>::RuntimeCall>;
 
+        /// Origin adapter used when dispatching decrypted queue payloads.
+        type QueueOrigin: QueueOrigin<<Self as pallet::Config>::RuntimeCall, Self::RuntimeOrigin, Self::AccountId>;
+
         /// Decryptor for stored extrinsics.
         type ExtrinsicDecryptor: ExtrinsicDecryptor<<Self as pallet::Config>::RuntimeCall>;
 
@@ -124,6 +145,25 @@ pub mod pallet {
 
     #[pallet::pallet]
     pub struct Pallet<T>(_);
+
+    /// Origin used for calls that were decrypted from the private shield queue.
+    #[pallet::origin]
+    #[derive(
+        Clone,
+        PartialEq,
+        Eq,
+        RuntimeDebug,
+        Encode,
+        Decode,
+        MaxEncodedLen,
+        TypeInfo,
+        DecodeWithMemTracking,
+    )]
+    #[scale_info(skip_type_params(T))]
+    pub enum Origin<T: Config> {
+        /// Call was submitted through the shield queue by this account.
+        Shielded(T::AccountId),
+    }
 
     /// Current block author's ML-KEM-768 encapsulation key (internal, not for encryption).
     #[pallet::storage]
@@ -600,7 +640,7 @@ impl<T: Config> Pallet<T> {
             weight = weight.saturating_add(remove_weight);
 
             // Dispatch the extrinsic
-            let origin: T::RuntimeOrigin = frame_system::RawOrigin::Signed(pending.who).into();
+            let origin = T::QueueOrigin::origin_for(pending.who, &call);
             let result = call.dispatch(origin);
 
             match result {

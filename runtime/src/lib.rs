@@ -26,7 +26,10 @@ use frame_support::{
     dispatch::DispatchResult,
     genesis_builder_helper::{build_state, get_preset},
     pallet_prelude::Get,
-    traits::{Contains, InsideBoth, LinearStoragePrice, fungible::HoldConsideration},
+    traits::{
+        Contains, EnsureOrigin, InsideBoth, LinearStoragePrice, OriginTrait,
+        fungible::HoldConsideration,
+    },
 };
 use frame_system::{EnsureRoot, EnsureRootWithSuccess, EnsureSigned};
 use pallet_commitments::{CanCommit, OnMetadataCommitment};
@@ -157,6 +160,20 @@ impl Contains<RuntimeCall> for ShieldQueueCallFilter {
     fn contains(call: &RuntimeCall) -> bool {
         !contains_recursive_shield_queue_call(call, 0)
             && !contains_persistent_private_queue_call(call, 0)
+    }
+}
+
+pub struct ShieldRuntimeQueueOrigin;
+
+impl pallet_shield::QueueOrigin<RuntimeCall, RuntimeOrigin, AccountId>
+    for ShieldRuntimeQueueOrigin
+{
+    fn origin_for(who: AccountId, call: &RuntimeCall) -> RuntimeOrigin {
+        if qubitum_privacy::CheckQubitumShielding::private_runtime_call_violation(call).is_some() {
+            pallet_shield::Origin::<Runtime>::Shielded(who).into()
+        } else {
+            frame_system::RawOrigin::Signed(who).into()
+        }
     }
 }
 
@@ -330,6 +347,7 @@ impl pallet_shield::Config for Runtime {
     type FindAuthors = FindAuraAuthors;
     type RuntimeCall = RuntimeCall;
     type QueueCallFilter = ShieldQueueCallFilter;
+    type QueueOrigin = ShieldRuntimeQueueOrigin;
     type ExtrinsicDecryptor = ();
     type WeightInfo = pallet_shield::weights::SubstrateWeight<Runtime>;
 }
@@ -732,6 +750,24 @@ parameter_types! {
     pub QubitumProtocolTreasury: AccountId = PalletId(*b"qbt/trsy").into_account_truncating();
 }
 
+pub struct EnsureShieldedQubitumOrigin;
+
+impl EnsureOrigin<RuntimeOrigin> for EnsureShieldedQubitumOrigin {
+    type Success = AccountId;
+
+    fn try_origin(origin: RuntimeOrigin) -> Result<Self::Success, RuntimeOrigin> {
+        match origin.clone().into_caller().try_into() {
+            Ok(pallet_shield::Origin::Shielded(who)) => Ok(who),
+            _ => Err(origin),
+        }
+    }
+
+    #[cfg(feature = "runtime-benchmarks")]
+    fn try_successful_origin() -> Result<RuntimeOrigin, ()> {
+        Ok(pallet_shield::Origin::Shielded(AccountId32::new([0; 32])).into())
+    }
+}
+
 impl pallet_qubitum::Config for Runtime {
     type Currency = Balances;
     type SubnetCreationBurn = QubitumSubnetCreationBurn;
@@ -749,6 +785,7 @@ impl pallet_qubitum::Config for Runtime {
     type MaxProofSubmissionAgeBlocks = QubitumMaxProofSubmissionAgeBlocks;
     type SignatureMode = QubitumSignatureMode;
     type ShieldedCallPayloads = ConstBool<true>;
+    type ShieldedOrigin = EnsureShieldedQubitumOrigin;
     type RuntimeHoldReason = RuntimeHoldReason;
     type WeightInfo = pallet_qubitum::weights::SubstrateWeight<Runtime>;
     #[cfg(not(feature = "runtime-benchmarks"))]
@@ -3842,7 +3879,7 @@ fn shield_queue_call_filter_rejects_nested_persistent_private_payloads() {
 }
 
 #[test]
-fn shield_queue_direct_qubitum_dispatch_fails_closed_until_shield_origin_exists() {
+fn shielded_qubitum_origin_unblocks_payload_gate_after_queue_filter() {
     let mut ext: sp_io::TestExternalities = RuntimeGenesisConfig {
         sudo: pallet_sudo::GenesisConfig { key: None },
         ..Default::default()
@@ -3853,24 +3890,39 @@ fn shield_queue_direct_qubitum_dispatch_fails_closed_until_shield_origin_exists(
 
     ext.execute_with(|| {
         System::set_block_number(1);
-        let call = RuntimeCall::Qubitum(pallet_qubitum::Call::create_subnet {
-            domain: qubitum_protocol::SubnetDomain::Code,
-            proof_system: qubitum_protocol::ProofSystem::RiscZeroStark,
-        });
+        let account = AccountId32::new([9; 32]);
+        let create_subnet = || {
+            RuntimeCall::Qubitum(pallet_qubitum::Call::create_subnet {
+                domain: qubitum_protocol::SubnetDomain::Code,
+                proof_system: qubitum_protocol::ProofSystem::RiscZeroStark,
+            })
+        };
+        let call = create_subnet();
 
         assert!(ShieldQueueCallFilter::contains(&call));
 
-        let dispatch_error = match call.dispatch(RuntimeOrigin::signed(AccountId32::new([9; 32]))) {
-            Ok(_) => {
-                panic!("direct Qubitum queue dispatch must stay blocked until shield origin lands")
-            }
+        let dispatch_error = match call.dispatch(RuntimeOrigin::signed(account.clone())) {
+            Ok(_) => panic!("public Qubitum dispatch must stay blocked in shielded payload mode"),
             Err(error) => error,
         };
-
         assert_eq!(
             dispatch_error.error,
             pallet_qubitum::Error::<Runtime>::PublicCallPayloadDisallowed.into()
         );
+
+        frame_support::assert_ok!(Balances::force_set_balance(
+            RuntimeOrigin::root(),
+            sp_runtime::MultiAddress::Id(account.clone()),
+            QubitumSubnetCreationBurn::get(),
+        ));
+        let shielded_call = create_subnet();
+        let shielded_origin =
+            <ShieldRuntimeQueueOrigin as pallet_shield::QueueOrigin<_, _, _>>::origin_for(
+                account,
+                &shielded_call,
+            );
+        frame_support::assert_ok!(shielded_call.dispatch(shielded_origin));
+        assert_eq!(pallet_qubitum::SubnetCount::<Runtime>::get(), 1);
 
         let params = pallet_qubitum::Pallet::<Runtime>::protocol_params();
         assert!(params.shielded_call_payloads);

@@ -140,6 +140,7 @@ impl pallet_shield::Config for Test {
     type FindAuthors = MockFindAuthors;
     type RuntimeCall = RuntimeCall;
     type QueueCallFilter = MockQueueCallFilter;
+    type QueueOrigin = pallet_shield::SignedQueueOrigin;
     type ExtrinsicDecryptor = MockDecryptor;
     type WeightInfo = ();
 }

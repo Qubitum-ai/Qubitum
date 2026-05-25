@@ -192,6 +192,7 @@ impl pallet_shield::Config for Runtime {
     type FindAuthors = ();
     type RuntimeCall = RuntimeCall;
     type QueueCallFilter = Everything;
+    type QueueOrigin = pallet_shield::SignedQueueOrigin;
     type ExtrinsicDecryptor = ();
     type WeightInfo = ();
 }
