@@ -7350,6 +7350,40 @@ fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_healt
                 ),
             );
         }
+        let pending_miner_id = u64::from(miner_limit);
+        let pending_validator_id = u64::from(validator_limit);
+        ActiveMinersBySubnet::<Test>::try_mutate(0, |ids| {
+            ids.try_push(pending_miner_id)
+                .map_err(|_| Error::<Test>::TooManyActiveMiners)
+        })
+        .unwrap();
+        ActiveValidatorsBySubnet::<Test>::try_mutate(0, |ids| {
+            ids.try_push(pending_validator_id)
+                .map_err(|_| Error::<Test>::TooManyActiveValidators)
+        })
+        .unwrap();
+        RequestCount::<Test>::put(99);
+        assert_ok!(Qubitum::request_inference(
+            RuntimeOrigin::signed(4),
+            99,
+            InferenceRequestParams {
+                subnet_id: 0,
+                miner_id: 0,
+                validator_id: 0,
+                input_commitment: commitment(1),
+                assignment_blinding: assignment_blinding(),
+                timing_blinding: timing_blinding(),
+                terms_blinding: terms_blinding(),
+                payment: 1_000,
+                validator_fee_bps: 250,
+                treasury_fee_bps: 50,
+            },
+        ));
+        assert_eq!(PendingMinerRequests::<Test>::get(pending_miner_id), 1);
+        assert_eq!(
+            PendingValidatorRequests::<Test>::get(pending_validator_id),
+            1
+        );
         StorageVersion::new(16).put::<crate::Pallet<Test>>();
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
@@ -7402,6 +7436,10 @@ fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_healt
         assert_eq!(exiting_validators.len(), 1);
         let exiting_miner_id = *exiting_miners.first().unwrap();
         let exiting_validator_id = *exiting_validators.first().unwrap();
+        assert_ne!(exiting_miner_id, pending_miner_id);
+        assert_ne!(exiting_validator_id, pending_validator_id);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).contains(&pending_miner_id));
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).contains(&pending_validator_id));
         assert_eq!(
             Miners::<Test>::get(exiting_miner_id)
                 .unwrap()
@@ -7439,6 +7477,24 @@ fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_healt
         assert_eq!(Qubitum::migration_health().legacy_accounting_failures, 0);
         assert_eq!(Qubitum::public_miner(exiting_miner_id), None);
         assert_eq!(Qubitum::public_validator(exiting_validator_id), None);
+        let mut pending_submission = valid_submission(99);
+        pending_submission.miner_id = pending_miner_id;
+        pending_submission.validator_id = pending_validator_id;
+        pending_submission.model_commitment =
+            commitment((miner_limit.saturating_add(10) % 250) as u8);
+        assert_ok!(submit_proof(
+            RuntimeOrigin::signed(3),
+            bind_proof_transcript(pending_submission)
+        ));
+        assert_eq!(PendingMinerRequests::<Test>::get(pending_miner_id), 0);
+        assert_eq!(
+            PendingValidatorRequests::<Test>::get(pending_validator_id),
+            0
+        );
+        assert_eq!(
+            InferenceRequests::<Test>::get(99).unwrap().status,
+            InferenceRequestStatus::Settled
+        );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
             StorageVersion::new(18)

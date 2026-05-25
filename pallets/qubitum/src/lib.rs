@@ -3692,45 +3692,67 @@ pub mod pallet {
                 validator_writes = validator_writes.saturating_add(1);
             }
 
+            let mut pending_miners = sp_std::vec::Vec::new();
+            let mut routable_miners = sp_std::vec::Vec::new();
             for (miner_id, miner) in Miners::<T>::iter() {
                 miner_reads = miner_reads.saturating_add(1);
                 if miner.status == RegistryStatus::Active
                     && Self::ensure_miner_signature_bundle_bound(miner_id, &miner).is_ok()
                 {
-                    match ActiveMinersBySubnet::<T>::try_mutate(miner.subnet_id, |ids| {
-                        Self::insert_sorted_miner_id(ids, miner_id)
-                    }) {
-                        Ok(inserted) => {
-                            if inserted {
-                                miner_writes = miner_writes.saturating_add(1);
-                            }
+                    miner_reads = miner_reads.saturating_add(1);
+                    if PendingMinerRequests::<T>::get(miner_id) > 0 {
+                        pending_miners.push((miner_id, miner.subnet_id));
+                    } else {
+                        routable_miners.push((miner_id, miner.subnet_id));
+                    }
+                }
+            }
+            for (miner_id, subnet_id) in pending_miners.into_iter().chain(routable_miners) {
+                match ActiveMinersBySubnet::<T>::try_mutate(subnet_id, |ids| {
+                    Self::insert_sorted_miner_id(ids, miner_id)
+                }) {
+                    Ok(inserted) => {
+                        if inserted {
+                            miner_writes = miner_writes.saturating_add(1);
                         }
-                        Err(_) => {
-                            overflow_miners.push(miner_id);
-                            migration_failures = migration_failures.saturating_add(1);
-                        }
+                    }
+                    Err(_) => {
+                        overflow_miners.push(miner_id);
+                        migration_failures = migration_failures.saturating_add(1);
                     }
                 }
             }
 
+            let mut pending_validators = sp_std::vec::Vec::new();
+            let mut routable_validators = sp_std::vec::Vec::new();
             for (validator_id, validator) in Validators::<T>::iter() {
                 validator_reads = validator_reads.saturating_add(1);
                 if validator.status == RegistryStatus::Active
                     && Self::ensure_validator_signature_bundle_bound(validator_id, &validator)
                         .is_ok()
                 {
-                    match ActiveValidatorsBySubnet::<T>::try_mutate(validator.subnet_id, |ids| {
-                        Self::insert_sorted_validator_id(ids, validator_id)
-                    }) {
-                        Ok(inserted) => {
-                            if inserted {
-                                validator_writes = validator_writes.saturating_add(1);
-                            }
+                    validator_reads = validator_reads.saturating_add(1);
+                    if PendingValidatorRequests::<T>::get(validator_id) > 0 {
+                        pending_validators.push((validator_id, validator.subnet_id));
+                    } else {
+                        routable_validators.push((validator_id, validator.subnet_id));
+                    }
+                }
+            }
+            for (validator_id, subnet_id) in
+                pending_validators.into_iter().chain(routable_validators)
+            {
+                match ActiveValidatorsBySubnet::<T>::try_mutate(subnet_id, |ids| {
+                    Self::insert_sorted_validator_id(ids, validator_id)
+                }) {
+                    Ok(inserted) => {
+                        if inserted {
+                            validator_writes = validator_writes.saturating_add(1);
                         }
-                        Err(_) => {
-                            overflow_validators.push(validator_id);
-                            migration_failures = migration_failures.saturating_add(1);
-                        }
+                    }
+                    Err(_) => {
+                        overflow_validators.push(validator_id);
+                        migration_failures = migration_failures.saturating_add(1);
                     }
                 }
             }
@@ -3741,6 +3763,7 @@ pub mod pallet {
                 Miners::<T>::mutate(miner_id, |maybe_miner| {
                     if let Some(miner) = maybe_miner
                         && miner.status == RegistryStatus::Active
+                        && PendingMinerRequests::<T>::get(miner_id) == 0
                     {
                         miner.status = RegistryStatus::Exiting {
                             exit_available_at: miner_exit_available_at,
@@ -3762,6 +3785,7 @@ pub mod pallet {
                 Validators::<T>::mutate(validator_id, |maybe_validator| {
                     if let Some(validator) = maybe_validator
                         && validator.status == RegistryStatus::Active
+                        && PendingValidatorRequests::<T>::get(validator_id) == 0
                     {
                         validator.status = RegistryStatus::Exiting {
                             exit_available_at: validator_exit_available_at,
@@ -4462,9 +4486,11 @@ pub mod pallet {
                 if miner.status == RegistryStatus::Active
                     && Self::ensure_miner_signature_bundle_bound(miner_id, &miner).is_ok()
                 {
+                    let active_miners = ActiveMinersBySubnet::<T>::get(miner.subnet_id);
                     ensure!(
-                        ActiveMinersBySubnet::<T>::get(miner.subnet_id).contains(&miner_id),
-                        "Qubitum active identity-eligible miner missing from route index"
+                        active_miners.contains(&miner_id)
+                            || active_miners.len() as u32 >= T::MaxActiveMinersPerSubnet::get(),
+                        "Qubitum active identity-eligible miner missing from non-full route index"
                     );
                 }
             }
@@ -4491,10 +4517,12 @@ pub mod pallet {
                     && Self::ensure_validator_signature_bundle_bound(validator_id, &validator)
                         .is_ok()
                 {
+                    let active_validators = ActiveValidatorsBySubnet::<T>::get(validator.subnet_id);
                     ensure!(
-                        ActiveValidatorsBySubnet::<T>::get(validator.subnet_id)
-                            .contains(&validator_id),
-                        "Qubitum active identity-eligible validator missing from route index"
+                        active_validators.contains(&validator_id)
+                            || active_validators.len() as u32
+                                >= T::MaxActiveValidatorsPerSubnet::get(),
+                        "Qubitum active identity-eligible validator missing from non-full route index"
                     );
                 }
             }
