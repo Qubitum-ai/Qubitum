@@ -2933,7 +2933,7 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
     assert!(!params.production_ready);
     assert!(params.readiness_blockers.production_zk_verifier_missing);
     assert!(params.readiness_blockers.committed_request_payloads_missing);
-    assert!(!params.readiness_blockers.shielded_call_payloads_missing);
+    assert!(params.readiness_blockers.shielded_call_payloads_missing);
     assert!(
         params
             .readiness_blockers
