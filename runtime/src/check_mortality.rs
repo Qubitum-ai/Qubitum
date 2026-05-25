@@ -228,7 +228,9 @@ mod tests {
 
     use frame_support::dispatch::GetDispatchInfo;
     use frame_support::pallet_prelude::{BoundedVec, ConstU32};
+    use frame_support::weights::Weight;
 
+    use sp_runtime::AccountId32;
     use sp_runtime::transaction_validity::InvalidTransaction;
 
     use crate::{Runtime, RuntimeCall, RuntimeOrigin, System};
@@ -252,11 +254,84 @@ mod tests {
         })
     }
 
+    fn account(seed: u8) -> AccountId32 {
+        AccountId32::new([seed; 32])
+    }
+
     fn utility_wrapped_submit_encrypted_call() -> RuntimeCall {
         RuntimeCall::Utility(pallet_subtensor_utility::Call::if_else {
             main: Box::new(remark_call()),
             fallback: Box::new(submit_encrypted_call()),
         })
+    }
+
+    fn privileged_wrapped_submit_encrypted_calls() -> Vec<RuntimeCall> {
+        let proxy_submit = RuntimeCall::Proxy(pallet_subtensor_proxy::Call::proxy {
+            real: account(2).into(),
+            force_proxy_type: None,
+            call: Box::new(submit_encrypted_call()),
+        });
+
+        vec![
+            proxy_submit.clone(),
+            RuntimeCall::Proxy(pallet_subtensor_proxy::Call::proxy_announced {
+                delegate: account(3).into(),
+                real: account(2).into(),
+                force_proxy_type: None,
+                call: Box::new(submit_encrypted_call()),
+            }),
+            RuntimeCall::Sudo(pallet_sudo::Call::sudo {
+                call: Box::new(submit_encrypted_call()),
+            }),
+            RuntimeCall::Sudo(pallet_sudo::Call::sudo_unchecked_weight {
+                call: Box::new(submit_encrypted_call()),
+                weight: Weight::zero(),
+            }),
+            RuntimeCall::Sudo(pallet_sudo::Call::sudo_as {
+                who: account(4).into(),
+                call: Box::new(submit_encrypted_call()),
+            }),
+            RuntimeCall::Multisig(pallet_multisig::Call::as_multi_threshold_1 {
+                other_signatories: vec![account(5)],
+                call: Box::new(submit_encrypted_call()),
+            }),
+            RuntimeCall::Multisig(pallet_multisig::Call::as_multi {
+                threshold: 2,
+                other_signatories: vec![account(6)],
+                maybe_timepoint: None,
+                call: Box::new(submit_encrypted_call()),
+                max_weight: Weight::zero(),
+            }),
+            RuntimeCall::Scheduler(pallet_scheduler::Call::schedule {
+                when: 2,
+                maybe_periodic: None,
+                priority: 0,
+                call: Box::new(submit_encrypted_call()),
+            }),
+            RuntimeCall::Scheduler(pallet_scheduler::Call::schedule_named {
+                id: [1; 32],
+                when: 2,
+                maybe_periodic: None,
+                priority: 0,
+                call: Box::new(submit_encrypted_call()),
+            }),
+            RuntimeCall::Scheduler(pallet_scheduler::Call::schedule_after {
+                after: 2,
+                maybe_periodic: None,
+                priority: 0,
+                call: Box::new(submit_encrypted_call()),
+            }),
+            RuntimeCall::Scheduler(pallet_scheduler::Call::schedule_named_after {
+                id: [2; 32],
+                after: 2,
+                maybe_periodic: None,
+                priority: 0,
+                call: Box::new(submit_encrypted_call()),
+            }),
+            RuntimeCall::Preimage(pallet_preimage::Call::note_preimage {
+                bytes: proxy_submit.encode(),
+            }),
+        ]
     }
 
     fn nested_utility_call(call: RuntimeCall, depth: u8) -> RuntimeCall {
@@ -343,6 +418,21 @@ mod tests {
     }
 
     #[test]
+    fn prepare_rejects_privileged_wrapped_shield_tx_before_substrate_mortality() {
+        new_test_ext().execute_with(|| {
+            for call in privileged_wrapped_submit_encrypted_calls() {
+                let info = call.get_dispatch_info();
+                let ext = CheckMortality::<Runtime>::from(Era::Immortal);
+
+                assert_eq!(
+                    ext.prepare((), &RuntimeOrigin::none(), &call, &info, 0),
+                    Err(InvalidTransaction::Stale.into())
+                );
+            }
+        });
+    }
+
+    #[test]
     fn shield_tx_with_era_too_long_rejected() {
         new_test_ext().execute_with(|| {
             // Period 16 > MAX_SHIELD_ERA_PERIOD (8)
@@ -360,6 +450,18 @@ mod tests {
                 validate_era_check(Era::Immortal, &utility_wrapped_submit_encrypted_call()),
                 Err(InvalidTransaction::Stale.into())
             );
+        });
+    }
+
+    #[test]
+    fn privileged_wrapped_shield_tx_with_long_era_rejected() {
+        new_test_ext().execute_with(|| {
+            for call in privileged_wrapped_submit_encrypted_calls() {
+                assert_eq!(
+                    validate_era_check(Era::mortal(16, 1), &call),
+                    Err(InvalidTransaction::Stale.into())
+                );
+            }
         });
     }
 
