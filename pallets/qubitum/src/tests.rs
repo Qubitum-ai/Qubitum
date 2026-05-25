@@ -17,8 +17,8 @@ use crate::{
     ValidatorCount, ValidatorIdentityCommitments, ValidatorIdentitySignatureBundles,
     ValidatorIdentitySignatureChallenges, ValidatorLockedStake, Validators, VerifyProof,
     mock::{
-        Balances, Qubitum, RuntimeEvent, RuntimeOrigin, System, Test, new_test_ext,
-        set_verification_outcome,
+        Balances, Qubitum, RuntimeEvent, RuntimeOrigin, ShieldedCallPayloads, System, Test,
+        new_test_ext, set_verification_outcome,
     },
 };
 use codec::Encode;
@@ -4929,6 +4929,196 @@ fn public_route_challenge_and_identity_calls_expose_commitments_until_shielded_c
         ] {
             assert!(contains_subsequence(&encoded_validator_identity, &exposed));
         }
+    });
+}
+
+#[test]
+fn shielded_payload_mode_rejects_public_dispatchables_before_state_changes() {
+    new_test_ext().execute_with(|| {
+        ShieldedCallPayloads::set(true);
+
+        let params = Qubitum::protocol_params();
+        assert!(params.shielded_call_payloads);
+        assert!(!params.readiness_blockers.shielded_call_payloads_missing);
+        assert!(!params.production_ready);
+
+        assert_noop!(
+            Qubitum::create_subnet(
+                RuntimeOrigin::signed(1),
+                SubnetDomain::Code,
+                ProofSystem::RiscZeroStark,
+            ),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::register_miner(
+                RuntimeOrigin::signed(2),
+                0,
+                commitment(10),
+                ProofSystem::RiscZeroStark,
+            ),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::activate_miner(RuntimeOrigin::signed(2), 0, MIN_MINER_BOND),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::register_validator(RuntimeOrigin::signed(3), 0, MIN_MINER_BOND),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::submit_proof(
+                RuntimeOrigin::signed(3),
+                valid_submission(88),
+                4,
+                2,
+                assignment_blinding(),
+                request_terms_witness(),
+            ),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::challenge_proof(
+                RuntimeOrigin::signed(5),
+                valid_submission(88),
+                4,
+                2,
+                assignment_blinding(),
+                request_terms_witness(),
+            ),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::slash_miner(RuntimeOrigin::root(), 0, 2, MIN_INVALID_PROOF_SLASH_BPS,),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::request_inference(
+                RuntimeOrigin::signed(4),
+                88,
+                InferenceRequestParams {
+                    subnet_id: 0,
+                    miner_id: 0,
+                    validator_id: 0,
+                    input_commitment: commitment(1),
+                    assignment_blinding: assignment_blinding(),
+                    timing_blinding: timing_blinding(),
+                    terms_blinding: terms_blinding(),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::request_inference_auto_route(
+                RuntimeOrigin::signed(4),
+                89,
+                AutoRouteInferenceRequestParams {
+                    subnet_id: 0,
+                    input_commitment: commitment(2),
+                    assignment_blinding: assignment_blinding(),
+                    timing_blinding: timing_blinding(),
+                    terms_blinding: terms_blinding(),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::request_inference_commitments(
+                RuntimeOrigin::signed(4),
+                90,
+                InferenceRequestCommitmentParams {
+                    subnet_id: 0,
+                    input_commitment: commitment(3),
+                    assignment_commitment: commitment(4),
+                    created_at: 1,
+                    timing_commitment: commitment(5),
+                    terms_commitment: commitment(6),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::cancel_inference(
+                RuntimeOrigin::signed(4),
+                88,
+                0,
+                0,
+                assignment_blinding(),
+                timing_witness(0),
+                request_terms_witness(),
+            ),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::withdraw_miner_bond(RuntimeOrigin::signed(2), 0),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::withdraw_validator_stake(RuntimeOrigin::signed(3), 0),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::slash_validator(RuntimeOrigin::root(), 0, 3, MIN_INVALID_PROOF_SLASH_BPS,),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::expire_inference(
+                RuntimeOrigin::signed(5),
+                88,
+                4,
+                0,
+                0,
+                assignment_blinding(),
+                timing_witness(0),
+                request_terms_witness(),
+            ),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::set_miner_identity_commitments(
+                RuntimeOrigin::signed(2),
+                0,
+                Some(commitment(120)),
+                Some(commitment(121)),
+                post_quantum_signature_bundle(),
+            ),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::set_validator_identity_commitments(
+                RuntimeOrigin::signed(3),
+                0,
+                Some(commitment(122)),
+                Some(commitment(123)),
+                post_quantum_signature_bundle(),
+            ),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+
+        assert_eq!(SubnetCount::<Test>::get(), 0);
+        assert_eq!(MinerCount::<Test>::get(), 0);
+        assert_eq!(ValidatorCount::<Test>::get(), 0);
+        assert_eq!(RequestCount::<Test>::get(), 0);
+        assert_eq!(Balances::free_balance(1), 1_000_000_000_000_000);
+        assert!(System::events().is_empty());
     });
 }
 

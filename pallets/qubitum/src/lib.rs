@@ -1343,6 +1343,8 @@ pub mod pallet {
         MissingCapitalRecord,
         /// Proof verifier reported an internal error.
         VerifierError,
+        /// Public Qubitum dispatchables are disabled when shielded payload mode is enabled.
+        PublicCallPayloadDisallowed,
     }
 
     #[allow(clippy::large_enum_variant)]
@@ -1357,6 +1359,7 @@ pub mod pallet {
             domain: SubnetDomain,
             proof_system: ProofSystem,
         ) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             let owner = ensure_signed(origin)?;
             Self::ensure_supported_proof_system(proof_system)?;
             Self::burn_free(&owner, T::SubnetCreationBurn::get())?;
@@ -1386,6 +1389,7 @@ pub mod pallet {
             model_commitment: Commitment,
             proof_system: ProofSystem,
         ) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             let operator = ensure_signed(origin)?;
             ensure_commitment::<T>(model_commitment)?;
             Self::ensure_supported_proof_system(proof_system)?;
@@ -1423,6 +1427,7 @@ pub mod pallet {
             miner_id: MinerId,
             bond: BalanceOf<T>,
         ) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             let operator = ensure_signed(origin)?;
             Miners::<T>::try_mutate(miner_id, |maybe_miner| -> DispatchResult {
                 let miner = maybe_miner.as_mut().ok_or(Error::<T>::UnknownMiner)?;
@@ -1462,6 +1467,7 @@ pub mod pallet {
             subnet_id: SubnetId,
             stake: BalanceOf<T>,
         ) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             let operator = ensure_signed(origin)?;
             ensure!(
                 Subnets::<T>::contains_key(subnet_id),
@@ -1507,6 +1513,7 @@ pub mod pallet {
             assignment_blinding: Commitment,
             terms_witness: InferenceRequestTermsWitness<BalanceOf<T>>,
         ) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             let validator_operator = ensure_signed(origin)?;
             let policy = Self::validate_submission(
                 &submission,
@@ -1588,6 +1595,7 @@ pub mod pallet {
             assignment_blinding: Commitment,
             terms_witness: InferenceRequestTermsWitness<BalanceOf<T>>,
         ) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             ensure_signed(origin)?;
             let policy = Self::validate_challenge_submission(
                 &submission,
@@ -1631,6 +1639,7 @@ pub mod pallet {
             operator: T::AccountId,
             slash_bps: u16,
         ) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             ensure_root(origin)?;
             ensure!(
                 slash_bps >= T::MinInvalidProofSlashBps::get()
@@ -1656,6 +1665,7 @@ pub mod pallet {
             request_id: RequestId,
             params: InferenceRequestParams<BalanceOf<T>>,
         ) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             let user = ensure_signed(origin)?;
             ensure!(
                 params.miner_id == 0 && params.validator_id == 0,
@@ -1699,6 +1709,7 @@ pub mod pallet {
             request_id: RequestId,
             params: AutoRouteInferenceRequestParams<BalanceOf<T>>,
         ) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             let user = ensure_signed(origin)?;
             Self::ensure_inference_request_openable(
                 request_id,
@@ -1738,6 +1749,7 @@ pub mod pallet {
             request_id: RequestId,
             params: InferenceRequestCommitmentParams<BalanceOf<T>>,
         ) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             let _user = ensure_signed(origin)?;
             let _ = (request_id, params);
             Err(Error::<T>::UnsupportedCommittedRequestPayload.into())
@@ -1756,6 +1768,7 @@ pub mod pallet {
             timing_witness: InferenceRequestTimingWitness,
             terms_witness: InferenceRequestTermsWitness<BalanceOf<T>>,
         ) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             let user = ensure_signed(origin)?;
             let payment = InferenceRequests::<T>::try_mutate(
                 request_id,
@@ -1808,6 +1821,7 @@ pub mod pallet {
         #[pallet::call_index(8)]
         #[pallet::weight(T::WeightInfo::deactivate_miner())]
         pub fn deactivate_miner(origin: OriginFor<T>, miner_id: MinerId) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             let operator = ensure_signed(origin)?;
             let exit_available_at = Self::current_block()
                 .checked_add(T::MinerExitCooldownBlocks::get())
@@ -1843,6 +1857,7 @@ pub mod pallet {
         #[pallet::weight(T::WeightInfo::withdraw_miner_bond())]
         #[frame_support::transactional]
         pub fn withdraw_miner_bond(origin: OriginFor<T>, miner_id: MinerId) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             let operator = ensure_signed(origin)?;
             Miners::<T>::try_mutate(miner_id, |maybe_miner| -> DispatchResult {
                 let miner = maybe_miner.as_mut().ok_or(Error::<T>::UnknownMiner)?;
@@ -1882,6 +1897,7 @@ pub mod pallet {
             origin: OriginFor<T>,
             validator_id: ValidatorId,
         ) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             let operator = ensure_signed(origin)?;
             let exit_available_at = Self::current_block()
                 .checked_add(T::ValidatorExitCooldownBlocks::get())
@@ -1925,6 +1941,7 @@ pub mod pallet {
             origin: OriginFor<T>,
             validator_id: ValidatorId,
         ) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             let operator = ensure_signed(origin)?;
             Validators::<T>::try_mutate(validator_id, |maybe_validator| -> DispatchResult {
                 let validator = maybe_validator
@@ -1972,6 +1989,7 @@ pub mod pallet {
             operator: T::AccountId,
             slash_bps: u16,
         ) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             ensure_root(origin)?;
             ensure!(
                 slash_bps >= T::MinInvalidProofSlashBps::get()
@@ -2003,6 +2021,7 @@ pub mod pallet {
             timing_witness: InferenceRequestTimingWitness,
             terms_witness: InferenceRequestTermsWitness<BalanceOf<T>>,
         ) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             let _keeper = ensure_signed(origin)?;
             let payment = InferenceRequests::<T>::try_mutate(
                 request_id,
@@ -2061,6 +2080,7 @@ pub mod pallet {
             endpoint_commitment: Option<Commitment>,
             signature_bundle: SignatureBundle,
         ) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             let operator = ensure_signed(origin)?;
             let miner = Miners::<T>::get(miner_id).ok_or(Error::<T>::UnknownMiner)?;
             Self::ensure_miner_operator(&miner, &operator)?;
@@ -2122,6 +2142,7 @@ pub mod pallet {
             endpoint_commitment: Option<Commitment>,
             signature_bundle: SignatureBundle,
         ) -> DispatchResult {
+            Self::ensure_public_call_payload_allowed()?;
             let operator = ensure_signed(origin)?;
             let validator =
                 Validators::<T>::get(validator_id).ok_or(Error::<T>::UnknownValidator)?;
@@ -2757,6 +2778,14 @@ pub mod pallet {
 
         fn current_block() -> BlockNumber {
             frame_system::Pallet::<T>::block_number().saturated_into()
+        }
+
+        fn ensure_public_call_payload_allowed() -> DispatchResult {
+            ensure!(
+                !T::ShieldedCallPayloads::get(),
+                Error::<T>::PublicCallPayloadDisallowed
+            );
+            Ok(())
         }
 
         pub(crate) fn account_commitment(who: &T::AccountId) -> Commitment {
