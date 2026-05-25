@@ -182,13 +182,22 @@ where
             });
         }
 
-        let mut proxy_type: Option<ProxyType> = None;
-        if let Some(p) = force_proxy_type.first() {
-            let proxy_type_ = ProxyType::try_from(*p).map_err(|_| PrecompileFailure::Error {
-                exit_status: ExitError::Other("Invalid proxy type".into()),
-            })?;
-            proxy_type = Some(proxy_type_);
-        };
+        let proxy_type =
+            match force_proxy_type.as_slice() {
+                [] => None,
+                [proxy_type] => Some(ProxyType::try_from(*proxy_type).map_err(|_| {
+                    PrecompileFailure::Error {
+                        exit_status: ExitError::Other("Invalid proxy type".into()),
+                    }
+                })?),
+                _ => {
+                    return Err(PrecompileFailure::Error {
+                        exit_status: ExitError::Other(
+                            "Proxy type must be empty or exactly one byte".into(),
+                        ),
+                    });
+                }
+            };
 
         let call = pallet_proxy::Call::<R>::proxy {
             real: <<R as frame_system::Config>::Lookup as StaticLookup>::Source::from(

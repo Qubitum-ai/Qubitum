@@ -309,6 +309,39 @@ fn proxy_precompile_rejects_qubitum_call_prefix_with_trailing_bytes() {
 }
 
 #[test]
+fn proxy_precompile_rejects_proxy_type_with_trailing_bytes() {
+    new_test_ext().execute_with(|| {
+        let precompiles = Precompiles::<Runtime>::new();
+        let precompile_addr = addr_from_index(ProxyPrecompile::<Runtime>::INDEX);
+        let call = RuntimeCall::System(frame_system::Call::remark { remark: vec![7] }).encode();
+
+        let result = execute_precompile(
+            &precompiles,
+            precompile_addr,
+            addr_from_index(1),
+            encode_with_selector(
+                selector_u32("proxyCall(bytes32,uint8[],uint8[])"),
+                (H256::repeat_byte(2), vec![0u8, 0u8], call),
+            ),
+            U256::zero(),
+        )
+        .expect("expected proxy call to be routed to the proxy precompile");
+
+        let failure = result.expect_err("expected malformed proxy type rejection");
+        let message = match failure {
+            PrecompileFailure::Error {
+                exit_status: ExitError::Other(message),
+            } => message,
+            other => panic!("unexpected precompile failure: {other:?}"),
+        };
+        assert!(
+            message.contains("Proxy type must be empty or exactly one byte"),
+            "unexpected precompile failure: {message}"
+        );
+    });
+}
+
+#[test]
 fn contract_call_filter_rejects_proxy_wrapped_qubitum() {
     let real: AccountId = [2u8; 32].into();
     let private_proxy_call = RuntimeCall::Proxy(pallet_subtensor_proxy::Call::proxy {
