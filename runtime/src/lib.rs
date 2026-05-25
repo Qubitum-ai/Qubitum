@@ -1660,6 +1660,9 @@ impl Contains<RuntimeCall> for ContractCallFilter {
                 matches!(inner, pallet_proxy::Call::proxy { .. })
                     && qubitum_privacy::CheckQubitumShielding::private_runtime_call_violation(call)
                         .is_none()
+                    && !check_mortality::ContainsShieldSubmitEncrypted::contains_shield_submit_encrypted(
+                        call,
+                    )
             }
             _ => false,
         }
@@ -1669,6 +1672,9 @@ impl Contains<RuntimeCall> for ContractCallFilter {
 impl ProxyRuntimeCallFilter for RuntimeCall {
     fn contains_private_runtime_call(&self) -> bool {
         qubitum_privacy::CheckQubitumShielding::private_runtime_call_violation(self).is_some()
+            || check_mortality::ContainsShieldSubmitEncrypted::contains_shield_submit_encrypted(
+                self,
+            )
     }
 }
 

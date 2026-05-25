@@ -94,6 +94,29 @@ fn stale_shield_submit_call() -> RuntimeCall {
     })
 }
 
+fn install_valid_shield_key() -> [u8; 16] {
+    let key: stp_shield::ShieldEncKey =
+        BoundedVec::truncate_from(vec![0x42; stp_shield::MLKEM768_ENC_KEY_LEN]);
+    let key_hash = sp_io::hashing::twox_128(&key[..]);
+    pallet_shield::PendingKey::<Runtime>::put(key);
+    key_hash
+}
+
+fn valid_shield_submit_call() -> RuntimeCall {
+    let mut ciphertext = Vec::new();
+    ciphertext.extend_from_slice(&install_valid_shield_key());
+    ciphertext.extend_from_slice(&(1088u16).to_le_bytes());
+    ciphertext.extend_from_slice(&[0xCC; 1088]);
+    ciphertext.extend_from_slice(&[0xDD; 24]);
+    ciphertext.extend_from_slice(&[0xEE; 16]);
+
+    RuntimeCall::MevShield(pallet_shield::Call::submit_encrypted {
+        ciphertext: BoundedVec::<u8, pallet_shield::MaxEncryptedCallSize>::truncate_from(
+            ciphertext,
+        ),
+    })
+}
+
 #[test]
 fn precompile_registry_addresses_are_unique() {
     let addresses = Precompiles::<Runtime>::used_addresses();
@@ -453,6 +476,42 @@ fn proxy_precompile_rejects_invalid_shield_submit_call_bytes() {
 }
 
 #[test]
+fn proxy_precompile_rejects_valid_shield_submit_call_bytes() {
+    new_test_ext().execute_with(|| {
+        let precompiles = Precompiles::<Runtime>::new();
+        let precompile_addr = addr_from_index(ProxyPrecompile::<Runtime>::INDEX);
+
+        let result = execute_precompile(
+            &precompiles,
+            precompile_addr,
+            addr_from_index(1),
+            encode_with_selector(
+                selector_u32("proxyCall(bytes32,uint8[],uint8[])"),
+                (
+                    H256::repeat_byte(2),
+                    Vec::<u8>::new(),
+                    valid_shield_submit_call().encode(),
+                ),
+            ),
+            U256::zero(),
+        )
+        .expect("expected proxy call to be routed to the proxy precompile");
+
+        let failure = result.expect_err("expected shield-call rejection");
+        let message = match failure {
+            PrecompileFailure::Error {
+                exit_status: ExitError::Other(message),
+            } => message,
+            other => panic!("unexpected precompile failure: {other:?}"),
+        };
+        assert!(
+            message.contains("Proxy precompile cannot dispatch private runtime call"),
+            "unexpected precompile failure: {message}"
+        );
+    });
+}
+
+#[test]
 fn contract_call_filter_rejects_proxy_wrapped_qubitum() {
     let real: AccountId = [2u8; 32].into();
     let private_proxy_call = RuntimeCall::Proxy(pallet_subtensor_proxy::Call::proxy {
@@ -509,5 +568,18 @@ fn contract_call_filter_rejects_proxy_wrapped_invalid_shield_submit_calls() {
             });
             assert!(!ContractCallFilter::contains(&proxy_call));
         }
+    });
+}
+
+#[test]
+fn contract_call_filter_rejects_proxy_wrapped_valid_shield_submit_calls() {
+    new_test_ext().execute_with(|| {
+        let proxy_call = RuntimeCall::Proxy(pallet_subtensor_proxy::Call::proxy {
+            real: AccountId::from([2u8; 32]).into(),
+            force_proxy_type: None,
+            call: Box::new(valid_shield_submit_call()),
+        });
+
+        assert!(!ContractCallFilter::contains(&proxy_call));
     });
 }
