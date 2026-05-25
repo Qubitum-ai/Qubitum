@@ -2978,6 +2978,45 @@ fn challenge_bound_signature_commitments_are_shape_only_until_crypto_verificatio
 }
 
 #[test]
+fn identity_signature_bundle_rejects_reused_commitment_material() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        let existing_public_identity = Qubitum::public_miner_identity(0);
+        let existing_bundle = MinerIdentitySignatureBundles::<Test>::get(0);
+        let existing_challenge = MinerIdentitySignatureChallenges::<Test>::get(0);
+
+        let ambiguous_bundle = SignatureBundle {
+            classical: None,
+            post_quantum: Some(SignatureCommitment {
+                algorithm: SignatureAlgorithm::Dilithium3,
+                public_key_commitment: commitment(180),
+                signature_commitment: commitment(180),
+            }),
+        };
+
+        assert_noop!(
+            Qubitum::set_miner_identity_commitments(
+                RuntimeOrigin::signed(2),
+                0,
+                Some(commitment(68)),
+                Some(commitment(69)),
+                ambiguous_bundle,
+            ),
+            Error::<Test>::InvalidSignatureBundle
+        );
+        assert_eq!(Qubitum::public_miner_identity(0), existing_public_identity);
+        assert_eq!(
+            MinerIdentitySignatureBundles::<Test>::get(0),
+            existing_bundle
+        );
+        assert_eq!(
+            MinerIdentitySignatureChallenges::<Test>::get(0),
+            existing_challenge
+        );
+    });
+}
+
+#[test]
 fn routing_and_proof_reject_unbound_identity_signature_bundles() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();

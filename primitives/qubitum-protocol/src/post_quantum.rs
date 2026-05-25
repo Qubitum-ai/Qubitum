@@ -118,6 +118,7 @@ impl SignaturePolicy {
             }
         }
 
+        ensure_bundle_commitments_are_domain_separated(bundle)?;
         Ok(bundle)
     }
 }
@@ -134,7 +135,7 @@ fn require_post_quantum(signature: Option<SignatureCommitment>) -> Result<(), Pr
 
 fn require_dilithium(signature: Option<SignatureCommitment>) -> Result<(), ProtocolError> {
     let signature = signature.ok_or(ProtocolError::MissingPostQuantumSignature)?;
-    ensure_nonzero_commitments(signature)?;
+    ensure_well_formed_commitments(signature)?;
     if signature.algorithm.is_dilithium() {
         Ok(())
     } else {
@@ -160,7 +161,7 @@ fn validate_optional_post_quantum(
 }
 
 fn validate_classical(signature: SignatureCommitment) -> Result<(), ProtocolError> {
-    ensure_nonzero_commitments(signature)?;
+    ensure_well_formed_commitments(signature)?;
     if signature.algorithm.is_classical() {
         Ok(())
     } else {
@@ -169,7 +170,7 @@ fn validate_classical(signature: SignatureCommitment) -> Result<(), ProtocolErro
 }
 
 fn validate_post_quantum(signature: SignatureCommitment) -> Result<(), ProtocolError> {
-    ensure_nonzero_commitments(signature)?;
+    ensure_well_formed_commitments(signature)?;
     if signature.algorithm.is_post_quantum() {
         Ok(())
     } else {
@@ -177,12 +178,36 @@ fn validate_post_quantum(signature: SignatureCommitment) -> Result<(), ProtocolE
     }
 }
 
-fn ensure_nonzero_commitments(signature: SignatureCommitment) -> Result<(), ProtocolError> {
+fn ensure_well_formed_commitments(signature: SignatureCommitment) -> Result<(), ProtocolError> {
     if signature.public_key_commitment == [0; 32] || signature.signature_commitment == [0; 32] {
         Err(ProtocolError::MissingCommitment)
+    } else if signature.public_key_commitment == signature.signature_commitment {
+        Err(ProtocolError::AmbiguousSignatureCommitment)
     } else {
         Ok(())
     }
+}
+
+fn ensure_bundle_commitments_are_domain_separated(
+    bundle: SignatureBundle,
+) -> Result<(), ProtocolError> {
+    if let (Some(classical), Some(post_quantum)) = (bundle.classical, bundle.post_quantum) {
+        let classical_commitments = [
+            classical.public_key_commitment,
+            classical.signature_commitment,
+        ];
+        let post_quantum_commitments = [
+            post_quantum.public_key_commitment,
+            post_quantum.signature_commitment,
+        ];
+        if classical_commitments
+            .iter()
+            .any(|classical_commitment| post_quantum_commitments.contains(classical_commitment))
+        {
+            return Err(ProtocolError::AmbiguousSignatureCommitment);
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -355,6 +380,54 @@ mod tests {
         assert_eq!(
             SignaturePolicy::new(SignatureMode::FullPostQuantum).validate(zero_signature),
             Err(ProtocolError::MissingCommitment)
+        );
+    }
+
+    #[test]
+    fn signature_policy_rejects_reused_key_and_signature_commitment() {
+        let reused_commitment = SignatureBundle {
+            classical: None,
+            post_quantum: Some(SignatureCommitment {
+                algorithm: SignatureAlgorithm::Dilithium3,
+                public_key_commitment: commitment(3),
+                signature_commitment: commitment(3),
+            }),
+        };
+
+        assert_eq!(
+            SignaturePolicy::new(SignatureMode::FullPostQuantum).validate(reused_commitment),
+            Err(ProtocolError::AmbiguousSignatureCommitment)
+        );
+    }
+
+    #[test]
+    fn hybrid_policy_rejects_cross_slot_commitment_reuse() {
+        let reused_public_key_commitment = SignatureBundle {
+            classical: Some(sig(SignatureAlgorithm::Ecdsa, 1)),
+            post_quantum: Some(SignatureCommitment {
+                algorithm: SignatureAlgorithm::Dilithium3,
+                public_key_commitment: commitment(1),
+                signature_commitment: commitment(4),
+            }),
+        };
+        assert_eq!(
+            SignaturePolicy::new(SignatureMode::HybridDilithium)
+                .validate(reused_public_key_commitment),
+            Err(ProtocolError::AmbiguousSignatureCommitment)
+        );
+
+        let reused_signature_commitment = SignatureBundle {
+            classical: Some(sig(SignatureAlgorithm::Ecdsa, 1)),
+            post_quantum: Some(SignatureCommitment {
+                algorithm: SignatureAlgorithm::Dilithium3,
+                public_key_commitment: commitment(4),
+                signature_commitment: commitment(2),
+            }),
+        };
+        assert_eq!(
+            SignaturePolicy::new(SignatureMode::HybridDilithium)
+                .validate(reused_signature_commitment),
+            Err(ProtocolError::AmbiguousSignatureCommitment)
         );
     }
 
