@@ -3891,6 +3891,15 @@ fn shielded_qubitum_origin_unblocks_payload_gate_after_queue_filter() {
     ext.execute_with(|| {
         System::set_block_number(1);
         let account = AccountId32::new([9; 32]);
+        let public_call = RuntimeCall::System(frame_system::Call::remark { remark: vec![0x51] });
+        let public_origin =
+            <ShieldRuntimeQueueOrigin as pallet_shield::QueueOrigin<_, _, _>>::origin_for(
+                account.clone(),
+                &public_call,
+            );
+
+        frame_support::assert_ok!(public_call.dispatch(public_origin));
+
         let create_subnet = || {
             RuntimeCall::Qubitum(pallet_qubitum::Call::create_subnet {
                 domain: qubitum_protocol::SubnetDomain::Code,
@@ -3913,7 +3922,7 @@ fn shielded_qubitum_origin_unblocks_payload_gate_after_queue_filter() {
         frame_support::assert_ok!(Balances::force_set_balance(
             RuntimeOrigin::root(),
             sp_runtime::MultiAddress::Id(account.clone()),
-            QubitumSubnetCreationBurn::get(),
+            QubitumSubnetCreationBurn::get() + QubitumSubnetCreationBurn::get(),
         ));
         let shielded_call = create_subnet();
         let shielded_origin =
@@ -3923,6 +3932,19 @@ fn shielded_qubitum_origin_unblocks_payload_gate_after_queue_filter() {
             );
         frame_support::assert_ok!(shielded_call.dispatch(shielded_origin));
         assert_eq!(pallet_qubitum::SubnetCount::<Runtime>::get(), 1);
+
+        let account = AccountId32::new([9; 32]);
+        let wrapped_private_call = RuntimeCall::Utility(pallet_utility::Call::batch {
+            calls: vec![create_subnet()],
+        });
+        let wrapped_origin =
+            <ShieldRuntimeQueueOrigin as pallet_shield::QueueOrigin<_, _, _>>::origin_for(
+                account,
+                &wrapped_private_call,
+            );
+
+        frame_support::assert_ok!(wrapped_private_call.dispatch(wrapped_origin));
+        assert_eq!(pallet_qubitum::SubnetCount::<Runtime>::get(), 2);
 
         let params = pallet_qubitum::Pallet::<Runtime>::protocol_params();
         assert!(params.shielded_call_payloads);
