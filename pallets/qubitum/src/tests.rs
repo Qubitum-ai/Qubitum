@@ -5288,6 +5288,230 @@ fn shielded_payload_mode_rejects_public_dispatchables_before_state_changes() {
 }
 
 #[test]
+fn shielded_payload_mode_rejects_stateful_public_dispatchables_without_mutation() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(88);
+
+        let existing_subnet = Subnets::<Test>::get(0);
+        let existing_miner = Miners::<Test>::get(0);
+        let existing_validator = Validators::<Test>::get(0);
+        let existing_request = InferenceRequests::<Test>::get(88);
+        let existing_miner_identity = MinerIdentityCommitments::<Test>::get(0);
+        let existing_validator_identity = ValidatorIdentityCommitments::<Test>::get(0);
+        let existing_miner_signature = MinerIdentitySignatureBundles::<Test>::get(0);
+        let existing_validator_signature = ValidatorIdentitySignatureBundles::<Test>::get(0);
+        let existing_miner_challenge = MinerIdentitySignatureChallenges::<Test>::get(0);
+        let existing_validator_challenge = ValidatorIdentitySignatureChallenges::<Test>::get(0);
+        let existing_active_miners = ActiveMinersBySubnet::<Test>::get(0);
+        let existing_active_validators = ActiveValidatorsBySubnet::<Test>::get(0);
+        let existing_request_count = RequestCount::<Test>::get();
+        let existing_pending_miner_requests = PendingMinerRequests::<Test>::get(0);
+        let existing_pending_validator_requests = PendingValidatorRequests::<Test>::get(0);
+        let existing_pending_count = PendingInferenceRequestCount::<Test>::get();
+        let existing_settled_count = SettledInferenceRequestCount::<Test>::get();
+        let existing_rejected_count = RejectedInferenceRequestCount::<Test>::get();
+        let existing_refunded = TotalInferenceRefunded::<Test>::get();
+        let existing_escrowed = TotalInferenceEscrowed::<Test>::get();
+        let existing_miner_payouts = TotalMinerPayouts::<Test>::get();
+        let existing_validator_fees = TotalValidatorFees::<Test>::get();
+        let existing_treasury_fees = TotalTreasuryFees::<Test>::get();
+        let existing_total_burned = TotalBurned::<Test>::get();
+        let existing_user_hold =
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4);
+        let existing_miner_hold = Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2);
+        let existing_validator_hold =
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3);
+        let existing_balances = [
+            Balances::free_balance(1),
+            Balances::free_balance(2),
+            Balances::free_balance(3),
+            Balances::free_balance(4),
+            Balances::free_balance(99),
+        ];
+        let existing_events = System::events().len();
+
+        ShieldedCallPayloads::set(true);
+
+        assert_noop!(
+            Qubitum::request_inference_auto_route(
+                RuntimeOrigin::signed(4),
+                89,
+                AutoRouteInferenceRequestParams {
+                    subnet_id: 0,
+                    input_commitment: commitment(2),
+                    assignment_blinding: assignment_blinding(),
+                    timing_blinding: timing_blinding(),
+                    terms_blinding: terms_blinding(),
+                    payment: 1_000,
+                    validator_fee_bps: 250,
+                    treasury_fee_bps: 50,
+                },
+            ),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            submit_proof(RuntimeOrigin::signed(3), valid_submission(88)),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            challenge_proof(RuntimeOrigin::signed(5), valid_submission(88)),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::cancel_inference(
+                RuntimeOrigin::signed(4),
+                88,
+                0,
+                0,
+                assignment_blinding(),
+                timing_witness(0),
+                request_terms_witness(),
+            ),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::expire_inference(
+                RuntimeOrigin::signed(5),
+                88,
+                4,
+                0,
+                0,
+                assignment_blinding(),
+                timing_witness(0),
+                request_terms_witness(),
+            ),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::deactivate_validator(RuntimeOrigin::signed(3), 0),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::slash_miner(RuntimeOrigin::root(), 0, 2, MIN_INVALID_PROOF_SLASH_BPS),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::slash_validator(RuntimeOrigin::root(), 0, 3, MIN_INVALID_PROOF_SLASH_BPS),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::set_miner_identity_commitments(
+                RuntimeOrigin::signed(2),
+                0,
+                Some(commitment(130)),
+                Some(commitment(131)),
+                miner_identity_signature_bundle(0, Some(commitment(130)), Some(commitment(131))),
+            ),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+        assert_noop!(
+            Qubitum::set_validator_identity_commitments(
+                RuntimeOrigin::signed(3),
+                0,
+                Some(commitment(132)),
+                Some(commitment(133)),
+                validator_identity_signature_bundle(
+                    0,
+                    Some(commitment(132)),
+                    Some(commitment(133))
+                ),
+            ),
+            Error::<Test>::PublicCallPayloadDisallowed
+        );
+
+        assert_eq!(Subnets::<Test>::get(0), existing_subnet);
+        assert_eq!(Miners::<Test>::get(0), existing_miner);
+        assert_eq!(Validators::<Test>::get(0), existing_validator);
+        assert_eq!(InferenceRequests::<Test>::get(88), existing_request);
+        assert!(ProofRecords::<Test>::get(88).is_none());
+        assert_eq!(
+            MinerIdentityCommitments::<Test>::get(0),
+            existing_miner_identity
+        );
+        assert_eq!(
+            ValidatorIdentityCommitments::<Test>::get(0),
+            existing_validator_identity
+        );
+        assert_eq!(
+            MinerIdentitySignatureBundles::<Test>::get(0),
+            existing_miner_signature
+        );
+        assert_eq!(
+            ValidatorIdentitySignatureBundles::<Test>::get(0),
+            existing_validator_signature
+        );
+        assert_eq!(
+            MinerIdentitySignatureChallenges::<Test>::get(0),
+            existing_miner_challenge
+        );
+        assert_eq!(
+            ValidatorIdentitySignatureChallenges::<Test>::get(0),
+            existing_validator_challenge
+        );
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0), existing_active_miners);
+        assert_eq!(
+            ActiveValidatorsBySubnet::<Test>::get(0),
+            existing_active_validators
+        );
+        assert_eq!(RequestCount::<Test>::get(), existing_request_count);
+        assert_eq!(
+            PendingMinerRequests::<Test>::get(0),
+            existing_pending_miner_requests
+        );
+        assert_eq!(
+            PendingValidatorRequests::<Test>::get(0),
+            existing_pending_validator_requests
+        );
+        assert_eq!(
+            PendingInferenceRequestCount::<Test>::get(),
+            existing_pending_count
+        );
+        assert_eq!(
+            SettledInferenceRequestCount::<Test>::get(),
+            existing_settled_count
+        );
+        assert_eq!(
+            RejectedInferenceRequestCount::<Test>::get(),
+            existing_rejected_count
+        );
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), existing_refunded);
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), existing_escrowed);
+        assert_eq!(TotalMinerPayouts::<Test>::get(), existing_miner_payouts);
+        assert_eq!(TotalValidatorFees::<Test>::get(), existing_validator_fees);
+        assert_eq!(TotalTreasuryFees::<Test>::get(), existing_treasury_fees);
+        assert_eq!(TotalBurned::<Test>::get(), existing_total_burned);
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            existing_user_hold
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
+            existing_miner_hold
+        );
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
+            existing_validator_hold
+        );
+        assert_eq!(
+            [
+                Balances::free_balance(1),
+                Balances::free_balance(2),
+                Balances::free_balance(3),
+                Balances::free_balance(4),
+                Balances::free_balance(99),
+            ],
+            existing_balances
+        );
+        assert_eq!(System::events().len(), existing_events);
+    });
+}
+
+#[test]
 fn request_commitment_call_rejects_unverifiable_committed_payloads_without_state_changes() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
