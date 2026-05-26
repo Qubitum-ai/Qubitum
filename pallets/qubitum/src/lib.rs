@@ -16,6 +16,7 @@ use frame_support::{
     dispatch::DispatchResult,
     ensure,
     pallet_prelude::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub},
+    storage::unhashed,
     traits::{
         EnsureOrigin,
         tokens::{
@@ -30,7 +31,7 @@ use qubitum_protocol::{
     SignaturePolicy, SubnetDomain, SubnetId, ValidatorId, VerificationOutcome,
 };
 use scale_info::TypeInfo;
-use sp_io::hashing::blake2_256;
+use sp_io::hashing::{blake2_256, twox_128};
 use sp_runtime::{DispatchError, traits::SaturatedConversion};
 
 type BalanceOf<T> =
@@ -198,7 +199,7 @@ pub mod pallet {
     const LEGACY_ASSIGNMENT_BLINDING: Commitment = [0; 32];
     const LEGACY_TIMING_BLINDING: Commitment = [0; 32];
     const LEGACY_TERMS_BLINDING: Commitment = [0; 32];
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(18);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(19);
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -1092,7 +1093,7 @@ pub mod pallet {
     #[pallet::storage]
     pub type ActiveMinersBySubnet<T: Config> = StorageMap<
         _,
-        Twox64Concat,
+        Blake2_128,
         SubnetId,
         BoundedVec<MinerId, T::MaxActiveMinersPerSubnet>,
         ValueQuery,
@@ -1101,7 +1102,7 @@ pub mod pallet {
     #[pallet::storage]
     pub type ActiveValidatorsBySubnet<T: Config> = StorageMap<
         _,
-        Twox64Concat,
+        Blake2_128,
         SubnetId,
         BoundedVec<ValidatorId, T::MaxActiveValidatorsPerSubnet>,
         ValueQuery,
@@ -1181,6 +1182,7 @@ pub mod pallet {
                 .saturating_add(Self::migrate_request_timing_commitments(on_chain))
                 .saturating_add(Self::migrate_request_terms_commitments(on_chain))
                 .saturating_add(Self::migrate_identity_signature_challenges(on_chain))
+                .saturating_add(Self::migrate_active_routing_index_keys(on_chain))
                 .saturating_add(Self::rebuild_active_routing_indexes())
                 .saturating_add(Self::migrate_participant_capital_records(on_chain))
                 .saturating_add(Self::rebuild_request_status_counts())
@@ -3831,6 +3833,32 @@ pub mod pallet {
             });
         }
 
+        fn migrate_active_routing_index_keys(on_chain: StorageVersion) -> Weight {
+            if on_chain >= StorageVersion::new(19) {
+                return Weight::zero();
+            }
+
+            Self::clear_active_routing_index_storage_prefixes()
+        }
+
+        fn clear_active_routing_index_storage_prefixes() -> Weight {
+            let pallet_prefix = twox_128(b"Qubitum");
+            let mut removed = 0_u64;
+
+            for name in [
+                b"ActiveMinersBySubnet".as_slice(),
+                b"ActiveValidatorsBySubnet".as_slice(),
+            ] {
+                let mut prefix = sp_std::vec::Vec::new();
+                prefix.extend_from_slice(&pallet_prefix);
+                prefix.extend_from_slice(&twox_128(name));
+                let result = unhashed::clear_prefix(&prefix, Some(u32::MAX), None);
+                removed = removed.saturating_add(result.backend as u64);
+            }
+
+            T::DbWeight::get().writes(removed)
+        }
+
         fn rebuild_active_routing_indexes() -> Weight {
             let mut miner_reads = 0_u64;
             let mut miner_writes = 0_u64;
@@ -3840,12 +3868,12 @@ pub mod pallet {
             let mut overflow_validators = sp_std::vec::Vec::new();
             let mut migration_failures = 0_u32;
 
-            for (subnet_id, _) in ActiveMinersBySubnet::<T>::iter() {
+            for (subnet_id, _) in Subnets::<T>::iter() {
                 ActiveMinersBySubnet::<T>::remove(subnet_id);
                 miner_reads = miner_reads.saturating_add(1);
                 miner_writes = miner_writes.saturating_add(1);
             }
-            for (subnet_id, _) in ActiveValidatorsBySubnet::<T>::iter() {
+            for (subnet_id, _) in Subnets::<T>::iter() {
                 ActiveValidatorsBySubnet::<T>::remove(subnet_id);
                 validator_reads = validator_reads.saturating_add(1);
                 validator_writes = validator_writes.saturating_add(1);
@@ -4628,7 +4656,8 @@ pub mod pallet {
 
         #[cfg(feature = "try-runtime")]
         fn ensure_active_routing_indexes_match() -> Result<(), sp_runtime::TryRuntimeError> {
-            for (subnet_id, miner_ids) in ActiveMinersBySubnet::<T>::iter() {
+            for (subnet_id, _) in Subnets::<T>::iter() {
+                let miner_ids = ActiveMinersBySubnet::<T>::get(subnet_id);
                 for miner_id in miner_ids {
                     let miner = Miners::<T>::get(miner_id)
                         .ok_or("Qubitum active miner index references missing miner")?;
@@ -4661,7 +4690,8 @@ pub mod pallet {
                 }
             }
 
-            for (subnet_id, validator_ids) in ActiveValidatorsBySubnet::<T>::iter() {
+            for (subnet_id, _) in Subnets::<T>::iter() {
+                let validator_ids = ActiveValidatorsBySubnet::<T>::get(subnet_id);
                 for validator_id in validator_ids {
                     let validator = Validators::<T>::get(validator_id)
                         .ok_or("Qubitum active validator index references missing validator")?;

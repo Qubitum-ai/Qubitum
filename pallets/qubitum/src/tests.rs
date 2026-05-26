@@ -24,7 +24,8 @@ use crate::{
 };
 use codec::Encode;
 use frame_support::{
-    assert_noop, assert_ok,
+    StorageHasher, Twox64Concat, assert_noop, assert_ok,
+    storage::unhashed,
     traits::{Hooks, StorageVersion, fungible::InspectHold},
 };
 use qubitum_protocol::{
@@ -34,6 +35,7 @@ use qubitum_protocol::{
     SignatureCommitment, SignatureMode, SubnetDomain, TARGET_PROOF_SIZE_MAX_BYTES,
     TARGET_PROOF_SIZE_MIN_BYTES, TARGET_VERIFICATION_MS, ValidatorId, VerificationOutcome,
 };
+use sp_io::hashing::twox_128;
 
 fn commitment(seed: u8) -> [u8; 32] {
     [seed; 32]
@@ -41,6 +43,15 @@ fn commitment(seed: u8) -> [u8; 32] {
 
 fn subnet_creation_burn() -> u128 {
     <Test as crate::Config>::SubnetCreationBurn::get()
+}
+
+fn legacy_active_route_index_key(storage_name: &'static [u8], subnet_id: u16) -> Vec<u8> {
+    [
+        twox_128(b"Qubitum").as_slice(),
+        twox_128(storage_name).as_slice(),
+        Twox64Concat::hash(&subnet_id.encode()).as_slice(),
+    ]
+    .concat()
 }
 
 fn assignment_blinding() -> [u8; 32] {
@@ -870,31 +881,31 @@ fn storage_keys_remain_linkable_until_private_keying_lands() {
         assert!(params.readiness_blockers.private_routing_indexes_missing);
         assert!(params.readiness_blockers.private_capital_accounting_missing);
 
-        let subnet_id = 7_u16;
+        let subnet_id = 0x4b2d_u16;
         let miner_id = 11_u64;
         let validator_id = 13_u64;
         let request_id = 91_u64;
 
-        for (storage_name, storage_key, raw_id) in [
-            (
-                "Subnets",
-                Subnets::<Test>::hashed_key_for(subnet_id),
-                subnet_id.encode(),
+        assert!(
+            contains_subsequence(
+                &Subnets::<Test>::hashed_key_for(subnet_id),
+                &subnet_id.encode()
             ),
+            "Subnets storage key no longer exposes the raw subnet id; update the readiness flags"
+        );
+        for (storage_name, storage_key) in [
             (
                 "ActiveMinersBySubnet",
                 ActiveMinersBySubnet::<Test>::hashed_key_for(subnet_id),
-                subnet_id.encode(),
             ),
             (
                 "ActiveValidatorsBySubnet",
                 ActiveValidatorsBySubnet::<Test>::hashed_key_for(subnet_id),
-                subnet_id.encode(),
             ),
         ] {
             assert!(
-                contains_subsequence(&storage_key, &raw_id),
-                "{storage_name} storage key no longer exposes the raw subnet id; update the readiness flags"
+                !contains_subsequence(&storage_key, &subnet_id.encode()),
+                "{storage_name} storage key exposes the raw subnet id"
             );
         }
 
@@ -1049,6 +1060,14 @@ fn active_routing_indexes_remain_storage_visible_until_private_indexes_land() {
         assert!(contains_subsequence(
             &validator_index.encode(),
             &1_u64.encode()
+        ));
+        assert!(!contains_subsequence(
+            &ActiveMinersBySubnet::<Test>::hashed_key_for(0x4b2d_u16),
+            &0x4b2d_u16.encode()
+        ));
+        assert!(!contains_subsequence(
+            &ActiveValidatorsBySubnet::<Test>::hashed_key_for(0x4b2d_u16),
+            &0x4b2d_u16.encode()
         ));
 
         assert_eq!(
@@ -4648,7 +4667,7 @@ fn runtime_upgrade_migrates_subnet_owner_and_policy_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(18)
+            StorageVersion::new(19)
         );
     });
 }
@@ -4701,7 +4720,7 @@ fn runtime_upgrade_migrates_identity_signature_challenges() {
         );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(18)
+            StorageVersion::new(19)
         );
     });
 }
@@ -4767,7 +4786,7 @@ fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(18)
+            StorageVersion::new(19)
         );
     });
 }
@@ -4836,7 +4855,7 @@ fn runtime_upgrade_migrates_proof_record_routes_to_commitments() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(18)
+            StorageVersion::new(19)
         );
     });
 }
@@ -4909,7 +4928,7 @@ fn runtime_upgrade_migrates_proof_record_details_to_audit_commitments() {
         }
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(18)
+            StorageVersion::new(19)
         );
     });
 }
@@ -4973,7 +4992,7 @@ fn runtime_upgrade_migrates_registry_operators_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(18)
+            StorageVersion::new(19)
         );
     });
 }
@@ -5042,7 +5061,7 @@ fn runtime_upgrade_migrates_participant_capital_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(18)
+            StorageVersion::new(19)
         );
     });
 }
@@ -5097,7 +5116,7 @@ fn runtime_upgrade_migrates_request_users_to_commitments() {
         assert_eq!(PendingValidatorRequests::<Test>::get(9), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(18)
+            StorageVersion::new(19)
         );
     });
 }
@@ -5137,7 +5156,7 @@ fn runtime_upgrade_migrates_request_timing_to_commitments() {
         assert_eq!(request.status, InferenceRequestStatus::Pending);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(18)
+            StorageVersion::new(19)
         );
     });
 }
@@ -5177,7 +5196,7 @@ fn runtime_upgrade_migrates_request_terms_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(18)
+            StorageVersion::new(19)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 123_456);
         assert_eq!(TotalValidatorFees::<Test>::get(), 3_086);
@@ -5243,7 +5262,7 @@ fn runtime_upgrade_records_legacy_accounting_failures_without_saturated_totals()
         );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(18)
+            StorageVersion::new(19)
         );
     });
 
@@ -7505,7 +7524,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(18)
+            StorageVersion::new(19)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
@@ -7520,6 +7539,32 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
             }
         );
         assert!(Qubitum::route_assignment(0, 42, assignment_blinding()).is_some());
+    });
+}
+
+#[test]
+fn runtime_upgrade_clears_legacy_reversible_active_route_keys() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+
+        let legacy_miner_key = legacy_active_route_index_key(b"ActiveMinersBySubnet", 0);
+        let legacy_validator_key = legacy_active_route_index_key(b"ActiveValidatorsBySubnet", 0);
+        sp_io::storage::set(&legacy_miner_key, &vec![0_u64].encode());
+        sp_io::storage::set(&legacy_validator_key, &vec![0_u64].encode());
+        assert!(unhashed::get_raw(&legacy_miner_key).is_some());
+        assert!(unhashed::get_raw(&legacy_validator_key).is_some());
+        StorageVersion::new(18).put::<crate::Pallet<Test>>();
+
+        <Qubitum as Hooks<u64>>::on_runtime_upgrade();
+
+        assert!(unhashed::get_raw(&legacy_miner_key).is_none());
+        assert!(unhashed::get_raw(&legacy_validator_key).is_none());
+        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert_eq!(
+            StorageVersion::get::<crate::Pallet<Test>>(),
+            StorageVersion::new(19)
+        );
     });
 }
 
@@ -7976,7 +8021,7 @@ fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_healt
         );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(18)
+            StorageVersion::new(19)
         );
     });
 }
@@ -8092,7 +8137,7 @@ fn runtime_upgrade_reports_missing_legacy_capital_records() {
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(18)
+            StorageVersion::new(19)
         );
     });
 }
