@@ -924,17 +924,19 @@ fn storage_keys_remain_linkable_until_private_keying_lands() {
                 MinerLockedBond::<Test>::hashed_key_for(miner_id),
                 miner_id.encode(),
             ),
-            (
-                "PendingMinerRequests",
-                PendingMinerRequests::<Test>::hashed_key_for(miner_id),
-                miner_id.encode(),
-            ),
         ] {
             assert!(
                 contains_subsequence(&storage_key, &raw_id),
                 "{storage_name} storage key no longer exposes the raw miner id; update the readiness flags"
             );
         }
+        assert!(
+            !contains_subsequence(
+                &PendingMinerRequests::<Test>::hashed_key_for(miner_id),
+                &miner_id.encode()
+            ),
+            "pending miner counter storage key exposes the raw miner id"
+        );
 
         for (storage_name, storage_key, raw_id) in [
             (
@@ -962,17 +964,19 @@ fn storage_keys_remain_linkable_until_private_keying_lands() {
                 ValidatorLockedStake::<Test>::hashed_key_for(validator_id),
                 validator_id.encode(),
             ),
-            (
-                "PendingValidatorRequests",
-                PendingValidatorRequests::<Test>::hashed_key_for(validator_id),
-                validator_id.encode(),
-            ),
         ] {
             assert!(
                 contains_subsequence(&storage_key, &raw_id),
                 "{storage_name} storage key no longer exposes the raw validator id; update the readiness flags"
             );
         }
+        assert!(
+            !contains_subsequence(
+                &PendingValidatorRequests::<Test>::hashed_key_for(validator_id),
+                &validator_id.encode()
+            ),
+            "pending validator counter storage key exposes the raw validator id"
+        );
 
         for (storage_name, storage_key, raw_id) in [
             (

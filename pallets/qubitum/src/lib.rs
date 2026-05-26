@@ -1117,11 +1117,11 @@ pub mod pallet {
 
     #[pallet::storage]
     pub type PendingMinerRequests<T: Config> =
-        StorageMap<_, Twox64Concat, MinerId, RequestId, ValueQuery>;
+        StorageMap<_, Blake2_128, MinerId, RequestId, ValueQuery>;
 
     #[pallet::storage]
     pub type PendingValidatorRequests<T: Config> =
-        StorageMap<_, Twox64Concat, ValidatorId, RequestId, ValueQuery>;
+        StorageMap<_, Blake2_128, ValidatorId, RequestId, ValueQuery>;
 
     #[pallet::storage]
     pub type PendingInferenceRequestCount<T: Config> = StorageValue<_, RequestId, ValueQuery>;
@@ -4010,12 +4010,12 @@ pub mod pallet {
             let mut validator_reads = 0_u64;
             let mut validator_writes = 0_u64;
 
-            for (miner_id, _) in PendingMinerRequests::<T>::iter() {
+            for (miner_id, _) in Miners::<T>::iter() {
                 PendingMinerRequests::<T>::remove(miner_id);
                 miner_reads = miner_reads.saturating_add(1);
                 miner_writes = miner_writes.saturating_add(1);
             }
-            for (validator_id, _) in PendingValidatorRequests::<T>::iter() {
+            for (validator_id, _) in Validators::<T>::iter() {
                 PendingValidatorRequests::<T>::remove(validator_id);
                 validator_reads = validator_reads.saturating_add(1);
                 validator_writes = validator_writes.saturating_add(1);
@@ -4698,7 +4698,11 @@ pub mod pallet {
                 }
             }
 
-            for (miner_id, count) in PendingMinerRequests::<T>::iter() {
+            for (miner_id, _) in Miners::<T>::iter() {
+                let count = PendingMinerRequests::<T>::get(miner_id);
+                if count == 0 {
+                    continue;
+                }
                 ensure!(count > 0, "Qubitum pending miner counter is zero");
                 let miner = Miners::<T>::get(miner_id)
                     .ok_or("Qubitum pending miner counter references missing miner")?;
@@ -4713,7 +4717,11 @@ pub mod pallet {
                 );
             }
 
-            for (validator_id, count) in PendingValidatorRequests::<T>::iter() {
+            for (validator_id, _) in Validators::<T>::iter() {
+                let count = PendingValidatorRequests::<T>::get(validator_id);
+                if count == 0 {
+                    continue;
+                }
                 ensure!(count > 0, "Qubitum pending validator counter is zero");
                 let validator = Validators::<T>::get(validator_id)
                     .ok_or("Qubitum pending validator counter references missing validator")?;
