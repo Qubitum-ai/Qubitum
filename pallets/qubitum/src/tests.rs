@@ -1082,6 +1082,70 @@ fn active_routing_indexes_remain_storage_visible_until_private_indexes_land() {
 }
 
 #[test]
+fn active_routing_index_values_reveal_routable_participants_until_private_indexes_land() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(31),
+            ProofSystem::RiscZeroStark
+        ));
+        attest_miner(1, 2, Some(commitment(134)), Some(commitment(135)));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            1,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::register_validator(
+            RuntimeOrigin::signed(3),
+            0,
+            MIN_MINER_BOND
+        ));
+        assert_ok!(Qubitum::set_validator_identity_commitments(
+            RuntimeOrigin::signed(3),
+            1,
+            Some(commitment(136)),
+            Some(commitment(137)),
+            validator_identity_signature_bundle(1, Some(commitment(136)), Some(commitment(137))),
+        ));
+
+        let miner_index = ActiveMinersBySubnet::<Test>::get(0);
+        let validator_index = ActiveValidatorsBySubnet::<Test>::get(0);
+        let leaked_miner_ids: Vec<_> = miner_index.iter().copied().collect();
+        let leaked_validator_ids: Vec<_> = validator_index.iter().copied().collect();
+        let params = Qubitum::protocol_params();
+
+        assert_eq!(leaked_miner_ids, vec![0, 1]);
+        assert_eq!(leaked_validator_ids, vec![0, 1]);
+        for miner_id in leaked_miner_ids {
+            assert_eq!(
+                Miners::<Test>::get(miner_id).unwrap().status,
+                RegistryStatus::Active
+            );
+            assert!(contains_subsequence(
+                &miner_index.encode(),
+                &miner_id.encode()
+            ));
+        }
+        for validator_id in leaked_validator_ids {
+            assert_eq!(
+                Validators::<Test>::get(validator_id).unwrap().status,
+                RegistryStatus::Active
+            );
+            assert!(contains_subsequence(
+                &validator_index.encode(),
+                &validator_id.encode()
+            ));
+        }
+        assert!(!params.private_routing_indexes);
+        assert!(params.readiness_blockers.private_routing_indexes_missing);
+        assert!(!params.privacy_complete);
+        assert!(!params.production_ready);
+    });
+}
+
+#[test]
 fn protocol_params_are_policy_only_across_state_transitions() {
     new_test_ext().execute_with(|| {
         let baseline = Qubitum::protocol_params();
