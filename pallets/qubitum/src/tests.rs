@@ -6297,7 +6297,7 @@ fn request_commitment_call_rejects_unverifiable_committed_payloads_without_state
 }
 
 #[test]
-fn request_commitment_call_rejects_before_validating_created_at() {
+fn request_commitment_call_preflights_created_at_before_unsupported_boundary() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         RequestCount::<Test>::put(89);
@@ -6332,7 +6332,7 @@ fn request_commitment_call_rejects_before_validating_created_at() {
                     treasury_fee_bps: 50,
                 },
             ),
-            Error::<Test>::UnsupportedCommittedRequestPayload
+            Error::<Test>::RequestMismatch
         );
         assert!(InferenceRequests::<Test>::get(89).is_none());
         assert_eq!(
@@ -6344,6 +6344,72 @@ fn request_commitment_call_rejects_before_validating_created_at() {
             PendingValidatorRequests::<Test>::get(assignment.validator_id),
             0
         );
+    });
+}
+
+#[test]
+fn request_commitment_call_preflights_shape_before_unsupported_boundary() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        RequestCount::<Test>::put(90);
+        let assignment = Qubitum::route_assignment(0, 90, assignment_blinding()).unwrap();
+        let valid_params = InferenceRequestCommitmentParams {
+            subnet_id: 0,
+            input_commitment: commitment(1),
+            assignment_commitment: Qubitum::request_assignment_commitment(
+                90,
+                0,
+                assignment.miner_id,
+                assignment.validator_id,
+                assignment_blinding(),
+            ),
+            created_at: 0,
+            timing_commitment: Qubitum::request_timing_commitment(90, 0, timing_blinding()),
+            terms_commitment: Qubitum::request_terms_commitment(
+                90,
+                1_000,
+                250,
+                50,
+                terms_blinding(),
+            ),
+            payment: 1_000,
+            validator_fee_bps: 250,
+            treasury_fee_bps: 50,
+        };
+
+        let mut zero_assignment_commitment = valid_params.clone();
+        zero_assignment_commitment.assignment_commitment = [0; 32];
+        assert_noop!(
+            Qubitum::request_inference_commitments(
+                RuntimeOrigin::signed(4),
+                90,
+                zero_assignment_commitment
+            ),
+            Error::<Test>::MissingCommitment
+        );
+
+        let mut zero_payment = valid_params.clone();
+        zero_payment.payment = 0;
+        assert_noop!(
+            Qubitum::request_inference_commitments(RuntimeOrigin::signed(4), 90, zero_payment),
+            Error::<Test>::InvalidPayment
+        );
+
+        assert_noop!(
+            Qubitum::request_inference_commitments(RuntimeOrigin::signed(4), 91, valid_params),
+            Error::<Test>::InvalidRequestId
+        );
+        assert!(InferenceRequests::<Test>::get(90).is_none());
+        assert_eq!(
+            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
+            0
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(assignment.miner_id), 0);
+        assert_eq!(
+            PendingValidatorRequests::<Test>::get(assignment.validator_id),
+            0
+        );
+        assert_eq!(RequestCount::<Test>::get(), 90);
     });
 }
 

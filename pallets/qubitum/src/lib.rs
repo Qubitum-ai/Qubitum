@@ -1858,7 +1858,7 @@ pub mod pallet {
             params: InferenceRequestCommitmentParams<BalanceOf<T>>,
         ) -> DispatchResult {
             let _user = Self::ensure_payload_signer(origin)?;
-            let _ = (request_id, params);
+            Self::ensure_committed_request_payload_preflight(request_id, &params)?;
             Err(Error::<T>::UnsupportedCommittedRequestPayload.into())
         }
 
@@ -2709,6 +2709,33 @@ pub mod pallet {
             );
             Self::validate_fee_split(validator_fee_bps, treasury_fee_bps)?;
             let subnet = Subnets::<T>::get(subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
+            ensure!(subnet.active, Error::<T>::NotActive);
+            Ok(())
+        }
+
+        fn ensure_committed_request_payload_preflight(
+            request_id: RequestId,
+            params: &InferenceRequestCommitmentParams<BalanceOf<T>>,
+        ) -> DispatchResult {
+            ensure_commitment::<T>(params.input_commitment)?;
+            ensure_commitment::<T>(params.assignment_commitment)?;
+            ensure_commitment::<T>(params.timing_commitment)?;
+            ensure_commitment::<T>(params.terms_commitment)?;
+            ensure!(
+                !InferenceRequests::<T>::contains_key(request_id),
+                Error::<T>::DuplicateRequest
+            );
+            Self::ensure_request_id_matches_next(request_id)?;
+            ensure!(
+                params.created_at == Self::current_block(),
+                Error::<T>::RequestMismatch
+            );
+            ensure!(
+                params.payment > BalanceOf::<T>::default(),
+                Error::<T>::InvalidPayment
+            );
+            Self::validate_fee_split(params.validator_fee_bps, params.treasury_fee_bps)?;
+            let subnet = Subnets::<T>::get(params.subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
             ensure!(subnet.active, Error::<T>::NotActive);
             Ok(())
         }
