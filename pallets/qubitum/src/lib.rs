@@ -292,7 +292,7 @@ pub mod pallet {
     const LEGACY_ASSIGNMENT_BLINDING: Commitment = [0; 32];
     const LEGACY_TIMING_BLINDING: Commitment = [0; 32];
     const LEGACY_TERMS_BLINDING: Commitment = [0; 32];
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(24);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(25);
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -1177,11 +1177,11 @@ pub mod pallet {
 
     #[pallet::storage]
     pub type ProofRecords<T: Config> =
-        StorageMap<_, Twox64Concat, RequestId, ChainProofRecord, OptionQuery>;
+        StorageMap<_, Blake2_128, RequestId, ChainProofRecord, OptionQuery>;
 
     #[pallet::storage]
     pub type InferenceRequests<T: Config> =
-        StorageMap<_, Twox64Concat, RequestId, ChainInferenceRequest, OptionQuery>;
+        StorageMap<_, Blake2_128, RequestId, ChainInferenceRequest, OptionQuery>;
 
     #[pallet::storage]
     pub type RequestCount<T: Config> = StorageValue<_, RequestId, ValueQuery>;
@@ -1272,6 +1272,7 @@ pub mod pallet {
 
             let weight = Self::migrate_subnet_storage_keys(on_chain)
                 .saturating_add(Self::migrate_registry_storage_keys(on_chain))
+                .saturating_add(Self::migrate_request_and_proof_storage_keys(on_chain))
                 .saturating_add(Self::migrate_operator_commitments(on_chain))
                 .saturating_add(Self::migrate_subnet_policy_commitments(on_chain))
                 .saturating_add(Self::migrate_participant_capital_commitments(on_chain))
@@ -2432,7 +2433,7 @@ pub mod pallet {
             let private_route_selection = false;
             let account_commitment_blinding = false;
             let private_routing_indexes = true;
-            let private_storage_keys = false;
+            let private_storage_keys = true;
             let private_capital_accounting = false;
             let private_event_metadata = false;
             let public_event_payloads_redacted = true;
@@ -3421,6 +3422,16 @@ pub mod pallet {
             records
         }
 
+        fn request_records() -> sp_std::vec::Vec<(RequestId, ChainInferenceRequest)> {
+            let mut records = sp_std::vec::Vec::new();
+            for request_id in 0..RequestCount::<T>::get() {
+                if let Some(request) = InferenceRequests::<T>::get(request_id) {
+                    records.push((request_id, request));
+                }
+            }
+            records
+        }
+
         fn miner_capital_record_count(operator_commitment: Commitment) -> u32 {
             Self::miner_records()
                 .into_iter()
@@ -4106,6 +4117,36 @@ pub mod pallet {
             T::DbWeight::get().reads_writes(reads, writes)
         }
 
+        fn migrate_request_and_proof_storage_keys(on_chain: StorageVersion) -> Weight {
+            if on_chain >= StorageVersion::new(25) {
+                return Weight::zero();
+            }
+
+            let mut reads = 0_u64;
+            let mut writes = 0_u64;
+
+            for request_id in 0..RequestCount::<T>::get() {
+                reads = reads.saturating_add(1);
+                let request_key =
+                    Self::legacy_twox_storage_map_key(b"InferenceRequests", request_id);
+                if let Some(raw) = unhashed::get_raw(&request_key) {
+                    unhashed::put_raw(&InferenceRequests::<T>::hashed_key_for(request_id), &raw);
+                    unhashed::kill(&request_key);
+                    writes = writes.saturating_add(2);
+                }
+
+                reads = reads.saturating_add(1);
+                let proof_key = Self::legacy_twox_storage_map_key(b"ProofRecords", request_id);
+                if let Some(raw) = unhashed::get_raw(&proof_key) {
+                    unhashed::put_raw(&ProofRecords::<T>::hashed_key_for(request_id), &raw);
+                    unhashed::kill(&proof_key);
+                    writes = writes.saturating_add(2);
+                }
+            }
+
+            T::DbWeight::get().reads_writes(reads, writes)
+        }
+
         fn migrate_capital_record_storage_keys(on_chain: StorageVersion) -> Weight {
             if on_chain >= StorageVersion::new(20) {
                 return Weight::zero();
@@ -4529,7 +4570,7 @@ pub mod pallet {
                 expired: 0,
             };
 
-            for (_, request) in InferenceRequests::<T>::iter() {
+            for (_, request) in Self::request_records() {
                 request_reads = request_reads.saturating_add(1);
                 match request.status {
                     InferenceRequestStatus::Pending => {
@@ -4564,38 +4605,47 @@ pub mod pallet {
                 return Weight::zero();
             }
 
+            let request_count = RequestCount::<T>::get();
             let mut migrated = 0_u64;
-            ProofRecords::<T>::translate::<ChainProofRecordV4, _>(|_, old| {
-                migrated = migrated.saturating_add(1);
+            for request_id in 0..request_count {
+                let Some(old) = unhashed::get::<ChainProofRecordV4>(
+                    &ProofRecords::<T>::hashed_key_for(request_id),
+                ) else {
+                    continue;
+                };
                 let assignment_commitment = Self::legacy_request_assignment_commitment(
                     old.request_id,
                     old.subnet_id,
                     old.miner_id,
                     old.validator_id,
                 );
-                Some(ChainProofRecord {
-                    request_id: old.request_id,
-                    subnet_id: old.subnet_id,
-                    assignment_commitment,
-                    audit_commitment: Self::legacy_proof_audit_commitment(
-                        old.request_id,
-                        old.subnet_id,
+                ProofRecords::<T>::insert(
+                    request_id,
+                    ChainProofRecord {
+                        request_id: old.request_id,
+                        subnet_id: old.subnet_id,
                         assignment_commitment,
-                        old.input_commitment,
-                        old.output_commitment,
-                        old.model_commitment,
-                        &old.proof,
-                        old.proof_system,
-                        old.proof_size_bytes,
-                        old.verification_latency_ms,
-                        old.submitted_at,
-                        old.submitted_at,
-                    ),
-                    proof_system: old.proof_system,
-                })
-            });
+                        audit_commitment: Self::legacy_proof_audit_commitment(
+                            old.request_id,
+                            old.subnet_id,
+                            assignment_commitment,
+                            old.input_commitment,
+                            old.output_commitment,
+                            old.model_commitment,
+                            &old.proof,
+                            old.proof_system,
+                            old.proof_size_bytes,
+                            old.verification_latency_ms,
+                            old.submitted_at,
+                            old.submitted_at,
+                        ),
+                        proof_system: old.proof_system,
+                    },
+                );
+                migrated = migrated.saturating_add(1);
+            }
 
-            T::DbWeight::get().reads_writes(migrated, migrated)
+            T::DbWeight::get().reads_writes(request_count, migrated)
         }
 
         fn migrate_proof_record_assignment_commitments(on_chain: StorageVersion) -> Weight {
@@ -4603,38 +4653,47 @@ pub mod pallet {
                 return Weight::zero();
             }
 
+            let request_count = RequestCount::<T>::get();
             let mut migrated = 0_u64;
-            ProofRecords::<T>::translate::<ChainProofRecordV11, _>(|_, old| {
-                migrated = migrated.saturating_add(1);
+            for request_id in 0..request_count {
+                let Some(old) = unhashed::get::<ChainProofRecordV11>(
+                    &ProofRecords::<T>::hashed_key_for(request_id),
+                ) else {
+                    continue;
+                };
                 let assignment_commitment = Self::legacy_request_assignment_commitment(
                     old.request_id,
                     old.subnet_id,
                     old.miner_id,
                     old.validator_id,
                 );
-                Some(ChainProofRecord {
-                    request_id: old.request_id,
-                    subnet_id: old.subnet_id,
-                    assignment_commitment,
-                    audit_commitment: Self::legacy_proof_audit_commitment(
-                        old.request_id,
-                        old.subnet_id,
+                ProofRecords::<T>::insert(
+                    request_id,
+                    ChainProofRecord {
+                        request_id: old.request_id,
+                        subnet_id: old.subnet_id,
                         assignment_commitment,
-                        old.input_commitment,
-                        old.output_commitment,
-                        old.model_commitment,
-                        &old.proof,
-                        old.proof_system,
-                        old.proof_size_bytes,
-                        old.verification_latency_ms,
-                        old.submitted_at,
-                        old.accepted_at,
-                    ),
-                    proof_system: old.proof_system,
-                })
-            });
+                        audit_commitment: Self::legacy_proof_audit_commitment(
+                            old.request_id,
+                            old.subnet_id,
+                            assignment_commitment,
+                            old.input_commitment,
+                            old.output_commitment,
+                            old.model_commitment,
+                            &old.proof,
+                            old.proof_system,
+                            old.proof_size_bytes,
+                            old.verification_latency_ms,
+                            old.submitted_at,
+                            old.accepted_at,
+                        ),
+                        proof_system: old.proof_system,
+                    },
+                );
+                migrated = migrated.saturating_add(1);
+            }
 
-            T::DbWeight::get().reads_writes(migrated, migrated)
+            T::DbWeight::get().reads_writes(request_count, migrated)
         }
 
         fn migrate_proof_record_audit_commitments(on_chain: StorageVersion) -> Weight {
@@ -4642,32 +4701,41 @@ pub mod pallet {
                 return Weight::zero();
             }
 
+            let request_count = RequestCount::<T>::get();
             let mut migrated = 0_u64;
-            ProofRecords::<T>::translate::<ChainProofRecordV14, _>(|_, old| {
+            for request_id in 0..request_count {
+                let Some(old) = unhashed::get::<ChainProofRecordV14>(
+                    &ProofRecords::<T>::hashed_key_for(request_id),
+                ) else {
+                    continue;
+                };
+                ProofRecords::<T>::insert(
+                    request_id,
+                    ChainProofRecord {
+                        request_id: old.request_id,
+                        subnet_id: old.subnet_id,
+                        assignment_commitment: old.assignment_commitment,
+                        audit_commitment: Self::legacy_proof_audit_commitment(
+                            old.request_id,
+                            old.subnet_id,
+                            old.assignment_commitment,
+                            old.input_commitment,
+                            old.output_commitment,
+                            old.model_commitment,
+                            &old.proof,
+                            old.proof_system,
+                            old.proof_size_bytes,
+                            old.verification_latency_ms,
+                            old.submitted_at,
+                            old.accepted_at,
+                        ),
+                        proof_system: old.proof_system,
+                    },
+                );
                 migrated = migrated.saturating_add(1);
-                Some(ChainProofRecord {
-                    request_id: old.request_id,
-                    subnet_id: old.subnet_id,
-                    assignment_commitment: old.assignment_commitment,
-                    audit_commitment: Self::legacy_proof_audit_commitment(
-                        old.request_id,
-                        old.subnet_id,
-                        old.assignment_commitment,
-                        old.input_commitment,
-                        old.output_commitment,
-                        old.model_commitment,
-                        &old.proof,
-                        old.proof_system,
-                        old.proof_size_bytes,
-                        old.verification_latency_ms,
-                        old.submitted_at,
-                        old.accepted_at,
-                    ),
-                    proof_system: old.proof_system,
-                })
-            });
+            }
 
-            T::DbWeight::get().reads_writes(migrated, migrated)
+            T::DbWeight::get().reads_writes(request_count, migrated)
         }
 
         fn migrate_identity_signature_challenges(on_chain: StorageVersion) -> Weight {
@@ -4892,12 +4960,14 @@ pub mod pallet {
             let clear_weight = Self::clear_pending_assignment_counters();
             let mut accounting = Self::zero_accounting();
             let mut accounting_failures = 0_u32;
+            let request_count = RequestCount::<T>::get();
             let mut migrated = 0_u64;
-            InferenceRequests::<T>::translate::<
-                ChainInferenceRequestV8<T::AccountId, BalanceOf<T>>,
-                _,
-            >(|_, old| {
-                migrated = migrated.saturating_add(1);
+            for request_id in 0..request_count {
+                let Some(old) = unhashed::get::<ChainInferenceRequestV8<T::AccountId, BalanceOf<T>>>(
+                    &InferenceRequests::<T>::hashed_key_for(request_id),
+                ) else {
+                    continue;
+                };
                 if Self::record_legacy_request_accounting(
                     &mut accounting,
                     old.payment,
@@ -4912,34 +4982,38 @@ pub mod pallet {
                 if old.status == InferenceRequestStatus::Pending {
                     let _ = Self::increment_pending_assignment(old.miner_id, old.validator_id);
                 }
-                Some(ChainInferenceRequest {
-                    request_id: old.request_id,
-                    user_commitment: Self::request_user_commitment(&old.user),
-                    subnet_id: old.subnet_id,
-                    assignment_commitment: Self::legacy_request_assignment_commitment(
-                        old.request_id,
-                        old.subnet_id,
-                        old.miner_id,
-                        old.validator_id,
-                    ),
-                    input_commitment: old.input_commitment,
-                    terms_commitment: Self::legacy_request_terms_commitment(
-                        old.request_id,
-                        old.payment,
-                        old.validator_fee_bps,
-                        old.treasury_fee_bps,
-                    ),
-                    timing_commitment: Self::legacy_request_timing_commitment(
-                        old.request_id,
-                        old.created_at,
-                    ),
-                    status: old.status,
-                })
-            });
+                InferenceRequests::<T>::insert(
+                    request_id,
+                    ChainInferenceRequest {
+                        request_id: old.request_id,
+                        user_commitment: Self::request_user_commitment(&old.user),
+                        subnet_id: old.subnet_id,
+                        assignment_commitment: Self::legacy_request_assignment_commitment(
+                            old.request_id,
+                            old.subnet_id,
+                            old.miner_id,
+                            old.validator_id,
+                        ),
+                        input_commitment: old.input_commitment,
+                        terms_commitment: Self::legacy_request_terms_commitment(
+                            old.request_id,
+                            old.payment,
+                            old.validator_fee_bps,
+                            old.treasury_fee_bps,
+                        ),
+                        timing_commitment: Self::legacy_request_timing_commitment(
+                            old.request_id,
+                            old.created_at,
+                        ),
+                        status: old.status,
+                    },
+                );
+                migrated = migrated.saturating_add(1);
+            }
             Self::put_inference_accounting(accounting, accounting_failures);
 
             clear_weight.saturating_add(
-                T::DbWeight::get().reads_writes(migrated, migrated.saturating_add(6)),
+                T::DbWeight::get().reads_writes(request_count, migrated.saturating_add(6)),
             )
         }
 
@@ -4951,25 +5025,31 @@ pub mod pallet {
             let clear_weight = Self::clear_pending_assignment_counters();
             let mut accounting = Self::zero_accounting();
             let mut accounting_failures = 0_u32;
+            let request_count = RequestCount::<T>::get();
             let mut migrated = 0_u64;
-            InferenceRequests::<T>::translate::<ChainInferenceRequestV10<BalanceOf<T>>, _>(
-                |_, old| {
-                    migrated = migrated.saturating_add(1);
-                    if Self::record_legacy_request_accounting(
-                        &mut accounting,
-                        old.payment,
-                        old.validator_fee_bps,
-                        old.treasury_fee_bps,
-                        old.status,
-                    )
-                    .is_err()
-                    {
-                        Self::note_legacy_accounting_failure(&mut accounting_failures);
-                    }
-                    if old.status == InferenceRequestStatus::Pending {
-                        let _ = Self::increment_pending_assignment(old.miner_id, old.validator_id);
-                    }
-                    Some(ChainInferenceRequest {
+            for request_id in 0..request_count {
+                let Some(old) = unhashed::get::<ChainInferenceRequestV10<BalanceOf<T>>>(
+                    &InferenceRequests::<T>::hashed_key_for(request_id),
+                ) else {
+                    continue;
+                };
+                if Self::record_legacy_request_accounting(
+                    &mut accounting,
+                    old.payment,
+                    old.validator_fee_bps,
+                    old.treasury_fee_bps,
+                    old.status,
+                )
+                .is_err()
+                {
+                    Self::note_legacy_accounting_failure(&mut accounting_failures);
+                }
+                if old.status == InferenceRequestStatus::Pending {
+                    let _ = Self::increment_pending_assignment(old.miner_id, old.validator_id);
+                }
+                InferenceRequests::<T>::insert(
+                    request_id,
+                    ChainInferenceRequest {
                         request_id: old.request_id,
                         user_commitment: old.user_commitment,
                         subnet_id: old.subnet_id,
@@ -4991,13 +5071,14 @@ pub mod pallet {
                             old.created_at,
                         ),
                         status: old.status,
-                    })
-                },
-            );
+                    },
+                );
+                migrated = migrated.saturating_add(1);
+            }
             Self::put_inference_accounting(accounting, accounting_failures);
 
             clear_weight.saturating_add(
-                T::DbWeight::get().reads_writes(migrated, migrated.saturating_add(6)),
+                T::DbWeight::get().reads_writes(request_count, migrated.saturating_add(6)),
             )
         }
 
@@ -5008,22 +5089,28 @@ pub mod pallet {
 
             let mut accounting = Self::zero_accounting();
             let mut accounting_failures = 0_u32;
+            let request_count = RequestCount::<T>::get();
             let mut migrated = 0_u64;
-            InferenceRequests::<T>::translate::<ChainInferenceRequestV12<BalanceOf<T>>, _>(
-                |_, old| {
-                    migrated = migrated.saturating_add(1);
-                    if Self::record_legacy_request_accounting(
-                        &mut accounting,
-                        old.payment,
-                        old.validator_fee_bps,
-                        old.treasury_fee_bps,
-                        old.status,
-                    )
-                    .is_err()
-                    {
-                        Self::note_legacy_accounting_failure(&mut accounting_failures);
-                    }
-                    Some(ChainInferenceRequest {
+            for request_id in 0..request_count {
+                let Some(old) = unhashed::get::<ChainInferenceRequestV12<BalanceOf<T>>>(
+                    &InferenceRequests::<T>::hashed_key_for(request_id),
+                ) else {
+                    continue;
+                };
+                if Self::record_legacy_request_accounting(
+                    &mut accounting,
+                    old.payment,
+                    old.validator_fee_bps,
+                    old.treasury_fee_bps,
+                    old.status,
+                )
+                .is_err()
+                {
+                    Self::note_legacy_accounting_failure(&mut accounting_failures);
+                }
+                InferenceRequests::<T>::insert(
+                    request_id,
+                    ChainInferenceRequest {
                         request_id: old.request_id,
                         user_commitment: old.user_commitment,
                         subnet_id: old.subnet_id,
@@ -5040,12 +5127,13 @@ pub mod pallet {
                             old.created_at,
                         ),
                         status: old.status,
-                    })
-                },
-            );
+                    },
+                );
+                migrated = migrated.saturating_add(1);
+            }
             Self::put_inference_accounting(accounting, accounting_failures);
 
-            T::DbWeight::get().reads_writes(migrated, migrated.saturating_add(6))
+            T::DbWeight::get().reads_writes(request_count, migrated.saturating_add(6))
         }
 
         fn migrate_request_terms_commitments(on_chain: StorageVersion) -> Weight {
@@ -5055,22 +5143,28 @@ pub mod pallet {
 
             let mut accounting = Self::zero_accounting();
             let mut accounting_failures = 0_u32;
+            let request_count = RequestCount::<T>::get();
             let mut migrated = 0_u64;
-            InferenceRequests::<T>::translate::<ChainInferenceRequestV13<BalanceOf<T>>, _>(
-                |_, old| {
-                    migrated = migrated.saturating_add(1);
-                    if Self::record_legacy_request_accounting(
-                        &mut accounting,
-                        old.payment,
-                        old.validator_fee_bps,
-                        old.treasury_fee_bps,
-                        old.status,
-                    )
-                    .is_err()
-                    {
-                        Self::note_legacy_accounting_failure(&mut accounting_failures);
-                    }
-                    Some(ChainInferenceRequest {
+            for request_id in 0..request_count {
+                let Some(old) = unhashed::get::<ChainInferenceRequestV13<BalanceOf<T>>>(
+                    &InferenceRequests::<T>::hashed_key_for(request_id),
+                ) else {
+                    continue;
+                };
+                if Self::record_legacy_request_accounting(
+                    &mut accounting,
+                    old.payment,
+                    old.validator_fee_bps,
+                    old.treasury_fee_bps,
+                    old.status,
+                )
+                .is_err()
+                {
+                    Self::note_legacy_accounting_failure(&mut accounting_failures);
+                }
+                InferenceRequests::<T>::insert(
+                    request_id,
+                    ChainInferenceRequest {
                         request_id: old.request_id,
                         user_commitment: old.user_commitment,
                         subnet_id: old.subnet_id,
@@ -5084,12 +5178,13 @@ pub mod pallet {
                         ),
                         timing_commitment: old.timing_commitment,
                         status: old.status,
-                    })
-                },
-            );
+                    },
+                );
+                migrated = migrated.saturating_add(1);
+            }
             Self::put_inference_accounting(accounting, accounting_failures);
 
-            T::DbWeight::get().reads_writes(migrated, migrated.saturating_add(6))
+            T::DbWeight::get().reads_writes(request_count, migrated.saturating_add(6))
         }
 
         #[cfg(feature = "try-runtime")]
@@ -5160,7 +5255,7 @@ pub mod pallet {
                 rejected: 0,
                 expired: 0,
             };
-            for (_, request) in InferenceRequests::<T>::iter() {
+            for (_, request) in Self::request_records() {
                 match request.status {
                     InferenceRequestStatus::Pending => {
                         expected_status_counts.pending =

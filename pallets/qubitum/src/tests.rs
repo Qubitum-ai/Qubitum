@@ -3,8 +3,8 @@
 use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, AutoRouteInferenceRequestParams,
     CancelledInferenceRequestCount, ChainIdentityCommitments, ChainInferenceRequest, ChainMiner,
-    ChainReadinessBlockers, ChainRequestStatusCounts, ChainRouteAvailability, ChainValidator,
-    Error, FailClosedProofVerifier, HoldReason, IdentitySignatureVerifierMode,
+    ChainProofRecord, ChainReadinessBlockers, ChainRequestStatusCounts, ChainRouteAvailability,
+    ChainValidator, Error, FailClosedProofVerifier, HoldReason, IdentitySignatureVerifierMode,
     InferenceRequestCommitmentParams, InferenceRequestParams, InferenceRequestStatus,
     InferenceRequestTerms, InferenceRequestTermsWitness, InferenceRequestTimingWitness,
     InferenceRequests, LegacyAccountingMigrationFailures, LegacyCapitalRecordMigrationFailures,
@@ -56,6 +56,20 @@ fn legacy_twox_storage_map_key<K: Encode>(storage_name: &'static [u8], key: K) -
         Twox64Concat::hash(&key.encode()).as_slice(),
     ]
     .concat()
+}
+
+fn insert_legacy_request_record<TValue: Encode>(request_id: u64, value: &TValue) -> Vec<u8> {
+    let key = legacy_twox_storage_map_key(b"InferenceRequests", request_id);
+    sp_io::storage::set(&key, &value.encode());
+    RequestCount::<Test>::put(RequestCount::<Test>::get().max(request_id.saturating_add(1)));
+    key
+}
+
+fn insert_legacy_proof_record<TValue: Encode>(request_id: u64, value: &TValue) -> Vec<u8> {
+    let key = legacy_twox_storage_map_key(b"ProofRecords", request_id);
+    sp_io::storage::set(&key, &value.encode());
+    RequestCount::<Test>::put(RequestCount::<Test>::get().max(request_id.saturating_add(1)));
+    key
 }
 
 fn assignment_blinding() -> [u8; 32] {
@@ -747,7 +761,7 @@ fn protocol_params_expose_runtime_policy() {
         assert!(!params.private_route_selection);
         assert!(!params.account_commitment_blinding);
         assert!(params.private_routing_indexes);
-        assert!(!params.private_storage_keys);
+        assert!(params.private_storage_keys);
         assert!(!params.private_capital_accounting);
         assert!(!params.private_event_metadata);
         assert!(params.public_event_payloads_redacted);
@@ -786,7 +800,7 @@ fn protocol_params_expose_runtime_policy() {
                 private_route_selection_missing: true,
                 account_commitment_blinding_missing: true,
                 private_routing_indexes_missing: false,
-                private_storage_keys_missing: true,
+                private_storage_keys_missing: false,
                 private_capital_accounting_missing: true,
                 private_event_metadata_missing: true,
                 signature_mode_not_full_post_quantum: false,
@@ -827,7 +841,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
         assert!(!params.shield_key_window_privacy);
         assert!(!params.account_commitment_blinding);
         assert!(params.private_routing_indexes);
-        assert!(!params.private_storage_keys);
+        assert!(params.private_storage_keys);
         assert!(!params.private_capital_accounting);
         assert!(!params.private_event_metadata);
         assert!(params.public_event_payloads_redacted);
@@ -858,7 +872,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
                 .account_commitment_blinding_missing
         );
         assert!(!params.readiness_blockers.private_routing_indexes_missing);
-        assert!(params.readiness_blockers.private_storage_keys_missing);
+        assert!(!params.readiness_blockers.private_storage_keys_missing);
         assert!(params.readiness_blockers.private_capital_accounting_missing);
         assert!(params.readiness_blockers.private_event_metadata_missing);
         assert!(params.readiness_blockers.privacy_blocked());
@@ -880,13 +894,13 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
 }
 
 #[test]
-fn storage_keys_hide_registry_ids_but_track_remaining_private_keying_gaps() {
+fn storage_keys_hide_linkable_ids_but_track_remaining_privacy_gaps() {
     new_test_ext().execute_with(|| {
         let params = Qubitum::protocol_params();
-        assert!(!params.private_storage_keys);
+        assert!(params.private_storage_keys);
         assert!(params.private_routing_indexes);
         assert!(!params.private_capital_accounting);
-        assert!(params.readiness_blockers.private_storage_keys_missing);
+        assert!(!params.readiness_blockers.private_storage_keys_missing);
         assert!(!params.readiness_blockers.private_routing_indexes_missing);
         assert!(params.readiness_blockers.private_capital_accounting_missing);
 
@@ -1003,8 +1017,8 @@ fn storage_keys_hide_registry_ids_but_track_remaining_private_keying_gaps() {
             ),
         ] {
             assert!(
-                contains_subsequence(&storage_key, &raw_id),
-                "{storage_name} storage key no longer exposes the raw request id; update the readiness flags"
+                !contains_subsequence(&storage_key, &raw_id),
+                "{storage_name} storage key exposes the raw request id"
             );
         }
     });
@@ -4748,7 +4762,7 @@ fn runtime_upgrade_migrates_subnet_owner_and_policy_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
         );
     });
 }
@@ -4801,7 +4815,7 @@ fn runtime_upgrade_migrates_identity_signature_challenges() {
         );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
         );
     });
 }
@@ -4823,11 +4837,12 @@ fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
             verification_latency_ms: 10,
             submitted_at: 55,
         };
-        sp_io::storage::set(&ProofRecords::<Test>::hashed_key_for(77), &legacy.encode());
+        let legacy_key = insert_legacy_proof_record(77, &legacy);
         StorageVersion::new(4).put::<crate::Pallet<Test>>();
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
 
+        assert!(unhashed::get_raw(&legacy_key).is_none());
         let record = ProofRecords::<Test>::get(77).unwrap();
         let expected_submission = InferenceProofSubmission {
             request_id: 77,
@@ -4867,7 +4882,7 @@ fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
         );
     });
 }
@@ -4890,11 +4905,12 @@ fn runtime_upgrade_migrates_proof_record_routes_to_commitments() {
             submitted_at: 55,
             accepted_at: 58,
         };
-        sp_io::storage::set(&ProofRecords::<Test>::hashed_key_for(77), &legacy.encode());
+        let legacy_key = insert_legacy_proof_record(77, &legacy);
         StorageVersion::new(11).put::<crate::Pallet<Test>>();
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
 
+        assert!(unhashed::get_raw(&legacy_key).is_none());
         let record = ProofRecords::<Test>::get(77).unwrap();
         let expected_submission = InferenceProofSubmission {
             request_id: 77,
@@ -4936,7 +4952,7 @@ fn runtime_upgrade_migrates_proof_record_routes_to_commitments() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
         );
     });
 }
@@ -4958,11 +4974,12 @@ fn runtime_upgrade_migrates_proof_record_details_to_audit_commitments() {
             submitted_at: 55,
             accepted_at: 58,
         };
-        sp_io::storage::set(&ProofRecords::<Test>::hashed_key_for(77), &legacy.encode());
+        let legacy_key = insert_legacy_proof_record(77, &legacy);
         StorageVersion::new(14).put::<crate::Pallet<Test>>();
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
 
+        assert!(unhashed::get_raw(&legacy_key).is_none());
         let expected_submission = InferenceProofSubmission {
             request_id: 77,
             subnet_id: 3,
@@ -5009,7 +5026,7 @@ fn runtime_upgrade_migrates_proof_record_details_to_audit_commitments() {
         }
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
         );
     });
 }
@@ -5088,7 +5105,7 @@ fn runtime_upgrade_migrates_registry_operators_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
         );
     });
 }
@@ -5172,7 +5189,7 @@ fn runtime_upgrade_migrates_participant_capital_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
         );
     });
 }
@@ -5193,14 +5210,12 @@ fn runtime_upgrade_migrates_request_users_to_commitments() {
             created_at: 12,
             status: InferenceRequestStatus::Pending,
         };
-        sp_io::storage::set(
-            &InferenceRequests::<Test>::hashed_key_for(91),
-            &legacy_request.encode(),
-        );
+        let legacy_key = insert_legacy_request_record(91, &legacy_request);
         StorageVersion::new(8).put::<crate::Pallet<Test>>();
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
 
+        assert!(unhashed::get_raw(&legacy_key).is_none());
         let request = InferenceRequests::<Test>::get(91).unwrap();
         assert_eq!(request.request_id, 91);
         assert_eq!(
@@ -5227,7 +5242,7 @@ fn runtime_upgrade_migrates_request_users_to_commitments() {
         assert_eq!(PendingValidatorRequests::<Test>::get(9), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
         );
     });
 }
@@ -5247,14 +5262,12 @@ fn runtime_upgrade_migrates_request_timing_to_commitments() {
             created_at: 12,
             status: InferenceRequestStatus::Pending,
         };
-        sp_io::storage::set(
-            &InferenceRequests::<Test>::hashed_key_for(91),
-            &legacy_request.encode(),
-        );
+        let legacy_key = insert_legacy_request_record(91, &legacy_request);
         StorageVersion::new(12).put::<crate::Pallet<Test>>();
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
 
+        assert!(unhashed::get_raw(&legacy_key).is_none());
         let request = InferenceRequests::<Test>::get(91).unwrap();
         assert_eq!(
             request.timing_commitment,
@@ -5267,7 +5280,7 @@ fn runtime_upgrade_migrates_request_timing_to_commitments() {
         assert_eq!(request.status, InferenceRequestStatus::Pending);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
         );
     });
 }
@@ -5287,14 +5300,12 @@ fn runtime_upgrade_migrates_request_terms_to_commitments() {
             timing_commitment: Qubitum::legacy_request_timing_commitment(91, 12),
             status: InferenceRequestStatus::Settled,
         };
-        sp_io::storage::set(
-            &InferenceRequests::<Test>::hashed_key_for(91),
-            &legacy_request.encode(),
-        );
+        let legacy_key = insert_legacy_request_record(91, &legacy_request);
         StorageVersion::new(13).put::<crate::Pallet<Test>>();
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
 
+        assert!(unhashed::get_raw(&legacy_key).is_none());
         let request = InferenceRequests::<Test>::get(91).unwrap();
         assert_eq!(
             request.terms_commitment,
@@ -5307,7 +5318,7 @@ fn runtime_upgrade_migrates_request_terms_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 123_456);
         assert_eq!(TotalValidatorFees::<Test>::get(), 3_086);
@@ -5343,18 +5354,14 @@ fn runtime_upgrade_records_legacy_accounting_failures_without_saturated_totals()
             timing_commitment: Qubitum::legacy_request_timing_commitment(92, 13),
             status: InferenceRequestStatus::Settled,
         };
-        sp_io::storage::set(
-            &InferenceRequests::<Test>::hashed_key_for(91),
-            &max_payment_request.encode(),
-        );
-        sp_io::storage::set(
-            &InferenceRequests::<Test>::hashed_key_for(92),
-            &one_unit_request.encode(),
-        );
+        let max_payment_key = insert_legacy_request_record(91, &max_payment_request);
+        let one_unit_key = insert_legacy_request_record(92, &one_unit_request);
         StorageVersion::new(13).put::<crate::Pallet<Test>>();
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
 
+        assert!(unhashed::get_raw(&max_payment_key).is_none());
+        assert!(unhashed::get_raw(&one_unit_key).is_none());
         assert_eq!(LegacyAccountingMigrationFailures::<Test>::get(), 1);
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 0);
         assert_eq!(TotalMinerPayouts::<Test>::get(), 0);
@@ -5373,7 +5380,7 @@ fn runtime_upgrade_records_legacy_accounting_failures_without_saturated_totals()
         );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
         );
     });
 
@@ -5390,14 +5397,12 @@ fn runtime_upgrade_records_legacy_accounting_failures_without_saturated_totals()
             timing_commitment: Qubitum::legacy_request_timing_commitment(93, 14),
             status: InferenceRequestStatus::Settled,
         };
-        sp_io::storage::set(
-            &InferenceRequests::<Test>::hashed_key_for(93),
-            &invalid_split_request.encode(),
-        );
+        let legacy_key = insert_legacy_request_record(93, &invalid_split_request);
         StorageVersion::new(13).put::<crate::Pallet<Test>>();
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
 
+        assert!(unhashed::get_raw(&legacy_key).is_none());
         assert_eq!(LegacyAccountingMigrationFailures::<Test>::get(), 1);
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 0);
         assert_eq!(TotalMinerPayouts::<Test>::get(), 0);
@@ -7804,10 +7809,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
             created_at: 0,
             status: InferenceRequestStatus::Pending,
         };
-        sp_io::storage::set(
-            &InferenceRequests::<Test>::hashed_key_for(42),
-            &legacy_request.encode(),
-        );
+        let legacy_request_key = insert_legacy_request_record(42, &legacy_request);
         ActiveMinersBySubnet::<Test>::remove(0);
         ActiveValidatorsBySubnet::<Test>::remove(0);
         PendingMinerRequests::<Test>::remove(0);
@@ -7827,13 +7829,14 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
 
+        assert!(unhashed::get_raw(&legacy_request_key).is_none());
         assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
@@ -7872,7 +7875,7 @@ fn runtime_upgrade_clears_legacy_reversible_active_route_keys() {
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
         );
     });
 }
@@ -7925,7 +7928,57 @@ fn runtime_upgrade_migrates_legacy_reversible_registry_record_keys() {
         assert_eq!(Validators::<Test>::get(9), Some(validator));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
+        );
+    });
+}
+
+#[test]
+fn runtime_upgrade_migrates_legacy_reversible_request_and_proof_keys() {
+    new_test_ext().execute_with(|| {
+        let request = ChainInferenceRequest {
+            request_id: 42,
+            user_commitment: commitment(1),
+            subnet_id: 3,
+            assignment_commitment: commitment(2),
+            input_commitment: commitment(3),
+            terms_commitment: commitment(4),
+            timing_commitment: commitment(5),
+            status: InferenceRequestStatus::Settled,
+        };
+        let proof_record = ChainProofRecord {
+            request_id: 42,
+            subnet_id: 3,
+            assignment_commitment: commitment(2),
+            audit_commitment: commitment(6),
+            proof_system: ProofSystem::RiscZeroStark,
+        };
+
+        let request_key = insert_legacy_request_record(42, &request);
+        let proof_key = insert_legacy_proof_record(42, &proof_record);
+        assert!(unhashed::get_raw(&request_key).is_some());
+        assert!(unhashed::get_raw(&proof_key).is_some());
+        assert!(InferenceRequests::<Test>::get(42).is_none());
+        assert!(ProofRecords::<Test>::get(42).is_none());
+        assert!(!contains_subsequence(
+            &InferenceRequests::<Test>::hashed_key_for(42),
+            &42_u64.encode()
+        ));
+        assert!(!contains_subsequence(
+            &ProofRecords::<Test>::hashed_key_for(42),
+            &42_u64.encode()
+        ));
+        StorageVersion::new(24).put::<crate::Pallet<Test>>();
+
+        <Qubitum as Hooks<u64>>::on_runtime_upgrade();
+
+        assert!(unhashed::get_raw(&request_key).is_none());
+        assert!(unhashed::get_raw(&proof_key).is_none());
+        assert_eq!(InferenceRequests::<Test>::get(42), Some(request));
+        assert_eq!(ProofRecords::<Test>::get(42), Some(proof_record));
+        assert_eq!(
+            StorageVersion::get::<crate::Pallet<Test>>(),
+            StorageVersion::new(25)
         );
     });
 }
@@ -7968,7 +8021,7 @@ fn runtime_upgrade_migrates_legacy_reversible_capital_record_keys() {
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
         );
     });
 }
@@ -8107,7 +8160,7 @@ fn runtime_upgrade_migrates_legacy_reversible_identity_record_keys() {
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
         );
         assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
     });
@@ -8527,7 +8580,7 @@ fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_healt
         assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
         );
     });
 }
@@ -8645,7 +8698,7 @@ fn runtime_upgrade_reports_missing_legacy_capital_records() {
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(24)
+            StorageVersion::new(25)
         );
     });
 }
@@ -8909,7 +8962,7 @@ fn stale_request_without_private_witnesses_keeps_participants_pinned() {
 
         let params = Qubitum::protocol_params();
         assert!(params.readiness_blockers.committed_request_payloads_missing);
-        assert!(params.readiness_blockers.private_storage_keys_missing);
+        assert!(!params.readiness_blockers.private_storage_keys_missing);
         assert!(!params.production_ready);
 
         assert_noop!(
