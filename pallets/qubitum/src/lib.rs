@@ -292,7 +292,7 @@ pub mod pallet {
     const LEGACY_ASSIGNMENT_BLINDING: Commitment = [0; 32];
     const LEGACY_TIMING_BLINDING: Commitment = [0; 32];
     const LEGACY_TERMS_BLINDING: Commitment = [0; 32];
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(22);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(23);
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -1283,6 +1283,7 @@ pub mod pallet {
                 .saturating_add(Self::migrate_active_routing_index_keys(on_chain))
                 .saturating_add(Self::migrate_capital_record_storage_keys(on_chain))
                 .saturating_add(Self::rebuild_active_routing_indexes())
+                .saturating_add(Self::migrate_active_routing_index_values(on_chain))
                 .saturating_add(Self::migrate_participant_capital_records(on_chain))
                 .saturating_add(Self::rebuild_request_status_counts())
                 .saturating_add(Self::migrate_proof_record_timestamps(on_chain))
@@ -1585,11 +1586,7 @@ pub mod pallet {
                 stake >= T::MinValidatorStake::get(),
                 Error::<T>::InvalidStake
             );
-            ensure!(
-                (ActiveValidatorsBySubnet::<T>::get(subnet_id).len() as u32)
-                    < T::MaxActiveValidatorsPerSubnet::get(),
-                Error::<T>::TooManyActiveValidators
-            );
+            Self::ensure_active_validator_capacity(subnet_id, None)?;
             T::Currency::hold(&HoldReason::ValidatorStake.into(), &operator, stake)?;
 
             let validator_id = Self::next_validator_id()?;
@@ -2193,10 +2190,6 @@ pub mod pallet {
             Self::ensure_optional_commitment(endpoint_commitment)?;
             let setting_identity =
                 shielded_identity_commitment.is_some() || endpoint_commitment.is_some();
-            let indexed_active =
-                ActiveMinersBySubnet::<T>::get(miner.subnet_id).contains(&miner_id);
-            let should_index =
-                setting_identity && miner.status == RegistryStatus::Active && !indexed_active;
             ensure!(
                 PendingMinerRequests::<T>::get(miner_id) == 0,
                 Error::<T>::PendingAssignedRequests
@@ -2225,7 +2218,7 @@ pub mod pallet {
                 );
                 MinerIdentitySignatureBundles::<T>::insert(miner_id, signature_bundle);
                 MinerIdentitySignatureChallenges::<T>::insert(miner_id, challenge_commitment);
-                if should_index {
+                if miner.status == RegistryStatus::Active {
                     Self::ensure_miner_locked_bond_record(miner_id)?;
                     Self::insert_active_miner(miner.subnet_id, miner_id)?;
                 }
@@ -2251,7 +2244,7 @@ pub mod pallet {
                 MinerIdentityCommitments::<T>::remove(miner_id);
                 MinerIdentitySignatureBundles::<T>::remove(miner_id);
                 MinerIdentitySignatureChallenges::<T>::remove(miner_id);
-                if miner.status == RegistryStatus::Active && indexed_active {
+                if miner.status == RegistryStatus::Active {
                     Self::remove_active_miner(miner.subnet_id, miner_id);
                 }
             }
@@ -2279,8 +2272,6 @@ pub mod pallet {
             Self::ensure_optional_commitment(endpoint_commitment)?;
             let setting_identity =
                 shielded_identity_commitment.is_some() || endpoint_commitment.is_some();
-            let indexed_active =
-                ActiveValidatorsBySubnet::<T>::get(validator.subnet_id).contains(&validator_id);
             ensure!(
                 PendingValidatorRequests::<T>::get(validator_id) == 0,
                 Error::<T>::PendingAssignedRequests
@@ -2329,9 +2320,7 @@ pub mod pallet {
                     if validator.status == RegistryStatus::Pending {
                         validator.status = RegistryStatus::Active;
                     }
-                    if !indexed_active {
-                        Self::insert_active_validator(validator.subnet_id, validator_id)?;
-                    }
+                    Self::insert_active_validator(validator.subnet_id, validator_id)?;
                     validator.stake_commitment = Self::validator_stake_commitment(
                         validator_id,
                         validator.operator_commitment,
@@ -2441,7 +2430,7 @@ pub mod pallet {
             let shield_key_window_privacy = false;
             let private_route_selection = false;
             let account_commitment_blinding = false;
-            let private_routing_indexes = false;
+            let private_routing_indexes = true;
             let private_storage_keys = false;
             let private_capital_accounting = false;
             let private_event_metadata = false;
@@ -2583,7 +2572,7 @@ pub mod pallet {
                 return None;
             }
 
-            let miner_ids = ActiveMinersBySubnet::<T>::get(subnet_id);
+            let miner_ids = Self::active_miner_route_ids(subnet_id);
             if miner_ids.is_empty() {
                 return None;
             }
@@ -2606,9 +2595,7 @@ pub mod pallet {
                 let target = miner_start
                     .checked_add(offset)?
                     .checked_rem(miner_ids.len())?;
-                let Some(miner_id) = miner_ids.get(target).copied() else {
-                    continue;
-                };
+                let miner_id = miner_ids.get(target).copied()?;
                 let Some(miner) = Miners::<T>::get(miner_id) else {
                     continue;
                 };
@@ -3858,7 +3845,7 @@ pub mod pallet {
             seed: u64,
             miner_operator_commitment: Commitment,
         ) -> Option<ValidatorId> {
-            let ids = ActiveValidatorsBySubnet::<T>::get(subnet_id);
+            let ids = Self::active_validator_route_ids(subnet_id);
             if ids.is_empty() {
                 return None;
             }
@@ -3866,9 +3853,7 @@ pub mod pallet {
             let start = Self::route_index(seed, ids.len())?;
             for offset in 0..ids.len() {
                 let target = start.checked_add(offset)?.checked_rem(ids.len())?;
-                let Some(validator_id) = ids.get(target).copied() else {
-                    continue;
-                };
+                let validator_id = ids.get(target).copied()?;
                 let Some(validator) = Validators::<T>::get(validator_id) else {
                     continue;
                 };
@@ -3884,6 +3869,85 @@ pub mod pallet {
             }
 
             None
+        }
+
+        fn active_miner_route_ids(subnet_id: SubnetId) -> sp_std::vec::Vec<MinerId> {
+            let mut ids = sp_std::vec::Vec::new();
+            for (miner_id, miner) in Miners::<T>::iter() {
+                if miner.subnet_id == subnet_id && Self::miner_is_route_eligible(miner_id, &miner) {
+                    ids.push(miner_id);
+                }
+            }
+            ids.sort_unstable();
+            ids
+        }
+
+        fn active_validator_route_ids(subnet_id: SubnetId) -> sp_std::vec::Vec<ValidatorId> {
+            let mut ids = sp_std::vec::Vec::new();
+            for (validator_id, validator) in Validators::<T>::iter() {
+                if validator.subnet_id == subnet_id
+                    && Self::validator_is_route_eligible(validator_id, &validator)
+                {
+                    ids.push(validator_id);
+                }
+            }
+            ids.sort_unstable();
+            ids
+        }
+
+        fn miner_is_route_eligible(miner_id: MinerId, miner: &ChainMiner) -> bool {
+            miner.status == RegistryStatus::Active
+                && Self::miner_has_active_locked_bond_record(miner_id)
+                && Self::ensure_miner_signature_bundle_bound(miner_id, miner).is_ok()
+        }
+
+        fn validator_is_route_eligible(
+            validator_id: ValidatorId,
+            validator: &ChainValidator,
+        ) -> bool {
+            validator.status == RegistryStatus::Active
+                && Self::validator_has_active_locked_stake_record(validator_id)
+                && Self::ensure_validator_signature_bundle_bound(validator_id, validator).is_ok()
+        }
+
+        fn ensure_active_miner_capacity(
+            subnet_id: SubnetId,
+            candidate: Option<MinerId>,
+        ) -> DispatchResult {
+            Self::ensure_route_capacity(
+                Self::active_miner_route_ids(subnet_id),
+                candidate,
+                T::MaxActiveMinersPerSubnet::get(),
+                Error::<T>::TooManyActiveMiners,
+            )
+        }
+
+        fn ensure_active_validator_capacity(
+            subnet_id: SubnetId,
+            candidate: Option<ValidatorId>,
+        ) -> DispatchResult {
+            Self::ensure_route_capacity(
+                Self::active_validator_route_ids(subnet_id),
+                candidate,
+                T::MaxActiveValidatorsPerSubnet::get(),
+                Error::<T>::TooManyActiveValidators,
+            )
+        }
+
+        fn ensure_route_capacity<Id: PartialEq>(
+            ids: sp_std::vec::Vec<Id>,
+            candidate: Option<Id>,
+            max: u32,
+            error: Error<T>,
+        ) -> DispatchResult {
+            let count = ids.len() as u32;
+            let already_included = candidate.is_some_and(|candidate| ids.contains(&candidate));
+            if already_included {
+                ensure!(count <= max, error);
+            } else {
+                ensure!(count < max, error);
+            }
+            Ok(())
         }
 
         fn route_seed(
@@ -3940,36 +4004,30 @@ pub mod pallet {
         }
 
         fn insert_active_miner(subnet_id: SubnetId, miner_id: MinerId) -> DispatchResult {
-            ActiveMinersBySubnet::<T>::try_mutate(subnet_id, |ids| {
-                Self::insert_sorted_miner_id(ids, miner_id)?;
-                Ok(())
-            })
+            Self::ensure_active_miner_capacity(subnet_id, Some(miner_id))
         }
 
-        fn remove_active_miner(subnet_id: SubnetId, miner_id: MinerId) {
-            ActiveMinersBySubnet::<T>::mutate(subnet_id, |ids| {
-                ids.retain(|indexed| *indexed != miner_id);
-            });
-        }
+        fn remove_active_miner(_subnet_id: SubnetId, _miner_id: MinerId) {}
 
         fn insert_active_validator(
             subnet_id: SubnetId,
             validator_id: ValidatorId,
         ) -> DispatchResult {
-            ActiveValidatorsBySubnet::<T>::try_mutate(subnet_id, |ids| {
-                Self::insert_sorted_validator_id(ids, validator_id)?;
-                Ok(())
-            })
+            Self::ensure_active_validator_capacity(subnet_id, Some(validator_id))
         }
 
-        fn remove_active_validator(subnet_id: SubnetId, validator_id: ValidatorId) {
-            ActiveValidatorsBySubnet::<T>::mutate(subnet_id, |ids| {
-                ids.retain(|indexed| *indexed != validator_id);
-            });
-        }
+        fn remove_active_validator(_subnet_id: SubnetId, _validator_id: ValidatorId) {}
 
         fn migrate_active_routing_index_keys(on_chain: StorageVersion) -> Weight {
             if on_chain >= StorageVersion::new(19) {
+                return Weight::zero();
+            }
+
+            Self::clear_active_routing_index_storage_prefixes()
+        }
+
+        fn migrate_active_routing_index_values(on_chain: StorageVersion) -> Weight {
+            if on_chain >= StorageVersion::new(23) {
                 return Weight::zero();
             }
 
@@ -4949,75 +5007,24 @@ pub mod pallet {
         #[cfg(feature = "try-runtime")]
         fn ensure_active_routing_indexes_match() -> Result<(), sp_runtime::TryRuntimeError> {
             for subnet_id in 0..SubnetCount::<T>::get() {
-                let miner_ids = ActiveMinersBySubnet::<T>::get(subnet_id);
-                for miner_id in miner_ids {
-                    let miner = Miners::<T>::get(miner_id)
-                        .ok_or("Qubitum active miner index references missing miner")?;
-                    ensure!(
-                        miner.subnet_id == subnet_id && miner.status == RegistryStatus::Active,
-                        "Qubitum active miner index references inactive or wrong-subnet miner"
-                    );
-                    ensure!(
-                        Self::miner_has_active_locked_bond_record(miner_id),
-                        "Qubitum active miner index references undercapitalized miner"
-                    );
-                    ensure!(
-                        Self::ensure_miner_signature_bundle_bound(miner_id, &miner).is_ok(),
-                        "Qubitum active miner index references identity-ineligible miner"
-                    );
-                }
-            }
-
-            for (miner_id, miner) in Miners::<T>::iter() {
-                if miner.status == RegistryStatus::Active
-                    && Self::miner_has_active_locked_bond_record(miner_id)
-                    && Self::ensure_miner_signature_bundle_bound(miner_id, &miner).is_ok()
-                {
-                    let active_miners = ActiveMinersBySubnet::<T>::get(miner.subnet_id);
-                    ensure!(
-                        active_miners.contains(&miner_id)
-                            || active_miners.len() as u32 >= T::MaxActiveMinersPerSubnet::get(),
-                        "Qubitum active identity-eligible miner missing from non-full route index"
-                    );
-                }
-            }
-
-            for subnet_id in 0..SubnetCount::<T>::get() {
-                let validator_ids = ActiveValidatorsBySubnet::<T>::get(subnet_id);
-                for validator_id in validator_ids {
-                    let validator = Validators::<T>::get(validator_id)
-                        .ok_or("Qubitum active validator index references missing validator")?;
-                    ensure!(
-                        validator.subnet_id == subnet_id
-                            && validator.status == RegistryStatus::Active,
-                        "Qubitum active validator index references inactive or wrong-subnet validator"
-                    );
-                    ensure!(
-                        Self::validator_has_active_locked_stake_record(validator_id),
-                        "Qubitum active validator index references undercapitalized validator"
-                    );
-                    ensure!(
-                        Self::ensure_validator_signature_bundle_bound(validator_id, &validator)
-                            .is_ok(),
-                        "Qubitum active validator index references identity-ineligible validator"
-                    );
-                }
-            }
-
-            for (validator_id, validator) in Validators::<T>::iter() {
-                if validator.status == RegistryStatus::Active
-                    && Self::validator_has_active_locked_stake_record(validator_id)
-                    && Self::ensure_validator_signature_bundle_bound(validator_id, &validator)
-                        .is_ok()
-                {
-                    let active_validators = ActiveValidatorsBySubnet::<T>::get(validator.subnet_id);
-                    ensure!(
-                        active_validators.contains(&validator_id)
-                            || active_validators.len() as u32
-                                >= T::MaxActiveValidatorsPerSubnet::get(),
-                        "Qubitum active identity-eligible validator missing from non-full route index"
-                    );
-                }
+                ensure!(
+                    ActiveMinersBySubnet::<T>::get(subnet_id).is_empty(),
+                    "Qubitum active miner route index publishes participant ids"
+                );
+                ensure!(
+                    ActiveValidatorsBySubnet::<T>::get(subnet_id).is_empty(),
+                    "Qubitum active validator route index publishes participant ids"
+                );
+                ensure!(
+                    (Self::active_miner_route_ids(subnet_id).len() as u32)
+                        <= T::MaxActiveMinersPerSubnet::get(),
+                    "Qubitum active miner route set exceeds configured capacity"
+                );
+                ensure!(
+                    (Self::active_validator_route_ids(subnet_id).len() as u32)
+                        <= T::MaxActiveValidatorsPerSubnet::get(),
+                    "Qubitum active validator route set exceeds configured capacity"
+                );
             }
 
             for (miner_id, _) in Miners::<T>::iter() {

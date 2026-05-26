@@ -746,7 +746,7 @@ fn protocol_params_expose_runtime_policy() {
         assert!(!params.shield_key_window_privacy);
         assert!(!params.private_route_selection);
         assert!(!params.account_commitment_blinding);
-        assert!(!params.private_routing_indexes);
+        assert!(params.private_routing_indexes);
         assert!(!params.private_storage_keys);
         assert!(!params.private_capital_accounting);
         assert!(!params.private_event_metadata);
@@ -785,7 +785,7 @@ fn protocol_params_expose_runtime_policy() {
                 shield_key_window_privacy_missing: true,
                 private_route_selection_missing: true,
                 account_commitment_blinding_missing: true,
-                private_routing_indexes_missing: true,
+                private_routing_indexes_missing: false,
                 private_storage_keys_missing: true,
                 private_capital_accounting_missing: true,
                 private_event_metadata_missing: true,
@@ -826,7 +826,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
         assert!(!params.shield_submitter_origin_privacy);
         assert!(!params.shield_key_window_privacy);
         assert!(!params.account_commitment_blinding);
-        assert!(!params.private_routing_indexes);
+        assert!(params.private_routing_indexes);
         assert!(!params.private_storage_keys);
         assert!(!params.private_capital_accounting);
         assert!(!params.private_event_metadata);
@@ -857,7 +857,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
                 .readiness_blockers
                 .account_commitment_blinding_missing
         );
-        assert!(params.readiness_blockers.private_routing_indexes_missing);
+        assert!(!params.readiness_blockers.private_routing_indexes_missing);
         assert!(params.readiness_blockers.private_storage_keys_missing);
         assert!(params.readiness_blockers.private_capital_accounting_missing);
         assert!(params.readiness_blockers.private_event_metadata_missing);
@@ -873,8 +873,9 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
         );
         assert_eq!(MinerLockedBond::<Test>::get(0), Some(MIN_MINER_BOND));
         assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(MIN_MINER_BOND));
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
-        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
+        assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
     });
 }
 
@@ -883,10 +884,10 @@ fn storage_keys_remain_linkable_until_private_keying_lands() {
     new_test_ext().execute_with(|| {
         let params = Qubitum::protocol_params();
         assert!(!params.private_storage_keys);
-        assert!(!params.private_routing_indexes);
+        assert!(params.private_routing_indexes);
         assert!(!params.private_capital_accounting);
         assert!(params.readiness_blockers.private_storage_keys_missing);
-        assert!(params.readiness_blockers.private_routing_indexes_missing);
+        assert!(!params.readiness_blockers.private_routing_indexes_missing);
         assert!(params.readiness_blockers.private_capital_accounting_missing);
 
         let subnet_id = 0x4b2d_u16;
@@ -1046,18 +1047,22 @@ fn active_routing_indexes_remain_storage_visible_until_private_indexes_land() {
         ));
 
         let params = Qubitum::protocol_params();
-        assert!(!params.private_routing_indexes);
+        assert!(params.private_routing_indexes);
         assert!(params.route_availability_ids_redacted);
         assert!(params.public_route_availability_redacted);
-        assert!(params.readiness_blockers.private_routing_indexes_missing);
+        assert!(!params.readiness_blockers.private_routing_indexes_missing);
 
         let miner_index = ActiveMinersBySubnet::<Test>::get(0);
         let validator_index = ActiveValidatorsBySubnet::<Test>::get(0);
-        assert_eq!(miner_index.to_vec(), vec![0, 1]);
-        assert_eq!(validator_index.to_vec(), vec![0, 1]);
+        assert!(miner_index.is_empty());
+        assert!(validator_index.is_empty());
+        assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
 
-        assert!(contains_subsequence(&miner_index.encode(), &1_u64.encode()));
-        assert!(contains_subsequence(
+        assert!(!contains_subsequence(
+            &miner_index.encode(),
+            &1_u64.encode()
+        ));
+        assert!(!contains_subsequence(
             &validator_index.encode(),
             &1_u64.encode()
         ));
@@ -1082,7 +1087,7 @@ fn active_routing_indexes_remain_storage_visible_until_private_indexes_land() {
 }
 
 #[test]
-fn active_routing_index_values_reveal_routable_participants_until_private_indexes_land() {
+fn active_routing_index_values_do_not_publish_routable_participants() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         assert_ok!(Qubitum::register_miner(
@@ -1116,30 +1121,31 @@ fn active_routing_index_values_reveal_routable_participants_until_private_indexe
         let leaked_validator_ids: Vec<_> = validator_index.iter().copied().collect();
         let params = Qubitum::protocol_params();
 
-        assert_eq!(leaked_miner_ids, vec![0, 1]);
-        assert_eq!(leaked_validator_ids, vec![0, 1]);
-        for miner_id in leaked_miner_ids {
+        assert!(leaked_miner_ids.is_empty());
+        assert!(leaked_validator_ids.is_empty());
+        for miner_id in [0_u64, 1_u64] {
             assert_eq!(
                 Miners::<Test>::get(miner_id).unwrap().status,
                 RegistryStatus::Active
             );
-            assert!(contains_subsequence(
+            assert!(!contains_subsequence(
                 &miner_index.encode(),
                 &miner_id.encode()
             ));
         }
-        for validator_id in leaked_validator_ids {
+        for validator_id in [0_u64, 1_u64] {
             assert_eq!(
                 Validators::<Test>::get(validator_id).unwrap().status,
                 RegistryStatus::Active
             );
-            assert!(contains_subsequence(
+            assert!(!contains_subsequence(
                 &validator_index.encode(),
                 &validator_id.encode()
             ));
         }
-        assert!(!params.private_routing_indexes);
-        assert!(params.readiness_blockers.private_routing_indexes_missing);
+        assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
+        assert!(params.private_routing_indexes);
+        assert!(!params.readiness_blockers.private_routing_indexes_missing);
         assert!(!params.privacy_complete);
         assert!(!params.production_ready);
     });
@@ -1669,8 +1675,8 @@ fn failed_root_slashes_preserve_locked_capital_status_and_routing() {
             validator_hold_before
         );
         assert_eq!(TotalBurned::<Test>::get(), total_burned_before);
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
-        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
     });
 }
 
@@ -1982,7 +1988,7 @@ fn register_validator_locks_stake() {
         ));
         let validator = Validators::<Test>::get(0).unwrap();
         assert_eq!(validator.status, RegistryStatus::Active);
-        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(ValidatorCount::<Test>::get(), 1);
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
@@ -2087,10 +2093,7 @@ fn active_set_capacity_failures_rollback_locked_capital_and_ids() {
             Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
             held_before
         );
-        assert_eq!(
-            ActiveMinersBySubnet::<Test>::get(0).len(),
-            miner_limit as usize
-        );
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
         assert!(!ActiveMinersBySubnet::<Test>::get(0).contains(&overflow_miner_id));
     });
 
@@ -2129,10 +2132,7 @@ fn active_set_capacity_failures_rollback_locked_capital_and_ids() {
             Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
             held_before
         );
-        assert_eq!(
-            ActiveValidatorsBySubnet::<Test>::get(0).len(),
-            validator_limit as usize
-        );
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
     });
 }
 
@@ -2536,7 +2536,7 @@ fn accounting_overflows_fail_without_state_changes() {
             Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
             MIN_MINER_BOND
         );
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
         assert_eq!(TotalBurned::<Test>::get(), u128::MAX);
     });
 
@@ -2558,7 +2558,7 @@ fn accounting_overflows_fail_without_state_changes() {
             Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
             MIN_MINER_BOND
         );
-        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(TotalBurned::<Test>::get(), u128::MAX);
     });
 
@@ -2693,8 +2693,8 @@ fn clearing_identity_removes_active_routing_index_until_reattested() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
 
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
-        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
 
         assert_ok!(Qubitum::set_miner_identity_commitments(
@@ -2705,13 +2705,13 @@ fn clearing_identity_removes_active_routing_index_until_reattested() {
             miner_identity_signature_bundle(0, None, None),
         ));
         assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
-        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert!(MinerIdentityCommitments::<Test>::get(0).is_none());
         assert!(MinerIdentitySignatureBundles::<Test>::get(0).is_none());
         assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_none());
 
         attest_miner(0, 2, Some(commitment(124)), Some(commitment(125)));
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
         assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
 
         assert_ok!(Qubitum::set_validator_identity_commitments(
@@ -2721,7 +2721,7 @@ fn clearing_identity_removes_active_routing_index_until_reattested() {
             None,
             validator_identity_signature_bundle(0, None, None),
         ));
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert!(ValidatorIdentityCommitments::<Test>::get(0).is_none());
         assert!(ValidatorIdentitySignatureBundles::<Test>::get(0).is_none());
@@ -2736,7 +2736,7 @@ fn clearing_identity_removes_active_routing_index_until_reattested() {
             Validators::<Test>::get(0).unwrap().status,
             RegistryStatus::Active
         );
-        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
     });
 }
@@ -4748,7 +4748,7 @@ fn runtime_upgrade_migrates_subnet_owner_and_policy_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(22)
+            StorageVersion::new(23)
         );
     });
 }
@@ -4801,7 +4801,7 @@ fn runtime_upgrade_migrates_identity_signature_challenges() {
         );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(22)
+            StorageVersion::new(23)
         );
     });
 }
@@ -4867,7 +4867,7 @@ fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(22)
+            StorageVersion::new(23)
         );
     });
 }
@@ -4936,7 +4936,7 @@ fn runtime_upgrade_migrates_proof_record_routes_to_commitments() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(22)
+            StorageVersion::new(23)
         );
     });
 }
@@ -5009,7 +5009,7 @@ fn runtime_upgrade_migrates_proof_record_details_to_audit_commitments() {
         }
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(22)
+            StorageVersion::new(23)
         );
     });
 }
@@ -5073,7 +5073,7 @@ fn runtime_upgrade_migrates_registry_operators_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(22)
+            StorageVersion::new(23)
         );
     });
 }
@@ -5142,7 +5142,7 @@ fn runtime_upgrade_migrates_participant_capital_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(22)
+            StorageVersion::new(23)
         );
     });
 }
@@ -5197,7 +5197,7 @@ fn runtime_upgrade_migrates_request_users_to_commitments() {
         assert_eq!(PendingValidatorRequests::<Test>::get(9), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(22)
+            StorageVersion::new(23)
         );
     });
 }
@@ -5237,7 +5237,7 @@ fn runtime_upgrade_migrates_request_timing_to_commitments() {
         assert_eq!(request.status, InferenceRequestStatus::Pending);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(22)
+            StorageVersion::new(23)
         );
     });
 }
@@ -5277,7 +5277,7 @@ fn runtime_upgrade_migrates_request_terms_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(22)
+            StorageVersion::new(23)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 123_456);
         assert_eq!(TotalValidatorFees::<Test>::get(), 3_086);
@@ -5343,7 +5343,7 @@ fn runtime_upgrade_records_legacy_accounting_failures_without_saturated_totals()
         );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(22)
+            StorageVersion::new(23)
         );
     });
 
@@ -7086,8 +7086,8 @@ fn route_assignment_returns_active_participants_only() {
             }),
             Some((42, 0, 0, 0))
         );
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
-        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
 
         assert_ok!(Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0));
         assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
@@ -7110,10 +7110,7 @@ fn route_assignment_skips_validator_missing_locked_stake_record() {
         attest_validator(1, 3, Some(commitment(126)), Some(commitment(127)));
         ValidatorLockedStake::<Test>::remove(0);
 
-        assert_eq!(
-            ActiveValidatorsBySubnet::<Test>::get(0).to_vec(),
-            vec![0, 1]
-        );
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         let assignment = Qubitum::route_assignment(0, 0, assignment_blinding()).unwrap();
         assert_eq!(assignment.validator_id, 1);
     });
@@ -7137,7 +7134,7 @@ fn route_assignment_skips_miner_missing_locked_bond_record() {
         ));
         MinerLockedBond::<Test>::remove(0);
 
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0, 1]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
         let assignment = Qubitum::route_assignment(0, 0, assignment_blinding()).unwrap();
         assert_eq!(assignment.miner_id, 1);
     });
@@ -7210,7 +7207,7 @@ fn route_selection_is_deterministic_until_private_selection_lands() {
         assert!(!params.private_route_selection);
         assert!(params.public_route_availability_redacted);
         assert!(params.readiness_blockers.private_route_selection_missing);
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0, 1]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
 
         let request_42 = Qubitum::route_assignment(0, 42, assignment_blinding()).unwrap();
         let request_43 = Qubitum::route_assignment(0, 43, assignment_blinding()).unwrap();
@@ -7245,9 +7242,9 @@ fn route_assignment_uses_assignment_blinding_seed_not_raw_request_index() {
         ));
 
         let request_id = 42;
-        let miner_index = ActiveMinersBySubnet::<Test>::get(0);
-        let raw_modulo_miner = miner_index
-            .get((request_id as usize) % miner_index.len())
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        let raw_modulo_miner = [0_u64, 1_u64]
+            .get((request_id as usize) % 2)
             .copied()
             .unwrap();
         let mut seen_miners = Vec::new();
@@ -7533,8 +7530,8 @@ fn route_assignment_scans_to_next_miner_when_seeded_miner_self_validates() {
         ));
         attest_validator(0, 2, Some(commitment(124)), Some(commitment(125)));
 
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0, 1]);
-        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
 
         let assignment = Qubitum::route_assignment(0, 0, assignment_blinding()).unwrap();
         assert_eq!(assignment.miner_id, 1);
@@ -7624,7 +7621,7 @@ fn route_assignment_scans_past_sixteen_self_validation_conflicts() {
             Some(commitment(125)),
             validator_identity_signature_bundle(16, Some(commitment(124)), Some(commitment(125))),
         ));
-        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).len(), 17);
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
 
         let assignment = Qubitum::route_assignment(0, 0, assignment_blinding()).unwrap();
         assert_eq!(assignment.miner_id, 0);
@@ -7684,7 +7681,7 @@ fn active_miner_index_stays_sorted_by_id() {
             MIN_MINER_BOND
         ));
 
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0, 1]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
     });
 }
 
@@ -7800,13 +7797,13 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
 
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
-        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(22)
+            StorageVersion::new(23)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
@@ -7841,11 +7838,11 @@ fn runtime_upgrade_clears_legacy_reversible_active_route_keys() {
 
         assert!(unhashed::get_raw(&legacy_miner_key).is_none());
         assert!(unhashed::get_raw(&legacy_validator_key).is_none());
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
-        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(22)
+            StorageVersion::new(23)
         );
     });
 }
@@ -7884,11 +7881,11 @@ fn runtime_upgrade_migrates_legacy_reversible_capital_record_keys() {
         assert!(unhashed::get_raw(&legacy_validator_stake_key).is_none());
         assert_eq!(MinerLockedBond::<Test>::get(0), Some(MIN_MINER_BOND));
         assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(MIN_MINER_BOND));
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
-        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(22)
+            StorageVersion::new(23)
         );
     });
 }
@@ -8023,11 +8020,11 @@ fn runtime_upgrade_migrates_legacy_reversible_identity_record_keys() {
             ValidatorIdentitySignatureChallenges::<Test>::get(0),
             Some(validator_challenge)
         );
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
-        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(22)
+            StorageVersion::new(23)
         );
         assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
     });
@@ -8084,8 +8081,8 @@ fn runtime_upgrade_does_not_reindex_identity_ineligible_participants() {
             Validators::<Test>::get(0).unwrap().status,
             RegistryStatus::Active
         );
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
-        assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
     });
 }
 
@@ -8098,7 +8095,7 @@ fn runtime_upgrade_does_not_reindex_validator_missing_locked_stake_record() {
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
 
-        assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(LegacyCapitalRecordMigrationFailures::<Test>::get(), 1);
         assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_none());
@@ -8211,14 +8208,8 @@ fn runtime_upgrade_identity_missing_records_do_not_overflow_attested_routes() {
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
 
-        assert_eq!(
-            ActiveMinersBySubnet::<Test>::get(0).to_vec(),
-            vec![attested_miner_id]
-        );
-        assert_eq!(
-            ActiveValidatorsBySubnet::<Test>::get(0).to_vec(),
-            vec![attested_validator_id]
-        );
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(LegacyRoutingIndexMigrationFailures::<Test>::get(), 0);
         for miner_id in 0..=miner_limit {
             assert_eq!(
@@ -8351,23 +8342,8 @@ fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_healt
                 .map_err(|_| Error::<Test>::TooManyActiveValidators)
         })
         .unwrap();
-        RequestCount::<Test>::put(99);
-        assert_ok!(Qubitum::request_inference(
-            RuntimeOrigin::signed(4),
-            99,
-            InferenceRequestParams {
-                subnet_id: 0,
-                miner_id: 0,
-                validator_id: 0,
-                input_commitment: commitment(1),
-                assignment_blinding: assignment_blinding(),
-                timing_blinding: timing_blinding(),
-                terms_blinding: terms_blinding(),
-                payment: 1_000,
-                validator_fee_bps: 250,
-                treasury_fee_bps: 50,
-            },
-        ));
+        PendingMinerRequests::<Test>::insert(pending_miner_id, 1);
+        PendingValidatorRequests::<Test>::insert(pending_validator_id, 1);
         assert_eq!(PendingMinerRequests::<Test>::get(pending_miner_id), 1);
         assert_eq!(
             PendingValidatorRequests::<Test>::get(pending_validator_id),
@@ -8377,26 +8353,8 @@ fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_healt
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
 
-        assert_eq!(
-            ActiveMinersBySubnet::<Test>::get(0).len(),
-            miner_limit as usize
-        );
-        assert_eq!(
-            ActiveValidatorsBySubnet::<Test>::get(0).len(),
-            validator_limit as usize
-        );
-        for miner_id in ActiveMinersBySubnet::<Test>::get(0) {
-            assert_eq!(
-                Miners::<Test>::get(miner_id).unwrap().status,
-                RegistryStatus::Active
-            );
-        }
-        for validator_id in ActiveValidatorsBySubnet::<Test>::get(0) {
-            assert_eq!(
-                Validators::<Test>::get(validator_id).unwrap().status,
-                RegistryStatus::Active
-            );
-        }
+        assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
+        assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
 
         let exiting_miners: Vec<_> = (0..=miner_limit)
             .map(u64::from)
@@ -8427,8 +8385,16 @@ fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_healt
         let exiting_validator_id = *exiting_validators.first().unwrap();
         assert_ne!(exiting_miner_id, pending_miner_id);
         assert_ne!(exiting_validator_id, pending_validator_id);
-        assert!(ActiveMinersBySubnet::<Test>::get(0).contains(&pending_miner_id));
-        assert!(ActiveValidatorsBySubnet::<Test>::get(0).contains(&pending_validator_id));
+        assert_eq!(
+            Miners::<Test>::get(pending_miner_id).unwrap().status,
+            RegistryStatus::Active
+        );
+        assert_eq!(
+            Validators::<Test>::get(pending_validator_id)
+                .unwrap()
+                .status,
+            RegistryStatus::Active
+        );
         assert_eq!(
             Miners::<Test>::get(exiting_miner_id)
                 .unwrap()
@@ -8466,27 +8432,15 @@ fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_healt
         assert_eq!(Qubitum::migration_health().legacy_accounting_failures, 0);
         assert_eq!(Qubitum::public_miner(exiting_miner_id), None);
         assert_eq!(Qubitum::public_validator(exiting_validator_id), None);
-        let mut pending_submission = valid_submission(99);
-        pending_submission.miner_id = pending_miner_id;
-        pending_submission.validator_id = pending_validator_id;
-        pending_submission.model_commitment =
-            commitment((miner_limit.saturating_add(10) % 250) as u8);
-        assert_ok!(submit_proof(
-            RuntimeOrigin::signed(3),
-            bind_proof_transcript(pending_submission)
-        ));
-        assert_eq!(PendingMinerRequests::<Test>::get(pending_miner_id), 0);
+        assert_eq!(PendingMinerRequests::<Test>::get(pending_miner_id), 1);
         assert_eq!(
             PendingValidatorRequests::<Test>::get(pending_validator_id),
-            0
+            1
         );
-        assert_eq!(
-            InferenceRequests::<Test>::get(99).unwrap().status,
-            InferenceRequestStatus::Settled
-        );
+        assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(22)
+            StorageVersion::new(23)
         );
     });
 }
@@ -8602,7 +8556,7 @@ fn runtime_upgrade_reports_missing_legacy_capital_records() {
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(22)
+            StorageVersion::new(23)
         );
     });
 }
