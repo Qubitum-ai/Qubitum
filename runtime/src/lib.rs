@@ -3244,6 +3244,10 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
             params.proof_verifier_mode,
             pallet_qubitum::ProofVerifierMode::FailClosed
         );
+        assert_eq!(
+            <<Runtime as pallet_qubitum::Config>::IdentitySignatureVerifier as pallet_qubitum::VerifyIdentitySignature>::mode(),
+            pallet_qubitum::IdentitySignatureVerifierMode::FailClosed
+        );
         assert!(!params.proof_settlement_enabled);
         assert!(params.readiness_blockers.proof_settlement_disabled);
     }
@@ -3253,6 +3257,10 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
         assert_eq!(
             params.proof_verifier_mode,
             pallet_qubitum::ProofVerifierMode::ShapeOnly
+        );
+        assert_eq!(
+            <<Runtime as pallet_qubitum::Config>::IdentitySignatureVerifier as pallet_qubitum::VerifyIdentitySignature>::mode(),
+            pallet_qubitum::IdentitySignatureVerifierMode::CommitmentBindingOnly
         );
         assert!(params.proof_settlement_enabled);
         assert!(!params.readiness_blockers.proof_settlement_disabled);

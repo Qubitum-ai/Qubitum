@@ -4,10 +4,10 @@ use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, AutoRouteInferenceRequestParams,
     CancelledInferenceRequestCount, ChainIdentityCommitments, ChainInferenceRequest, ChainMiner,
     ChainReadinessBlockers, ChainRequestStatusCounts, ChainRouteAvailability, ChainValidator,
-    Error, FailClosedProofVerifier, HoldReason, InferenceRequestCommitmentParams,
-    InferenceRequestParams, InferenceRequestStatus, InferenceRequestTerms,
-    InferenceRequestTermsWitness, InferenceRequestTimingWitness, InferenceRequests,
-    LegacyAccountingMigrationFailures, LegacyCapitalRecordMigrationFailures,
+    Error, FailClosedProofVerifier, HoldReason, IdentitySignatureVerifierMode,
+    InferenceRequestCommitmentParams, InferenceRequestParams, InferenceRequestStatus,
+    InferenceRequestTerms, InferenceRequestTermsWitness, InferenceRequestTimingWitness,
+    InferenceRequests, LegacyAccountingMigrationFailures, LegacyCapitalRecordMigrationFailures,
     LegacyRoutingIndexMigrationFailures, MinerCount, MinerIdentityCommitments,
     MinerIdentitySignatureBundles, MinerIdentitySignatureChallenges, MinerLockedBond, Miners,
     PendingInferenceRequestCount, PendingMinerRequests, PendingValidatorRequests, ProofRecords,
@@ -16,7 +16,7 @@ use crate::{
     Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
     TotalTreasuryFees, TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
     ValidatorIdentitySignatureBundles, ValidatorIdentitySignatureChallenges, ValidatorLockedStake,
-    Validators, VerifyProof, identity_signature_binding_for_mode,
+    Validators, VerifyIdentitySignature, VerifyProof, identity_signature_binding_for_mode,
     mock::{
         Balances, Qubitum, RuntimeEvent, RuntimeOrigin, ShieldedCallPayloads, System, Test,
         new_test_ext, set_verification_outcome, test_identity_signature_commitment,
@@ -732,6 +732,10 @@ fn protocol_params_expose_runtime_policy() {
         assert!(params.proof_settlement_enabled);
         assert!(!params.production_zk_verifier);
         assert_eq!(params.signature_mode, SignatureMode::FullPostQuantum);
+        assert_eq!(
+            <<Test as crate::Config>::IdentitySignatureVerifier as VerifyIdentitySignature>::mode(),
+            IdentitySignatureVerifierMode::TestOnly
+        );
         assert!(!params.committed_request_payloads);
         assert!(!params.shielded_call_payloads);
         assert!(!params.shield_submitter_origin_privacy);

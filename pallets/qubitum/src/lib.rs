@@ -109,6 +109,16 @@ pub enum IdentitySignatureVerifierMode {
     TestOnly,
 }
 
+impl IdentitySignatureVerifierMode {
+    pub fn production_crypto_verification(self) -> bool {
+        matches!(self, Self::ProductionCrypto)
+    }
+
+    pub fn identity_signature_verification(self) -> bool {
+        self.production_crypto_verification()
+    }
+}
+
 impl ProofVerifierMode {
     pub fn proof_settlement_enabled(self) -> bool {
         !matches!(self, Self::FailClosed)
@@ -2418,6 +2428,7 @@ pub mod pallet {
             let proof_settlement_enabled = proof_verifier_mode.proof_settlement_enabled();
             let production_zk_verifier = proof_verifier_mode.production_zk_verifier();
             let signature_mode = T::SignatureMode::get();
+            let identity_signature_verifier_mode = T::IdentitySignatureVerifier::mode();
             let committed_request_payloads = false;
             let shielded_call_payloads = T::ShieldedCallPayloads::get();
             let shielded_call_payload_execution =
@@ -2447,10 +2458,12 @@ pub mod pallet {
             let public_total_burned_redacted = true;
             let public_identity_metadata_redacted = true;
             let post_quantum_account_signatures = false;
-            let post_quantum_signature_crypto_verification = false;
+            let post_quantum_signature_crypto_verification =
+                identity_signature_verifier_mode.production_crypto_verification();
             let identity_signature_commitment_policy = true;
             let identity_signature_challenge_binding = true;
-            let identity_signature_verification = false;
+            let identity_signature_verification =
+                identity_signature_verifier_mode.identity_signature_verification();
             let readiness_blockers = ChainReadinessBlockers {
                 proof_settlement_disabled: !proof_settlement_enabled,
                 production_zk_verifier_missing: !production_zk_verifier,
