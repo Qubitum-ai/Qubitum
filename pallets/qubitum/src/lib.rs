@@ -292,7 +292,7 @@ pub mod pallet {
     const LEGACY_ASSIGNMENT_BLINDING: Commitment = [0; 32];
     const LEGACY_TIMING_BLINDING: Commitment = [0; 32];
     const LEGACY_TERMS_BLINDING: Commitment = [0; 32];
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(23);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(24);
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -1145,11 +1145,11 @@ pub mod pallet {
     pub type Subnets<T: Config> = StorageMap<_, Blake2_128, SubnetId, ChainSubnet, OptionQuery>;
 
     #[pallet::storage]
-    pub type Miners<T: Config> = StorageMap<_, Twox64Concat, MinerId, ChainMiner, OptionQuery>;
+    pub type Miners<T: Config> = StorageMap<_, Blake2_128, MinerId, ChainMiner, OptionQuery>;
 
     #[pallet::storage]
     pub type Validators<T: Config> =
-        StorageMap<_, Twox64Concat, ValidatorId, ChainValidator, OptionQuery>;
+        StorageMap<_, Blake2_128, ValidatorId, ChainValidator, OptionQuery>;
 
     #[pallet::storage]
     pub type MinerIdentityCommitments<T: Config> =
@@ -1270,8 +1270,9 @@ pub mod pallet {
                 return T::DbWeight::get().reads(1);
             }
 
-            let weight = Self::migrate_operator_commitments(on_chain)
-                .saturating_add(Self::migrate_subnet_storage_keys(on_chain))
+            let weight = Self::migrate_subnet_storage_keys(on_chain)
+                .saturating_add(Self::migrate_registry_storage_keys(on_chain))
+                .saturating_add(Self::migrate_operator_commitments(on_chain))
                 .saturating_add(Self::migrate_subnet_policy_commitments(on_chain))
                 .saturating_add(Self::migrate_participant_capital_commitments(on_chain))
                 .saturating_add(Self::migrate_request_assignment_commitments(on_chain))
@@ -1586,10 +1587,10 @@ pub mod pallet {
                 stake >= T::MinValidatorStake::get(),
                 Error::<T>::InvalidStake
             );
+            let validator_id = Self::next_validator_id()?;
             Self::ensure_active_validator_capacity(subnet_id, None)?;
             T::Currency::hold(&HoldReason::ValidatorStake.into(), &operator, stake)?;
 
-            let validator_id = Self::next_validator_id()?;
             let operator_commitment = Self::operator_commitment(&operator);
             let status = RegistryStatus::Pending;
             let validator = ChainValidator {
@@ -3400,8 +3401,29 @@ pub mod pallet {
             )
         }
 
+        fn miner_records() -> sp_std::vec::Vec<(MinerId, ChainMiner)> {
+            let mut records = sp_std::vec::Vec::new();
+            for miner_id in 0..MinerCount::<T>::get() {
+                if let Some(miner) = Miners::<T>::get(miner_id) {
+                    records.push((miner_id, miner));
+                }
+            }
+            records
+        }
+
+        fn validator_records() -> sp_std::vec::Vec<(ValidatorId, ChainValidator)> {
+            let mut records = sp_std::vec::Vec::new();
+            for validator_id in 0..ValidatorCount::<T>::get() {
+                if let Some(validator) = Validators::<T>::get(validator_id) {
+                    records.push((validator_id, validator));
+                }
+            }
+            records
+        }
+
         fn miner_capital_record_count(operator_commitment: Commitment) -> u32 {
-            Miners::<T>::iter()
+            Self::miner_records()
+                .into_iter()
                 .filter(|(_, miner)| {
                     miner.operator_commitment == operator_commitment
                         && Self::miner_capital_bearing_status(miner.status)
@@ -3410,7 +3432,8 @@ pub mod pallet {
         }
 
         fn validator_capital_record_count(operator_commitment: Commitment) -> u32 {
-            Validators::<T>::iter()
+            Self::validator_records()
+                .into_iter()
                 .filter(|(_, validator)| {
                     validator.operator_commitment == operator_commitment
                         && Self::validator_capital_bearing_status(validator.status)
@@ -3873,7 +3896,7 @@ pub mod pallet {
 
         fn active_miner_route_ids(subnet_id: SubnetId) -> sp_std::vec::Vec<MinerId> {
             let mut ids = sp_std::vec::Vec::new();
-            for (miner_id, miner) in Miners::<T>::iter() {
+            for (miner_id, miner) in Self::miner_records() {
                 if miner.subnet_id == subnet_id && Self::miner_is_route_eligible(miner_id, &miner) {
                     ids.push(miner_id);
                 }
@@ -3884,7 +3907,7 @@ pub mod pallet {
 
         fn active_validator_route_ids(subnet_id: SubnetId) -> sp_std::vec::Vec<ValidatorId> {
             let mut ids = sp_std::vec::Vec::new();
-            for (validator_id, validator) in Validators::<T>::iter() {
+            for (validator_id, validator) in Self::validator_records() {
                 if validator.subnet_id == subnet_id
                     && Self::validator_is_route_eligible(validator_id, &validator)
                 {
@@ -4052,6 +4075,37 @@ pub mod pallet {
             T::DbWeight::get().writes(removed)
         }
 
+        fn migrate_registry_storage_keys(on_chain: StorageVersion) -> Weight {
+            if on_chain >= StorageVersion::new(24) {
+                return Weight::zero();
+            }
+
+            let mut reads = 0_u64;
+            let mut writes = 0_u64;
+
+            for miner_id in 0..MinerCount::<T>::get() {
+                reads = reads.saturating_add(1);
+                let legacy_key = Self::legacy_twox_storage_map_key(b"Miners", miner_id);
+                if let Some(raw) = unhashed::get_raw(&legacy_key) {
+                    unhashed::put_raw(&Miners::<T>::hashed_key_for(miner_id), &raw);
+                    unhashed::kill(&legacy_key);
+                    writes = writes.saturating_add(2);
+                }
+            }
+
+            for validator_id in 0..ValidatorCount::<T>::get() {
+                reads = reads.saturating_add(1);
+                let legacy_key = Self::legacy_twox_storage_map_key(b"Validators", validator_id);
+                if let Some(raw) = unhashed::get_raw(&legacy_key) {
+                    unhashed::put_raw(&Validators::<T>::hashed_key_for(validator_id), &raw);
+                    unhashed::kill(&legacy_key);
+                    writes = writes.saturating_add(2);
+                }
+            }
+
+            T::DbWeight::get().reads_writes(reads, writes)
+        }
+
         fn migrate_capital_record_storage_keys(on_chain: StorageVersion) -> Weight {
             if on_chain >= StorageVersion::new(20) {
                 return Weight::zero();
@@ -4059,7 +4113,7 @@ pub mod pallet {
 
             let mut reads = 0_u64;
             let mut writes = 0_u64;
-            for (miner_id, _) in Miners::<T>::iter() {
+            for (miner_id, _) in Self::miner_records() {
                 reads = reads.saturating_add(1);
                 let legacy_key = Self::legacy_twox_storage_map_key(b"MinerLockedBond", miner_id);
                 if let Some(bond) = unhashed::get::<BalanceOf<T>>(&legacy_key) {
@@ -4069,7 +4123,7 @@ pub mod pallet {
                     writes = writes.saturating_add(2);
                 }
             }
-            for (validator_id, _) in Validators::<T>::iter() {
+            for (validator_id, _) in Self::validator_records() {
                 reads = reads.saturating_add(1);
                 let legacy_key =
                     Self::legacy_twox_storage_map_key(b"ValidatorLockedStake", validator_id);
@@ -4092,7 +4146,7 @@ pub mod pallet {
             let mut reads = 0_u64;
             let mut writes = 0_u64;
 
-            for (miner_id, _) in Miners::<T>::iter() {
+            for (miner_id, _) in Self::miner_records() {
                 reads = reads.saturating_add(1);
 
                 let commitments_key =
@@ -4127,7 +4181,7 @@ pub mod pallet {
                 }
             }
 
-            for (validator_id, _) in Validators::<T>::iter() {
+            for (validator_id, _) in Self::validator_records() {
                 reads = reads.saturating_add(1);
 
                 let commitments_key = Self::legacy_twox_storage_map_key(
@@ -4223,7 +4277,7 @@ pub mod pallet {
 
             let mut pending_miners = sp_std::vec::Vec::new();
             let mut routable_miners = sp_std::vec::Vec::new();
-            for (miner_id, miner) in Miners::<T>::iter() {
+            for (miner_id, miner) in Self::miner_records() {
                 miner_reads = miner_reads.saturating_add(1);
                 if miner.status == RegistryStatus::Active
                     && Self::miner_has_active_locked_bond_record(miner_id)
@@ -4255,7 +4309,7 @@ pub mod pallet {
 
             let mut pending_validators = sp_std::vec::Vec::new();
             let mut routable_validators = sp_std::vec::Vec::new();
-            for (validator_id, validator) in Validators::<T>::iter() {
+            for (validator_id, validator) in Self::validator_records() {
                 validator_reads = validator_reads.saturating_add(1);
                 if validator.status == RegistryStatus::Active
                     && Self::validator_has_active_locked_stake_record(validator_id)
@@ -4350,7 +4404,7 @@ pub mod pallet {
             let mut validator_reads = 0_u64;
             let mut missing = 0_u32;
 
-            for (miner_id, miner) in Miners::<T>::iter() {
+            for (miner_id, miner) in Self::miner_records() {
                 miner_reads = miner_reads.saturating_add(1);
                 if Self::miner_capital_bearing_status(miner.status) {
                     miner_reads = miner_reads.saturating_add(1);
@@ -4360,7 +4414,7 @@ pub mod pallet {
                 }
             }
 
-            for (validator_id, validator) in Validators::<T>::iter() {
+            for (validator_id, validator) in Self::validator_records() {
                 validator_reads = validator_reads.saturating_add(1);
                 if Self::validator_capital_bearing_status(validator.status) {
                     validator_reads = validator_reads.saturating_add(1);
@@ -4380,12 +4434,12 @@ pub mod pallet {
             let mut validator_reads = 0_u64;
             let mut validator_writes = 0_u64;
 
-            for (miner_id, _) in Miners::<T>::iter() {
+            for (miner_id, _) in Self::miner_records() {
                 PendingMinerRequests::<T>::remove(miner_id);
                 miner_reads = miner_reads.saturating_add(1);
                 miner_writes = miner_writes.saturating_add(1);
             }
-            for (validator_id, _) in Validators::<T>::iter() {
+            for (validator_id, _) in Self::validator_records() {
                 PendingValidatorRequests::<T>::remove(validator_id);
                 validator_reads = validator_reads.saturating_add(1);
                 validator_writes = validator_writes.saturating_add(1);
@@ -4624,7 +4678,7 @@ pub mod pallet {
             let mut scanned = 0_u64;
             let mut migrated = 0_u64;
 
-            for (miner_id, miner) in Miners::<T>::iter() {
+            for (miner_id, miner) in Self::miner_records() {
                 scanned = scanned.saturating_add(1);
                 if MinerIdentitySignatureBundles::<T>::contains_key(miner_id)
                     && let Some(commitments) = MinerIdentityCommitments::<T>::get(miner_id)
@@ -4643,7 +4697,7 @@ pub mod pallet {
                 }
             }
 
-            for (validator_id, validator) in Validators::<T>::iter() {
+            for (validator_id, validator) in Self::validator_records() {
                 scanned = scanned.saturating_add(1);
                 if ValidatorIdentitySignatureBundles::<T>::contains_key(validator_id)
                     && let Some(commitments) = ValidatorIdentityCommitments::<T>::get(validator_id)
@@ -4670,31 +4724,46 @@ pub mod pallet {
                 return Weight::zero();
             }
 
+            let miner_count = MinerCount::<T>::get();
             let mut migrated_miners = 0_u64;
-            Miners::<T>::translate::<ChainMinerV7<T::AccountId, BalanceOf<T>>, _>(|_, old| {
-                migrated_miners = migrated_miners.saturating_add(1);
+            for miner_id in 0..miner_count {
+                let Some(old) = unhashed::get::<ChainMinerV7<T::AccountId, BalanceOf<T>>>(
+                    &Miners::<T>::hashed_key_for(miner_id),
+                ) else {
+                    continue;
+                };
                 let operator_commitment = Self::operator_commitment(&old.operator);
-                Some(ChainMiner {
-                    id: old.id,
-                    operator_commitment,
-                    subnet_id: old.subnet_id,
-                    model_commitment: old.model_commitment,
-                    proof_system: old.proof_system,
-                    bond_commitment: Self::miner_bond_commitment(
-                        old.id,
+                Miners::<T>::insert(
+                    miner_id,
+                    ChainMiner {
+                        id: old.id,
                         operator_commitment,
-                        old.status,
-                    ),
-                    status: old.status,
-                })
-            });
+                        subnet_id: old.subnet_id,
+                        model_commitment: old.model_commitment,
+                        proof_system: old.proof_system,
+                        bond_commitment: Self::miner_bond_commitment(
+                            old.id,
+                            operator_commitment,
+                            old.status,
+                        ),
+                        status: old.status,
+                    },
+                );
+                migrated_miners = migrated_miners.saturating_add(1);
+            }
 
+            let validator_count = ValidatorCount::<T>::get();
             let mut migrated_validators = 0_u64;
-            Validators::<T>::translate::<ChainValidatorV7<T::AccountId, BalanceOf<T>>, _>(
-                |_, old| {
-                    migrated_validators = migrated_validators.saturating_add(1);
-                    let operator_commitment = Self::operator_commitment(&old.operator);
-                    Some(ChainValidator {
+            for validator_id in 0..validator_count {
+                let Some(old) = unhashed::get::<ChainValidatorV7<T::AccountId, BalanceOf<T>>>(
+                    &Validators::<T>::hashed_key_for(validator_id),
+                ) else {
+                    continue;
+                };
+                let operator_commitment = Self::operator_commitment(&old.operator);
+                Validators::<T>::insert(
+                    validator_id,
+                    ChainValidator {
                         id: old.id,
                         operator_commitment,
                         subnet_id: old.subnet_id,
@@ -4704,12 +4773,13 @@ pub mod pallet {
                             old.status,
                         ),
                         status: old.status,
-                    })
-                },
-            );
+                    },
+                );
+                migrated_validators = migrated_validators.saturating_add(1);
+            }
 
             let migrated = migrated_miners.saturating_add(migrated_validators);
-            T::DbWeight::get().reads_writes(migrated, migrated)
+            T::DbWeight::get().reads_writes(miner_count.saturating_add(validator_count), migrated)
         }
 
         fn migrate_subnet_policy_commitments(on_chain: StorageVersion) -> Weight {
@@ -4758,42 +4828,60 @@ pub mod pallet {
                 return Weight::zero();
             }
 
+            let miner_count = MinerCount::<T>::get();
             let mut migrated_miners = 0_u64;
-            Miners::<T>::translate::<ChainMinerV9<BalanceOf<T>>, _>(|_, old| {
+            for miner_id in 0..miner_count {
+                let Some(old) = unhashed::get::<ChainMinerV9<BalanceOf<T>>>(
+                    &Miners::<T>::hashed_key_for(miner_id),
+                ) else {
+                    continue;
+                };
+                Miners::<T>::insert(
+                    miner_id,
+                    ChainMiner {
+                        id: old.id,
+                        operator_commitment: old.operator_commitment,
+                        subnet_id: old.subnet_id,
+                        model_commitment: old.model_commitment,
+                        proof_system: old.proof_system,
+                        bond_commitment: Self::miner_bond_commitment(
+                            old.id,
+                            old.operator_commitment,
+                            old.status,
+                        ),
+                        status: old.status,
+                    },
+                );
                 migrated_miners = migrated_miners.saturating_add(1);
-                Some(ChainMiner {
-                    id: old.id,
-                    operator_commitment: old.operator_commitment,
-                    subnet_id: old.subnet_id,
-                    model_commitment: old.model_commitment,
-                    proof_system: old.proof_system,
-                    bond_commitment: Self::miner_bond_commitment(
-                        old.id,
-                        old.operator_commitment,
-                        old.status,
-                    ),
-                    status: old.status,
-                })
-            });
+            }
 
+            let validator_count = ValidatorCount::<T>::get();
             let mut migrated_validators = 0_u64;
-            Validators::<T>::translate::<ChainValidatorV9<BalanceOf<T>>, _>(|_, old| {
+            for validator_id in 0..validator_count {
+                let Some(old) = unhashed::get::<ChainValidatorV9<BalanceOf<T>>>(
+                    &Validators::<T>::hashed_key_for(validator_id),
+                ) else {
+                    continue;
+                };
+                Validators::<T>::insert(
+                    validator_id,
+                    ChainValidator {
+                        id: old.id,
+                        operator_commitment: old.operator_commitment,
+                        subnet_id: old.subnet_id,
+                        stake_commitment: Self::validator_stake_commitment(
+                            old.id,
+                            old.operator_commitment,
+                            old.status,
+                        ),
+                        status: old.status,
+                    },
+                );
                 migrated_validators = migrated_validators.saturating_add(1);
-                Some(ChainValidator {
-                    id: old.id,
-                    operator_commitment: old.operator_commitment,
-                    subnet_id: old.subnet_id,
-                    stake_commitment: Self::validator_stake_commitment(
-                        old.id,
-                        old.operator_commitment,
-                        old.status,
-                    ),
-                    status: old.status,
-                })
-            });
+            }
 
             let migrated = migrated_miners.saturating_add(migrated_validators);
-            T::DbWeight::get().reads_writes(migrated, migrated)
+            T::DbWeight::get().reads_writes(miner_count.saturating_add(validator_count), migrated)
         }
 
         fn migrate_request_owner_commitments(on_chain: StorageVersion) -> Weight {
@@ -5027,7 +5115,7 @@ pub mod pallet {
                 );
             }
 
-            for (miner_id, _) in Miners::<T>::iter() {
+            for (miner_id, _) in Self::miner_records() {
                 let count = PendingMinerRequests::<T>::get(miner_id);
                 if count == 0 {
                     continue;
@@ -5046,7 +5134,7 @@ pub mod pallet {
                 );
             }
 
-            for (validator_id, _) in Validators::<T>::iter() {
+            for (validator_id, _) in Self::validator_records() {
                 let count = PendingValidatorRequests::<T>::get(validator_id);
                 if count == 0 {
                     continue;
