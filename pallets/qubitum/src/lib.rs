@@ -2731,10 +2731,25 @@ pub mod pallet {
                 Error::<T>::RequestMismatch
             );
             ensure!(
+                params.timing_commitment
+                    != Self::legacy_request_timing_commitment(request_id, params.created_at),
+                Error::<T>::MissingCommitment
+            );
+            ensure!(
                 params.payment > BalanceOf::<T>::default(),
                 Error::<T>::InvalidPayment
             );
             Self::validate_fee_split(params.validator_fee_bps, params.treasury_fee_bps)?;
+            ensure!(
+                params.terms_commitment
+                    != Self::legacy_request_terms_commitment(
+                        request_id,
+                        params.payment,
+                        params.validator_fee_bps,
+                        params.treasury_fee_bps,
+                    ),
+                Error::<T>::MissingCommitment
+            );
             let subnet = Subnets::<T>::get(params.subnet_id).ok_or(Error::<T>::UnknownSubnet)?;
             ensure!(subnet.active, Error::<T>::NotActive);
             Ok(())
