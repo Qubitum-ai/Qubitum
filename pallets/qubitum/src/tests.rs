@@ -72,9 +72,17 @@ fn challenge_bound_signature(
     seed: u8,
     challenge: [u8; 32],
 ) -> SignatureCommitment {
+    challenge_bound_signature_for_public_key(algorithm, commitment(seed), challenge)
+}
+
+fn challenge_bound_signature_for_public_key(
+    algorithm: SignatureAlgorithm,
+    public_key_commitment: [u8; 32],
+    challenge: [u8; 32],
+) -> SignatureCommitment {
     let unsigned = SignatureCommitment {
         algorithm,
-        public_key_commitment: commitment(seed),
+        public_key_commitment,
         signature_commitment: [0; 32],
     };
     SignatureCommitment {
@@ -102,7 +110,7 @@ fn post_quantum_signature_bundle_for_challenge(challenge: [u8; 32]) -> Signature
         classical: None,
         post_quantum: Some(challenge_bound_signature(
             SignatureAlgorithm::Dilithium3,
-            40,
+            240,
             challenge,
         )),
     }
@@ -3452,6 +3460,107 @@ fn identity_signature_bundle_rejects_reused_commitment_material() {
         assert_eq!(
             MinerIdentitySignatureChallenges::<Test>::get(0),
             existing_challenge
+        );
+    });
+}
+
+#[test]
+fn identity_signature_bundle_rejects_reserved_commitment_reuse() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+
+        let existing_miner_public_identity = Qubitum::public_miner_identity(0);
+        let existing_miner_commitments = MinerIdentityCommitments::<Test>::get(0);
+        let existing_miner_bundle = MinerIdentitySignatureBundles::<Test>::get(0);
+        let existing_miner_challenge = MinerIdentitySignatureChallenges::<Test>::get(0);
+        let miner = Miners::<Test>::get(0).unwrap();
+        let miner_challenge = Qubitum::miner_identity_signature_challenge(
+            0,
+            miner.operator_commitment,
+            Some(commitment(68)),
+            Some(commitment(69)),
+        );
+        let miner_bundle_reusing_operator = SignatureBundle {
+            classical: None,
+            post_quantum: Some(challenge_bound_signature_for_public_key(
+                SignatureAlgorithm::Dilithium3,
+                miner.operator_commitment,
+                miner_challenge,
+            )),
+        };
+
+        assert_noop!(
+            Qubitum::set_miner_identity_commitments(
+                RuntimeOrigin::signed(2),
+                0,
+                Some(commitment(68)),
+                Some(commitment(69)),
+                miner_bundle_reusing_operator,
+            ),
+            Error::<Test>::InvalidSignatureBundle
+        );
+        assert_eq!(
+            Qubitum::public_miner_identity(0),
+            existing_miner_public_identity
+        );
+        assert_eq!(
+            MinerIdentityCommitments::<Test>::get(0),
+            existing_miner_commitments
+        );
+        assert_eq!(
+            MinerIdentitySignatureBundles::<Test>::get(0),
+            existing_miner_bundle
+        );
+        assert_eq!(
+            MinerIdentitySignatureChallenges::<Test>::get(0),
+            existing_miner_challenge
+        );
+
+        let existing_validator_public_identity = Qubitum::public_validator_identity(0);
+        let existing_validator_commitments = ValidatorIdentityCommitments::<Test>::get(0);
+        let existing_validator_bundle = ValidatorIdentitySignatureBundles::<Test>::get(0);
+        let existing_validator_challenge = ValidatorIdentitySignatureChallenges::<Test>::get(0);
+        let validator = Validators::<Test>::get(0).unwrap();
+        let validator_challenge = Qubitum::validator_identity_signature_challenge(
+            0,
+            validator.operator_commitment,
+            Some(commitment(70)),
+            Some(commitment(71)),
+        );
+        let validator_bundle_reusing_endpoint = SignatureBundle {
+            classical: None,
+            post_quantum: Some(challenge_bound_signature_for_public_key(
+                SignatureAlgorithm::Dilithium3,
+                commitment(71),
+                validator_challenge,
+            )),
+        };
+
+        assert_noop!(
+            Qubitum::set_validator_identity_commitments(
+                RuntimeOrigin::signed(3),
+                0,
+                Some(commitment(70)),
+                Some(commitment(71)),
+                validator_bundle_reusing_endpoint,
+            ),
+            Error::<Test>::InvalidSignatureBundle
+        );
+        assert_eq!(
+            Qubitum::public_validator_identity(0),
+            existing_validator_public_identity
+        );
+        assert_eq!(
+            ValidatorIdentityCommitments::<Test>::get(0),
+            existing_validator_commitments
+        );
+        assert_eq!(
+            ValidatorIdentitySignatureBundles::<Test>::get(0),
+            existing_validator_bundle
+        );
+        assert_eq!(
+            ValidatorIdentitySignatureChallenges::<Test>::get(0),
+            existing_validator_challenge
         );
     });
 }
