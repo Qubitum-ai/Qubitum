@@ -837,6 +837,10 @@ impl pallet_qubitum::Config for Runtime {
     type MaxVerificationLatencyMs = QubitumMaxVerificationLatencyMs;
     type MaxProofSubmissionAgeBlocks = QubitumMaxProofSubmissionAgeBlocks;
     type SignatureMode = QubitumSignatureMode;
+    #[cfg(not(feature = "runtime-benchmarks"))]
+    type IdentitySignatureVerifier = pallet_qubitum::FailClosedIdentitySignatureVerifier;
+    #[cfg(feature = "runtime-benchmarks")]
+    type IdentitySignatureVerifier = pallet_qubitum::CommitmentBindingIdentitySignatureVerifier;
     type ShieldedCallPayloads = ConstBool<true>;
     type ShieldedCallPayloadExecution = ConstBool<true>;
     type ShieldedOrigin = EnsureShieldedQubitumOrigin;

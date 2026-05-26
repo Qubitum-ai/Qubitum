@@ -16,10 +16,10 @@ use crate::{
     Subnets, TotalBurned, TotalInferenceEscrowed, TotalInferenceRefunded, TotalMinerPayouts,
     TotalTreasuryFees, TotalValidatorFees, ValidatorCount, ValidatorIdentityCommitments,
     ValidatorIdentitySignatureBundles, ValidatorIdentitySignatureChallenges, ValidatorLockedStake,
-    Validators, VerifyProof,
+    Validators, VerifyProof, identity_signature_binding_for_mode,
     mock::{
         Balances, Qubitum, RuntimeEvent, RuntimeOrigin, ShieldedCallPayloads, System, Test,
-        new_test_ext, set_verification_outcome,
+        new_test_ext, set_verification_outcome, test_identity_signature_commitment,
     },
 };
 use codec::Encode;
@@ -97,7 +97,7 @@ fn challenge_bound_signature_for_public_key(
         signature_commitment: [0; 32],
     };
     SignatureCommitment {
-        signature_commitment: Qubitum::identity_signature_binding(challenge, unsigned),
+        signature_commitment: test_identity_signature_commitment(unsigned, challenge),
         ..unsigned
     }
 }
@@ -3420,7 +3420,7 @@ fn identity_signature_commitments_are_not_reported_as_verified() {
 }
 
 #[test]
-fn challenge_bound_signature_commitments_are_shape_only_until_crypto_verification_lands() {
+fn challenge_bound_signature_commitments_are_rejected_without_crypto_verification() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
 
@@ -3439,7 +3439,8 @@ fn challenge_bound_signature_commitments_are_shape_only_until_crypto_verificatio
         let shape_only_miner_bundle = SignatureBundle {
             classical: None,
             post_quantum: Some(SignatureCommitment {
-                signature_commitment: Qubitum::identity_signature_binding(
+                signature_commitment: identity_signature_binding_for_mode(
+                    <Test as crate::Config>::SignatureMode::get(),
                     miner_challenge,
                     unsigned_miner_signature,
                 ),
@@ -3447,13 +3448,16 @@ fn challenge_bound_signature_commitments_are_shape_only_until_crypto_verificatio
             }),
         };
 
-        assert_ok!(Qubitum::set_miner_identity_commitments(
-            RuntimeOrigin::signed(2),
-            0,
-            Some(commitment(68)),
-            Some(commitment(69)),
-            shape_only_miner_bundle,
-        ));
+        assert_noop!(
+            Qubitum::set_miner_identity_commitments(
+                RuntimeOrigin::signed(2),
+                0,
+                Some(commitment(68)),
+                Some(commitment(69)),
+                shape_only_miner_bundle,
+            ),
+            Error::<Test>::InvalidSignatureBundle
+        );
 
         let validator = Validators::<Test>::get(0).unwrap();
         let validator_challenge = Qubitum::validator_identity_signature_challenge(
@@ -3470,7 +3474,8 @@ fn challenge_bound_signature_commitments_are_shape_only_until_crypto_verificatio
         let shape_only_validator_bundle = SignatureBundle {
             classical: None,
             post_quantum: Some(SignatureCommitment {
-                signature_commitment: Qubitum::identity_signature_binding(
+                signature_commitment: identity_signature_binding_for_mode(
+                    <Test as crate::Config>::SignatureMode::get(),
                     validator_challenge,
                     unsigned_validator_signature,
                 ),
@@ -3478,20 +3483,23 @@ fn challenge_bound_signature_commitments_are_shape_only_until_crypto_verificatio
             }),
         };
 
-        assert_ok!(Qubitum::set_validator_identity_commitments(
-            RuntimeOrigin::signed(3),
-            0,
-            Some(commitment(70)),
-            Some(commitment(71)),
-            shape_only_validator_bundle,
-        ));
+        assert_noop!(
+            Qubitum::set_validator_identity_commitments(
+                RuntimeOrigin::signed(3),
+                0,
+                Some(commitment(70)),
+                Some(commitment(71)),
+                shape_only_validator_bundle,
+            ),
+            Error::<Test>::InvalidSignatureBundle
+        );
 
         let params = Qubitum::protocol_params();
-        assert_eq!(
+        assert_ne!(
             MinerIdentitySignatureBundles::<Test>::get(0),
             Some(shape_only_miner_bundle)
         );
-        assert_eq!(
+        assert_ne!(
             ValidatorIdentitySignatureBundles::<Test>::get(0),
             Some(shape_only_validator_bundle)
         );

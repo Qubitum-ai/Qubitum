@@ -57,6 +57,20 @@ pub trait VerifyProof {
     ) -> Result<VerificationOutcome, DispatchError>;
 }
 
+/// Minimal policy passed to the runtime identity-signature verifier.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IdentitySignatureVerificationPolicy {
+    pub signature_mode: SignatureMode,
+    pub challenge: Commitment,
+}
+
+/// Runtime adapter for identity-signature verification.
+pub trait VerifyIdentitySignature {
+    fn mode() -> IdentitySignatureVerifierMode;
+
+    fn verify(signature: SignatureCommitment, policy: IdentitySignatureVerificationPolicy) -> bool;
+}
+
 #[derive(
     Encode,
     Decode,
@@ -76,6 +90,25 @@ pub enum ProofVerifierMode {
     TestOnly,
 }
 
+#[derive(
+    Encode,
+    Decode,
+    DecodeWithMemTracking,
+    TypeInfo,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Debug,
+    MaxEncodedLen,
+)]
+pub enum IdentitySignatureVerifierMode {
+    FailClosed,
+    CommitmentBindingOnly,
+    ProductionCrypto,
+    TestOnly,
+}
+
 impl ProofVerifierMode {
     pub fn proof_settlement_enabled(self) -> bool {
         !matches!(self, Self::FailClosed)
@@ -83,6 +116,55 @@ impl ProofVerifierMode {
 
     pub fn production_zk_verifier(self) -> bool {
         matches!(self, Self::ProductionZk)
+    }
+}
+
+pub fn identity_signature_binding_for_mode(
+    signature_mode: SignatureMode,
+    challenge: Commitment,
+    signature: SignatureCommitment,
+) -> Commitment {
+    (
+        b"qubitum.identity.signature.binding.v1",
+        challenge,
+        signature.algorithm,
+        signature.public_key_commitment,
+        signature_mode,
+    )
+        .using_encoded(blake2_256)
+}
+
+/// Fail-closed identity verifier for production runtimes until Dilithium verification is wired in.
+pub struct FailClosedIdentitySignatureVerifier;
+
+impl VerifyIdentitySignature for FailClosedIdentitySignatureVerifier {
+    fn mode() -> IdentitySignatureVerifierMode {
+        IdentitySignatureVerifierMode::FailClosed
+    }
+
+    fn verify(
+        _signature: SignatureCommitment,
+        _policy: IdentitySignatureVerificationPolicy,
+    ) -> bool {
+        false
+    }
+}
+
+/// Commitment-binding verifier for benchmarks and legacy harnesses only.
+pub struct CommitmentBindingIdentitySignatureVerifier;
+
+impl VerifyIdentitySignature for CommitmentBindingIdentitySignatureVerifier {
+    fn mode() -> IdentitySignatureVerifierMode {
+        IdentitySignatureVerifierMode::CommitmentBindingOnly
+    }
+
+    fn verify(signature: SignatureCommitment, policy: IdentitySignatureVerificationPolicy) -> bool {
+        signature.signature_commitment
+            == identity_signature_binding_for_mode(
+                policy.signature_mode,
+                policy.challenge,
+                signature,
+            )
     }
 }
 
@@ -267,6 +349,9 @@ pub mod pallet {
         /// Active account-signature policy for the Qubitum roadmap phase.
         #[pallet::constant]
         type SignatureMode: Get<SignatureMode>;
+
+        /// Runtime identity-signature verifier adapter.
+        type IdentitySignatureVerifier: VerifyIdentitySignature;
 
         /// Whether this runtime requires Qubitum dispatchables to arrive via shielded payloads.
         #[pallet::constant]
@@ -3054,20 +3139,6 @@ pub mod pallet {
                 .using_encoded(blake2_256)
         }
 
-        pub(crate) fn identity_signature_binding(
-            challenge: Commitment,
-            signature: SignatureCommitment,
-        ) -> Commitment {
-            (
-                b"qubitum.identity.signature.binding.v1",
-                challenge,
-                signature.algorithm,
-                signature.public_key_commitment,
-                T::SignatureMode::get(),
-            )
-                .using_encoded(blake2_256)
-        }
-
         pub(crate) fn subnet_policy_commitment(
             subnet_id: SubnetId,
             domain: SubnetDomain,
@@ -3641,8 +3712,13 @@ pub mod pallet {
             challenge: Commitment,
         ) -> DispatchResult {
             ensure!(
-                signature.signature_commitment
-                    == Self::identity_signature_binding(challenge, signature),
+                T::IdentitySignatureVerifier::verify(
+                    signature,
+                    IdentitySignatureVerificationPolicy {
+                        signature_mode: T::SignatureMode::get(),
+                        challenge,
+                    },
+                ),
                 Error::<T>::InvalidSignatureBundle
             );
             Ok(())

@@ -6,7 +6,8 @@
 use crate::{
     BalanceOf, Event, InferenceRequestParams, InferenceRequestStatus, InferenceRequestTerms,
     InferenceRequestTermsWitness, InferenceRequestTimingWitness, InferenceRequests, MinerCount,
-    Miners, ProofRecords, SubnetCount, Subnets, TotalBurned, ValidatorCount, Validators, pallet::*,
+    Miners, ProofRecords, SubnetCount, Subnets, TotalBurned, ValidatorCount, Validators,
+    identity_signature_binding_for_mode, pallet::*,
 };
 use frame_benchmarking::{account, v2::*};
 use frame_support::traits::{Get, fungible::Mutate};
@@ -49,7 +50,11 @@ fn post_quantum_signature_bundle<T: Config>(seed: u8, challenge: Commitment) -> 
     SignatureBundle {
         classical: None,
         post_quantum: Some(SignatureCommitment {
-            signature_commitment: Pallet::<T>::identity_signature_binding(challenge, unsigned),
+            signature_commitment: identity_signature_binding_for_mode(
+                T::SignatureMode::get(),
+                challenge,
+                unsigned,
+            ),
             ..unsigned
         }),
     }

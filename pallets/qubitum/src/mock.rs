@@ -1,9 +1,14 @@
 #![allow(clippy::arithmetic_side_effects, clippy::unwrap_used)]
 
 use crate as pallet_qubitum;
-use crate::{ProofVerificationPolicy, ProofVerifierMode, VerifyProof};
+use crate::{
+    IdentitySignatureVerificationPolicy, IdentitySignatureVerifierMode, ProofVerificationPolicy,
+    ProofVerifierMode, VerifyIdentitySignature, VerifyProof,
+};
+use codec::Encode;
 use frame_support::{derive_impl, parameter_types};
-use qubitum_protocol::VerificationOutcome;
+use qubitum_protocol::{Commitment, SignatureCommitment, VerificationOutcome};
+use sp_io::hashing::blake2_256;
 use sp_runtime::{
     BuildStorage, DispatchError,
     traits::{BlakeTwo256, IdentityLookup},
@@ -38,6 +43,32 @@ pub fn set_verification_outcome(outcome: VerificationOutcome) {
     VERIFICATION_OUTCOME.with(|stored| {
         *stored.borrow_mut() = outcome;
     });
+}
+
+pub struct TestIdentitySignatureVerifier;
+
+impl VerifyIdentitySignature for TestIdentitySignatureVerifier {
+    fn mode() -> IdentitySignatureVerifierMode {
+        IdentitySignatureVerifierMode::TestOnly
+    }
+
+    fn verify(signature: SignatureCommitment, policy: IdentitySignatureVerificationPolicy) -> bool {
+        signature.signature_commitment
+            == test_identity_signature_commitment(signature, policy.challenge)
+    }
+}
+
+pub fn test_identity_signature_commitment(
+    signature: SignatureCommitment,
+    challenge: Commitment,
+) -> Commitment {
+    (
+        b"qubitum.test.identity.signature.v1",
+        challenge,
+        signature.algorithm,
+        signature.public_key_commitment,
+    )
+        .using_encoded(blake2_256)
 }
 
 frame_support::construct_runtime!(
@@ -116,6 +147,7 @@ impl pallet_qubitum::Config for Test {
     type MaxVerificationLatencyMs = MaxVerificationLatencyMs;
     type MaxProofSubmissionAgeBlocks = MaxProofSubmissionAgeBlocks;
     type SignatureMode = SignatureMode;
+    type IdentitySignatureVerifier = TestIdentitySignatureVerifier;
     type ShieldedCallPayloads = ShieldedCallPayloads;
     type ShieldedCallPayloadExecution = ShieldedCallPayloadExecution;
     type ShieldedOrigin = frame_support::traits::NeverEnsureOrigin<AccountId>;
