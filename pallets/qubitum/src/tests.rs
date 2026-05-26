@@ -6297,6 +6297,78 @@ fn request_commitment_call_rejects_unverifiable_committed_payloads_without_state
 }
 
 #[test]
+fn committed_request_call_payload_still_exposes_terms_until_private_envelope_lands() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        let request_id = 91;
+        let payment = 1_234_567_u128;
+        let validator_fee_bps = 333_u16;
+        let treasury_fee_bps = 44_u16;
+        let created_at = 7_u64;
+        let assignment = Qubitum::route_assignment(0, request_id, assignment_blinding()).unwrap();
+        let params = InferenceRequestCommitmentParams {
+            subnet_id: 0,
+            input_commitment: commitment(1),
+            assignment_commitment: Qubitum::request_assignment_commitment(
+                request_id,
+                0,
+                assignment.miner_id,
+                assignment.validator_id,
+                assignment_blinding(),
+            ),
+            created_at,
+            timing_commitment: Qubitum::request_timing_commitment(
+                request_id,
+                created_at,
+                timing_blinding(),
+            ),
+            terms_commitment: Qubitum::request_terms_commitment(
+                request_id,
+                payment,
+                validator_fee_bps,
+                treasury_fee_bps,
+                terms_blinding(),
+            ),
+            payment,
+            validator_fee_bps,
+            treasury_fee_bps,
+        };
+        let encoded_call =
+            crate::Call::<Test>::request_inference_commitments { request_id, params }.encode();
+        let protocol_params = Qubitum::protocol_params();
+
+        assert!(!protocol_params.committed_request_payloads);
+        assert!(
+            protocol_params
+                .readiness_blockers
+                .committed_request_payloads_missing
+        );
+        assert!(contains_subsequence(&encoded_call, &payment.encode()));
+        assert!(contains_subsequence(
+            &encoded_call,
+            &validator_fee_bps.encode()
+        ));
+        assert!(contains_subsequence(
+            &encoded_call,
+            &treasury_fee_bps.encode()
+        ));
+        assert!(contains_subsequence(&encoded_call, &created_at.encode()));
+        assert!(!contains_subsequence(
+            &encoded_call,
+            &assignment_blinding().encode()
+        ));
+        assert!(!contains_subsequence(
+            &encoded_call,
+            &terms_blinding().encode()
+        ));
+        assert!(!contains_subsequence(
+            &encoded_call,
+            &timing_blinding().encode()
+        ));
+    });
+}
+
+#[test]
 fn request_commitment_call_preflights_created_at_before_unsupported_boundary() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
