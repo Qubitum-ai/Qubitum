@@ -843,6 +843,7 @@ impl pallet_qubitum::Config for Runtime {
     type IdentitySignatureVerifier = pallet_qubitum::CommitmentBindingIdentitySignatureVerifier;
     type ShieldedCallPayloads = ConstBool<true>;
     type ShieldedCallPayloadExecution = ConstBool<true>;
+    type PrivateEventMetadata = ConstBool<true>;
     type ShieldedOrigin = EnsureShieldedQubitumOrigin;
     type RuntimeHoldReason = RuntimeHoldReason;
     type WeightInfo = pallet_qubitum::weights::SubstrateWeight<Runtime>;
@@ -3276,7 +3277,7 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
     assert!(params.private_routing_indexes);
     assert!(params.private_storage_keys);
     assert!(!params.private_capital_accounting);
-    assert!(!params.private_event_metadata);
+    assert!(params.private_event_metadata);
     assert!(params.public_event_payloads_redacted);
     assert!(params.public_query_ids_redacted);
     assert!(params.public_subnet_records_redacted);
@@ -3316,7 +3317,7 @@ fn qubitum_protocol_params_report_runtime_verifier_readiness() {
     assert!(!params.readiness_blockers.private_routing_indexes_missing);
     assert!(!params.readiness_blockers.private_storage_keys_missing);
     assert!(params.readiness_blockers.private_capital_accounting_missing);
-    assert!(params.readiness_blockers.private_event_metadata_missing);
+    assert!(!params.readiness_blockers.private_event_metadata_missing);
     assert!(
         !params
             .readiness_blockers

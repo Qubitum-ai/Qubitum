@@ -99,6 +99,7 @@ parameter_types! {
         qubitum_protocol::SignatureMode::FullPostQuantum;
     pub static ShieldedCallPayloads: bool = false;
     pub static ShieldedCallPayloadExecution: bool = false;
+    pub static PrivateEventMetadata: bool = false;
     pub const ProtocolTreasury: AccountId = 99;
     pub const MinerExitCooldownBlocks: u64 = 20;
     pub const ValidatorExitCooldownBlocks: u64 = 20;
@@ -150,6 +151,7 @@ impl pallet_qubitum::Config for Test {
     type IdentitySignatureVerifier = TestIdentitySignatureVerifier;
     type ShieldedCallPayloads = ShieldedCallPayloads;
     type ShieldedCallPayloadExecution = ShieldedCallPayloadExecution;
+    type PrivateEventMetadata = PrivateEventMetadata;
     type ShieldedOrigin = frame_support::traits::NeverEnsureOrigin<AccountId>;
     type RuntimeHoldReason = RuntimeHoldReason;
     type WeightInfo = ();
@@ -163,6 +165,7 @@ impl pallet_qubitum::Config for Test {
 pub fn new_test_ext() -> sp_io::TestExternalities {
     set_verification_outcome(VerificationOutcome::Valid);
     ShieldedCallPayloads::set(false);
+    PrivateEventMetadata::set(false);
 
     let mut storage = frame_system::GenesisConfig::<Test>::default()
         .build_storage()

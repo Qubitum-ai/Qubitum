@@ -18,8 +18,8 @@ use crate::{
     ValidatorIdentitySignatureBundles, ValidatorIdentitySignatureChallenges, ValidatorLockedStake,
     Validators, VerifyIdentitySignature, VerifyProof, identity_signature_binding_for_mode,
     mock::{
-        Balances, Qubitum, RuntimeEvent, RuntimeOrigin, ShieldedCallPayloads, System, Test,
-        new_test_ext, set_verification_outcome, test_identity_signature_commitment,
+        Balances, PrivateEventMetadata, Qubitum, RuntimeEvent, RuntimeOrigin, ShieldedCallPayloads,
+        System, Test, new_test_ext, set_verification_outcome, test_identity_signature_commitment,
     },
 };
 use codec::Encode;
@@ -4051,7 +4051,8 @@ fn public_registry_views_redact_operator_capital_and_model_commitments() {
 
 #[test]
 fn public_qubitum_events_remain_payloadless() {
-    let public_events: [crate::Event<Test>; 20] = [
+    let public_events: [crate::Event<Test>; 21] = [
+        crate::Event::PrivateActivity,
         crate::Event::SubnetCreated,
         crate::Event::MinerRegistered,
         crate::Event::MinerActivated,
@@ -4113,6 +4114,44 @@ fn event_stream_reveals_activity_sequence_until_private_metadata_lands() {
         for encoded in events.iter().map(Encode::encode) {
             assert_eq!(encoded.len(), 1);
         }
+    });
+}
+
+#[test]
+fn private_event_metadata_collapses_activity_sequence() {
+    new_test_ext().execute_with(|| {
+        PrivateEventMetadata::set(true);
+        System::set_block_number(1);
+        register_active_miner_and_validator();
+
+        let params = Qubitum::protocol_params();
+        assert!(params.private_event_metadata);
+        assert!(!params.readiness_blockers.private_event_metadata_missing);
+
+        request_inference(42);
+        System::reset_events();
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(42)));
+        let valid_events: Vec<_> = System::events()
+            .into_iter()
+            .filter_map(|record| match record.event {
+                RuntimeEvent::Qubitum(event) => Some(event),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(valid_events, vec![crate::Event::PrivateActivity]);
+
+        request_inference(43);
+        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
+        System::reset_events();
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(43)));
+        let invalid_events: Vec<_> = System::events()
+            .into_iter()
+            .filter_map(|record| match record.event {
+                RuntimeEvent::Qubitum(event) => Some(event),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(invalid_events, vec![crate::Event::PrivateActivity]);
     });
 }
 

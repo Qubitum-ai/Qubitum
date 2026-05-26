@@ -372,6 +372,10 @@ pub mod pallet {
         #[pallet::constant]
         type ShieldedCallPayloadExecution: Get<bool>;
 
+        /// Whether Qubitum events should hide public action metadata.
+        #[pallet::constant]
+        type PrivateEventMetadata: Get<bool>;
+
         /// Origin that proves a Qubitum dispatchable came from a decrypted shield queue payload.
         type ShieldedOrigin: EnsureOrigin<Self::RuntimeOrigin, Success = Self::AccountId>;
 
@@ -1316,6 +1320,8 @@ pub mod pallet {
     #[pallet::event]
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
+        /// A Qubitum activity occurred while public event metadata is redacted.
+        PrivateActivity,
         /// A subnet was created.
         SubnetCreated,
         /// A miner was registered.
@@ -1489,7 +1495,7 @@ pub mod pallet {
             };
 
             Subnets::<T>::insert(subnet_id, subnet);
-            Self::deposit_event(Event::SubnetCreated);
+            Self::deposit_activity_event(Event::SubnetCreated);
             Ok(())
         }
 
@@ -1527,7 +1533,7 @@ pub mod pallet {
             };
 
             Miners::<T>::insert(miner_id, miner);
-            Self::deposit_event(Event::MinerRegistered);
+            Self::deposit_activity_event(Event::MinerRegistered);
             Ok(())
         }
 
@@ -1567,7 +1573,7 @@ pub mod pallet {
                 Ok(())
             })?;
 
-            Self::deposit_event(Event::MinerActivated);
+            Self::deposit_activity_event(Event::MinerActivated);
             Ok(())
         }
 
@@ -1609,7 +1615,7 @@ pub mod pallet {
 
             Validators::<T>::insert(validator_id, validator);
             ValidatorLockedStake::<T>::insert(validator_id, stake);
-            Self::deposit_event(Event::ValidatorRegistered);
+            Self::deposit_activity_event(Event::ValidatorRegistered);
             Ok(())
         }
 
@@ -1643,21 +1649,23 @@ pub mod pallet {
                         &terms_witness,
                     )?;
                     Self::slash_miner_bond(submission.miner_id, &miner_operator, slash_bps)?;
-                    Self::deposit_event(Event::MinerSlashed);
                     Self::slash_validator_stake(
                         submission.validator_id,
                         &validator_operator,
                         slash_bps,
                     )?;
-                    Self::deposit_event(Event::ValidatorSlashed);
                     Self::refund_rejected_request(
                         &submission,
                         &request_user,
                         assignment_blinding,
                         &terms_witness,
                     )?;
-                    Self::deposit_event(Event::ProofRejected);
-                    Self::deposit_event(Event::InferenceRefunded);
+                    Self::deposit_activity_events([
+                        Event::MinerSlashed,
+                        Event::ValidatorSlashed,
+                        Event::ProofRejected,
+                        Event::InferenceRefunded,
+                    ]);
                     return Ok(());
                 }
                 VerificationOutcome::Error => return Err(Error::<T>::VerifierError.into()),
@@ -1689,8 +1697,7 @@ pub mod pallet {
                 },
             );
 
-            Self::deposit_event(Event::ProofAccepted);
-            Self::deposit_event(Event::InferenceSettled);
+            Self::deposit_activity_events([Event::ProofAccepted, Event::InferenceSettled]);
             Ok(())
         }
 
@@ -1722,16 +1729,18 @@ pub mod pallet {
                         &terms_witness,
                     )?;
                     Self::slash_miner_bond(submission.miner_id, &miner_operator, slash_bps)?;
-                    Self::deposit_event(Event::MinerSlashed);
                     Self::refund_rejected_request(
                         &submission,
                         &request_user,
                         assignment_blinding,
                         &terms_witness,
                     )?;
-                    Self::deposit_event(Event::ProofRejected);
-                    Self::deposit_event(Event::ProofChallengeAccepted);
-                    Self::deposit_event(Event::InferenceRefunded);
+                    Self::deposit_activity_events([
+                        Event::MinerSlashed,
+                        Event::ProofRejected,
+                        Event::ProofChallengeAccepted,
+                        Event::InferenceRefunded,
+                    ]);
                     Ok(())
                 }
                 VerificationOutcome::Valid => Err(Error::<T>::ChallengeProofValid.into()),
@@ -1762,7 +1771,7 @@ pub mod pallet {
             );
 
             Self::slash_miner_bond(miner_id, &operator, slash_bps)?;
-            Self::deposit_event(Event::MinerSlashed);
+            Self::deposit_activity_event(Event::MinerSlashed);
             Ok(())
         }
 
@@ -1923,7 +1932,7 @@ pub mod pallet {
             )?;
             Self::record_inference_refund(payment)?;
 
-            Self::deposit_event(Event::InferenceCancelled);
+            Self::deposit_activity_event(Event::InferenceCancelled);
             Ok(())
         }
 
@@ -1957,7 +1966,7 @@ pub mod pallet {
                 Ok(())
             })?;
 
-            Self::deposit_event(Event::MinerExitStarted);
+            Self::deposit_activity_event(Event::MinerExitStarted);
             Ok(())
         }
 
@@ -1994,7 +2003,7 @@ pub mod pallet {
                 Ok(())
             })?;
 
-            Self::deposit_event(Event::MinerBondWithdrawn);
+            Self::deposit_activity_event(Event::MinerBondWithdrawn);
             Ok(())
         }
 
@@ -2036,7 +2045,7 @@ pub mod pallet {
                 Ok(())
             })?;
 
-            Self::deposit_event(Event::ValidatorExitStarted);
+            Self::deposit_activity_event(Event::ValidatorExitStarted);
             Ok(())
         }
 
@@ -2081,7 +2090,7 @@ pub mod pallet {
                 Ok(())
             })?;
 
-            Self::deposit_event(Event::ValidatorStakeWithdrawn);
+            Self::deposit_activity_event(Event::ValidatorStakeWithdrawn);
             Ok(())
         }
 
@@ -2108,7 +2117,7 @@ pub mod pallet {
             );
 
             Self::slash_validator_stake(validator_id, &operator, slash_bps)?;
-            Self::deposit_event(Event::ValidatorSlashed);
+            Self::deposit_activity_event(Event::ValidatorSlashed);
             Ok(())
         }
 
@@ -2171,7 +2180,7 @@ pub mod pallet {
             )?;
             Self::record_inference_refund(payment)?;
 
-            Self::deposit_event(Event::InferenceExpired);
+            Self::deposit_activity_event(Event::InferenceExpired);
             Ok(())
         }
 
@@ -2252,7 +2261,7 @@ pub mod pallet {
                 }
             }
 
-            Self::deposit_event(Event::MinerIdentityCommitmentsUpdated);
+            Self::deposit_activity_event(Event::MinerIdentityCommitmentsUpdated);
             Ok(())
         }
 
@@ -2373,7 +2382,7 @@ pub mod pallet {
                 }
             }
 
-            Self::deposit_event(Event::ValidatorIdentityCommitmentsUpdated);
+            Self::deposit_activity_event(Event::ValidatorIdentityCommitmentsUpdated);
             Ok(())
         }
     }
@@ -2436,7 +2445,7 @@ pub mod pallet {
             let private_routing_indexes = true;
             let private_storage_keys = true;
             let private_capital_accounting = false;
-            let private_event_metadata = false;
+            let private_event_metadata = T::PrivateEventMetadata::get();
             let public_event_payloads_redacted = true;
             let public_query_ids_redacted = true;
             let public_subnet_records_redacted = true;
@@ -2834,7 +2843,7 @@ pub mod pallet {
                 },
             );
 
-            Self::deposit_event(Event::InferenceRequested);
+            Self::deposit_activity_event(Event::InferenceRequested);
             Ok(())
         }
 
@@ -3037,6 +3046,20 @@ pub mod pallet {
             TotalValidatorFees::<T>::kill();
             TotalTreasuryFees::<T>::kill();
             TotalInferenceRefunded::<T>::kill();
+        }
+
+        fn deposit_activity_event(event: Event<T>) {
+            Self::deposit_activity_events([event]);
+        }
+
+        fn deposit_activity_events<const N: usize>(events: [Event<T>; N]) {
+            if T::PrivateEventMetadata::get() {
+                Self::deposit_event(Event::PrivateActivity);
+            } else {
+                for event in events {
+                    Self::deposit_event(event);
+                }
+            }
         }
 
         fn current_block() -> BlockNumber {
