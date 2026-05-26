@@ -292,7 +292,7 @@ pub mod pallet {
     const LEGACY_ASSIGNMENT_BLINDING: Commitment = [0; 32];
     const LEGACY_TIMING_BLINDING: Commitment = [0; 32];
     const LEGACY_TERMS_BLINDING: Commitment = [0; 32];
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(20);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(21);
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -1153,27 +1153,27 @@ pub mod pallet {
 
     #[pallet::storage]
     pub type MinerIdentityCommitments<T: Config> =
-        StorageMap<_, Twox64Concat, MinerId, ChainIdentityCommitments, OptionQuery>;
+        StorageMap<_, Blake2_128, MinerId, ChainIdentityCommitments, OptionQuery>;
 
     #[pallet::storage]
     pub type MinerIdentitySignatureBundles<T: Config> =
-        StorageMap<_, Twox64Concat, MinerId, SignatureBundle, OptionQuery>;
+        StorageMap<_, Blake2_128, MinerId, SignatureBundle, OptionQuery>;
 
     #[pallet::storage]
     pub type MinerIdentitySignatureChallenges<T: Config> =
-        StorageMap<_, Twox64Concat, MinerId, Commitment, OptionQuery>;
+        StorageMap<_, Blake2_128, MinerId, Commitment, OptionQuery>;
 
     #[pallet::storage]
     pub type ValidatorIdentityCommitments<T: Config> =
-        StorageMap<_, Twox64Concat, ValidatorId, ChainIdentityCommitments, OptionQuery>;
+        StorageMap<_, Blake2_128, ValidatorId, ChainIdentityCommitments, OptionQuery>;
 
     #[pallet::storage]
     pub type ValidatorIdentitySignatureBundles<T: Config> =
-        StorageMap<_, Twox64Concat, ValidatorId, SignatureBundle, OptionQuery>;
+        StorageMap<_, Blake2_128, ValidatorId, SignatureBundle, OptionQuery>;
 
     #[pallet::storage]
     pub type ValidatorIdentitySignatureChallenges<T: Config> =
-        StorageMap<_, Twox64Concat, ValidatorId, Commitment, OptionQuery>;
+        StorageMap<_, Blake2_128, ValidatorId, Commitment, OptionQuery>;
 
     #[pallet::storage]
     pub type ProofRecords<T: Config> =
@@ -1277,6 +1277,7 @@ pub mod pallet {
                 .saturating_add(Self::migrate_request_owner_commitments(on_chain))
                 .saturating_add(Self::migrate_request_timing_commitments(on_chain))
                 .saturating_add(Self::migrate_request_terms_commitments(on_chain))
+                .saturating_add(Self::migrate_identity_storage_keys(on_chain))
                 .saturating_add(Self::migrate_identity_signature_challenges(on_chain))
                 .saturating_add(Self::migrate_active_routing_index_keys(on_chain))
                 .saturating_add(Self::migrate_capital_record_storage_keys(on_chain))
@@ -4024,6 +4025,91 @@ pub mod pallet {
             T::DbWeight::get().reads_writes(reads, writes)
         }
 
+        fn migrate_identity_storage_keys(on_chain: StorageVersion) -> Weight {
+            if on_chain >= StorageVersion::new(21) {
+                return Weight::zero();
+            }
+
+            let mut reads = 0_u64;
+            let mut writes = 0_u64;
+
+            for (miner_id, _) in Miners::<T>::iter() {
+                reads = reads.saturating_add(1);
+
+                let commitments_key =
+                    Self::legacy_twox_storage_map_key(b"MinerIdentityCommitments", miner_id);
+                if let Some(commitments) =
+                    unhashed::get::<ChainIdentityCommitments>(&commitments_key)
+                {
+                    reads = reads.saturating_add(1);
+                    MinerIdentityCommitments::<T>::insert(miner_id, commitments);
+                    unhashed::kill(&commitments_key);
+                    writes = writes.saturating_add(2);
+                }
+
+                let bundle_key =
+                    Self::legacy_twox_storage_map_key(b"MinerIdentitySignatureBundles", miner_id);
+                if let Some(bundle) = unhashed::get::<SignatureBundle>(&bundle_key) {
+                    reads = reads.saturating_add(1);
+                    MinerIdentitySignatureBundles::<T>::insert(miner_id, bundle);
+                    unhashed::kill(&bundle_key);
+                    writes = writes.saturating_add(2);
+                }
+
+                let challenge_key = Self::legacy_twox_storage_map_key(
+                    b"MinerIdentitySignatureChallenges",
+                    miner_id,
+                );
+                if let Some(challenge) = unhashed::get::<Commitment>(&challenge_key) {
+                    reads = reads.saturating_add(1);
+                    MinerIdentitySignatureChallenges::<T>::insert(miner_id, challenge);
+                    unhashed::kill(&challenge_key);
+                    writes = writes.saturating_add(2);
+                }
+            }
+
+            for (validator_id, _) in Validators::<T>::iter() {
+                reads = reads.saturating_add(1);
+
+                let commitments_key = Self::legacy_twox_storage_map_key(
+                    b"ValidatorIdentityCommitments",
+                    validator_id,
+                );
+                if let Some(commitments) =
+                    unhashed::get::<ChainIdentityCommitments>(&commitments_key)
+                {
+                    reads = reads.saturating_add(1);
+                    ValidatorIdentityCommitments::<T>::insert(validator_id, commitments);
+                    unhashed::kill(&commitments_key);
+                    writes = writes.saturating_add(2);
+                }
+
+                let bundle_key = Self::legacy_twox_storage_map_key(
+                    b"ValidatorIdentitySignatureBundles",
+                    validator_id,
+                );
+                if let Some(bundle) = unhashed::get::<SignatureBundle>(&bundle_key) {
+                    reads = reads.saturating_add(1);
+                    ValidatorIdentitySignatureBundles::<T>::insert(validator_id, bundle);
+                    unhashed::kill(&bundle_key);
+                    writes = writes.saturating_add(2);
+                }
+
+                let challenge_key = Self::legacy_twox_storage_map_key(
+                    b"ValidatorIdentitySignatureChallenges",
+                    validator_id,
+                );
+                if let Some(challenge) = unhashed::get::<Commitment>(&challenge_key) {
+                    reads = reads.saturating_add(1);
+                    ValidatorIdentitySignatureChallenges::<T>::insert(validator_id, challenge);
+                    unhashed::kill(&challenge_key);
+                    writes = writes.saturating_add(2);
+                }
+            }
+
+            T::DbWeight::get().reads_writes(reads, writes)
+        }
+
         fn legacy_twox_storage_map_key(
             storage_name: &'static [u8],
             key: u64,
@@ -4459,12 +4545,12 @@ pub mod pallet {
             let mut scanned = 0_u64;
             let mut migrated = 0_u64;
 
-            for (miner_id, _) in MinerIdentitySignatureBundles::<T>::iter() {
+            for (miner_id, miner) in Miners::<T>::iter() {
                 scanned = scanned.saturating_add(1);
-                if let (Some(commitments), Some(miner)) = (
-                    MinerIdentityCommitments::<T>::get(miner_id),
-                    Miners::<T>::get(miner_id),
-                ) {
+                if MinerIdentitySignatureBundles::<T>::contains_key(miner_id)
+                    && let Some(commitments) = MinerIdentityCommitments::<T>::get(miner_id)
+                {
+                    scanned = scanned.saturating_add(2);
                     MinerIdentitySignatureChallenges::<T>::insert(
                         miner_id,
                         Self::miner_identity_signature_challenge(
@@ -4478,12 +4564,12 @@ pub mod pallet {
                 }
             }
 
-            for (validator_id, _) in ValidatorIdentitySignatureBundles::<T>::iter() {
+            for (validator_id, validator) in Validators::<T>::iter() {
                 scanned = scanned.saturating_add(1);
-                if let (Some(commitments), Some(validator)) = (
-                    ValidatorIdentityCommitments::<T>::get(validator_id),
-                    Validators::<T>::get(validator_id),
-                ) {
+                if ValidatorIdentitySignatureBundles::<T>::contains_key(validator_id)
+                    && let Some(commitments) = ValidatorIdentityCommitments::<T>::get(validator_id)
+                {
+                    scanned = scanned.saturating_add(2);
                     ValidatorIdentitySignatureChallenges::<T>::insert(
                         validator_id,
                         Self::validator_identity_signature_challenge(
@@ -4497,7 +4583,7 @@ pub mod pallet {
                 }
             }
 
-            T::DbWeight::get().reads_writes(scanned.saturating_mul(3), migrated)
+            T::DbWeight::get().reads_writes(scanned, migrated)
         }
 
         fn migrate_operator_commitments(on_chain: StorageVersion) -> Weight {
