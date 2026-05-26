@@ -894,14 +894,8 @@ fn storage_keys_remain_linkable_until_private_keying_lands() {
         let validator_id = 13_u64;
         let request_id = 91_u64;
 
-        assert!(
-            contains_subsequence(
-                &Subnets::<Test>::hashed_key_for(subnet_id),
-                &subnet_id.encode()
-            ),
-            "Subnets storage key no longer exposes the raw subnet id; update the readiness flags"
-        );
         for (storage_name, storage_key) in [
+            ("Subnets", Subnets::<Test>::hashed_key_for(subnet_id)),
             (
                 "ActiveMinersBySubnet",
                 ActiveMinersBySubnet::<Test>::hashed_key_for(subnet_id),
@@ -4722,11 +4716,20 @@ fn runtime_upgrade_migrates_subnet_owner_and_policy_to_commitments() {
             min_validator_stake: MIN_MINER_BOND,
             active: true,
         };
-        sp_io::storage::set(&Subnets::<Test>::hashed_key_for(7), &legacy.encode());
+        let legacy_subnet_key = legacy_twox_storage_map_key(b"Subnets", 7_u16);
+        sp_io::storage::set(&legacy_subnet_key, &legacy.encode());
+        SubnetCount::<Test>::put(8);
+        assert!(unhashed::get_raw(&legacy_subnet_key).is_some());
+        assert!(Subnets::<Test>::get(7).is_none());
+        assert!(
+            !contains_subsequence(&Subnets::<Test>::hashed_key_for(7), &7_u16.encode()),
+            "Subnets storage key exposes the raw subnet id"
+        );
         StorageVersion::new(15).put::<crate::Pallet<Test>>();
 
         <Qubitum as Hooks<u64>>::on_runtime_upgrade();
 
+        assert!(unhashed::get_raw(&legacy_subnet_key).is_none());
         let subnet = Subnets::<Test>::get(7).unwrap();
         assert_eq!(subnet.id, 7);
         assert_eq!(
@@ -4745,7 +4748,7 @@ fn runtime_upgrade_migrates_subnet_owner_and_policy_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(21)
+            StorageVersion::new(22)
         );
     });
 }
@@ -4798,7 +4801,7 @@ fn runtime_upgrade_migrates_identity_signature_challenges() {
         );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(21)
+            StorageVersion::new(22)
         );
     });
 }
@@ -4864,7 +4867,7 @@ fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(21)
+            StorageVersion::new(22)
         );
     });
 }
@@ -4933,7 +4936,7 @@ fn runtime_upgrade_migrates_proof_record_routes_to_commitments() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(21)
+            StorageVersion::new(22)
         );
     });
 }
@@ -5006,7 +5009,7 @@ fn runtime_upgrade_migrates_proof_record_details_to_audit_commitments() {
         }
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(21)
+            StorageVersion::new(22)
         );
     });
 }
@@ -5070,7 +5073,7 @@ fn runtime_upgrade_migrates_registry_operators_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(21)
+            StorageVersion::new(22)
         );
     });
 }
@@ -5139,7 +5142,7 @@ fn runtime_upgrade_migrates_participant_capital_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(21)
+            StorageVersion::new(22)
         );
     });
 }
@@ -5194,7 +5197,7 @@ fn runtime_upgrade_migrates_request_users_to_commitments() {
         assert_eq!(PendingValidatorRequests::<Test>::get(9), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(21)
+            StorageVersion::new(22)
         );
     });
 }
@@ -5234,7 +5237,7 @@ fn runtime_upgrade_migrates_request_timing_to_commitments() {
         assert_eq!(request.status, InferenceRequestStatus::Pending);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(21)
+            StorageVersion::new(22)
         );
     });
 }
@@ -5274,7 +5277,7 @@ fn runtime_upgrade_migrates_request_terms_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(21)
+            StorageVersion::new(22)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 123_456);
         assert_eq!(TotalValidatorFees::<Test>::get(), 3_086);
@@ -5340,7 +5343,7 @@ fn runtime_upgrade_records_legacy_accounting_failures_without_saturated_totals()
         );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(21)
+            StorageVersion::new(22)
         );
     });
 
@@ -7803,7 +7806,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(21)
+            StorageVersion::new(22)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
@@ -7842,7 +7845,7 @@ fn runtime_upgrade_clears_legacy_reversible_active_route_keys() {
         assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(21)
+            StorageVersion::new(22)
         );
     });
 }
@@ -7885,7 +7888,7 @@ fn runtime_upgrade_migrates_legacy_reversible_capital_record_keys() {
         assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(21)
+            StorageVersion::new(22)
         );
     });
 }
@@ -8024,7 +8027,7 @@ fn runtime_upgrade_migrates_legacy_reversible_identity_record_keys() {
         assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(21)
+            StorageVersion::new(22)
         );
         assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
     });
@@ -8483,7 +8486,7 @@ fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_healt
         );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(21)
+            StorageVersion::new(22)
         );
     });
 }
@@ -8599,7 +8602,7 @@ fn runtime_upgrade_reports_missing_legacy_capital_records() {
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(21)
+            StorageVersion::new(22)
         );
     });
 }

@@ -292,7 +292,7 @@ pub mod pallet {
     const LEGACY_ASSIGNMENT_BLINDING: Commitment = [0; 32];
     const LEGACY_TIMING_BLINDING: Commitment = [0; 32];
     const LEGACY_TERMS_BLINDING: Commitment = [0; 32];
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(21);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(22);
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -1142,7 +1142,7 @@ pub mod pallet {
     pub type ValidatorCount<T: Config> = StorageValue<_, ValidatorId, ValueQuery>;
 
     #[pallet::storage]
-    pub type Subnets<T: Config> = StorageMap<_, Twox64Concat, SubnetId, ChainSubnet, OptionQuery>;
+    pub type Subnets<T: Config> = StorageMap<_, Blake2_128, SubnetId, ChainSubnet, OptionQuery>;
 
     #[pallet::storage]
     pub type Miners<T: Config> = StorageMap<_, Twox64Concat, MinerId, ChainMiner, OptionQuery>;
@@ -1271,6 +1271,7 @@ pub mod pallet {
             }
 
             let weight = Self::migrate_operator_commitments(on_chain)
+                .saturating_add(Self::migrate_subnet_storage_keys(on_chain))
                 .saturating_add(Self::migrate_subnet_policy_commitments(on_chain))
                 .saturating_add(Self::migrate_participant_capital_commitments(on_chain))
                 .saturating_add(Self::migrate_request_assignment_commitments(on_chain))
@@ -4110,9 +4111,29 @@ pub mod pallet {
             T::DbWeight::get().reads_writes(reads, writes)
         }
 
-        fn legacy_twox_storage_map_key(
+        fn migrate_subnet_storage_keys(on_chain: StorageVersion) -> Weight {
+            if on_chain >= StorageVersion::new(22) {
+                return Weight::zero();
+            }
+
+            let mut reads = 0_u64;
+            let mut writes = 0_u64;
+            for subnet_id in 0..SubnetCount::<T>::get() {
+                reads = reads.saturating_add(1);
+                let legacy_key = Self::legacy_twox_storage_map_key(b"Subnets", subnet_id);
+                if let Some(raw) = unhashed::get_raw(&legacy_key) {
+                    unhashed::put_raw(&Subnets::<T>::hashed_key_for(subnet_id), &raw);
+                    unhashed::kill(&legacy_key);
+                    writes = writes.saturating_add(2);
+                }
+            }
+
+            T::DbWeight::get().reads_writes(reads, writes)
+        }
+
+        fn legacy_twox_storage_map_key<K: Encode>(
             storage_name: &'static [u8],
-            key: u64,
+            key: K,
         ) -> sp_std::vec::Vec<u8> {
             [
                 twox_128(b"Qubitum").as_slice(),
@@ -4131,12 +4152,12 @@ pub mod pallet {
             let mut overflow_validators = sp_std::vec::Vec::new();
             let mut migration_failures = 0_u32;
 
-            for (subnet_id, _) in Subnets::<T>::iter() {
+            for subnet_id in 0..SubnetCount::<T>::get() {
                 ActiveMinersBySubnet::<T>::remove(subnet_id);
                 miner_reads = miner_reads.saturating_add(1);
                 miner_writes = miner_writes.saturating_add(1);
             }
-            for (subnet_id, _) in Subnets::<T>::iter() {
+            for subnet_id in 0..SubnetCount::<T>::get() {
                 ActiveValidatorsBySubnet::<T>::remove(subnet_id);
                 validator_reads = validator_reads.saturating_add(1);
                 validator_writes = validator_writes.saturating_add(1);
@@ -4639,31 +4660,39 @@ pub mod pallet {
             }
 
             let mut migrated = 0_u64;
-            Subnets::<T>::translate::<ChainSubnetV15<T::AccountId, BalanceOf<T>>, _>(|_, old| {
+            for subnet_id in 0..SubnetCount::<T>::get() {
+                let Some(old) = unhashed::get::<ChainSubnetV15<T::AccountId, BalanceOf<T>>>(
+                    &Subnets::<T>::hashed_key_for(subnet_id),
+                ) else {
+                    continue;
+                };
+                Subnets::<T>::insert(
+                    subnet_id,
+                    ChainSubnet {
+                        id: old.id,
+                        owner_commitment: Self::subnet_owner_commitment(&old.owner),
+                        domain: old.domain,
+                        proof_system: old.proof_system,
+                        policy_commitment: (
+                            old.id,
+                            old.domain,
+                            old.proof_system,
+                            old.creation_burn,
+                            T::MinerRegistrationBurn::get(),
+                            old.min_miner_bond,
+                            old.max_miner_bond,
+                            old.min_validator_stake,
+                            T::MaxActiveMinersPerSubnet::get(),
+                            T::MaxActiveValidatorsPerSubnet::get(),
+                        )
+                            .using_encoded(blake2_256),
+                        active: old.active,
+                    },
+                );
                 migrated = migrated.saturating_add(1);
-                Some(ChainSubnet {
-                    id: old.id,
-                    owner_commitment: Self::subnet_owner_commitment(&old.owner),
-                    domain: old.domain,
-                    proof_system: old.proof_system,
-                    policy_commitment: (
-                        old.id,
-                        old.domain,
-                        old.proof_system,
-                        old.creation_burn,
-                        T::MinerRegistrationBurn::get(),
-                        old.min_miner_bond,
-                        old.max_miner_bond,
-                        old.min_validator_stake,
-                        T::MaxActiveMinersPerSubnet::get(),
-                        T::MaxActiveValidatorsPerSubnet::get(),
-                    )
-                        .using_encoded(blake2_256),
-                    active: old.active,
-                })
-            });
+            }
 
-            T::DbWeight::get().reads_writes(migrated, migrated)
+            T::DbWeight::get().reads_writes(SubnetCount::<T>::get().into(), migrated)
         }
 
         fn migrate_participant_capital_commitments(on_chain: StorageVersion) -> Weight {
@@ -4919,7 +4948,7 @@ pub mod pallet {
 
         #[cfg(feature = "try-runtime")]
         fn ensure_active_routing_indexes_match() -> Result<(), sp_runtime::TryRuntimeError> {
-            for (subnet_id, _) in Subnets::<T>::iter() {
+            for subnet_id in 0..SubnetCount::<T>::get() {
                 let miner_ids = ActiveMinersBySubnet::<T>::get(subnet_id);
                 for miner_id in miner_ids {
                     let miner = Miners::<T>::get(miner_id)
@@ -4953,7 +4982,7 @@ pub mod pallet {
                 }
             }
 
-            for (subnet_id, _) in Subnets::<T>::iter() {
+            for subnet_id in 0..SubnetCount::<T>::get() {
                 let validator_ids = ActiveValidatorsBySubnet::<T>::get(subnet_id);
                 for validator_id in validator_ids {
                     let validator = Validators::<T>::get(validator_id)
