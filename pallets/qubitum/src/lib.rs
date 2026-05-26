@@ -13,6 +13,7 @@ pub use weights::WeightInfo;
 
 use codec::{Decode, DecodeWithMemTracking, Encode, MaxEncodedLen};
 use frame_support::{
+    StorageHasher, Twox64Concat,
     dispatch::DispatchResult,
     ensure,
     pallet_prelude::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub},
@@ -291,7 +292,7 @@ pub mod pallet {
     const LEGACY_ASSIGNMENT_BLINDING: Commitment = [0; 32];
     const LEGACY_TIMING_BLINDING: Commitment = [0; 32];
     const LEGACY_TERMS_BLINDING: Commitment = [0; 32];
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(19);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(20);
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -1205,11 +1206,11 @@ pub mod pallet {
 
     #[pallet::storage]
     pub type MinerLockedBond<T: Config> =
-        StorageMap<_, Twox64Concat, MinerId, BalanceOf<T>, OptionQuery>;
+        StorageMap<_, Blake2_128, MinerId, BalanceOf<T>, OptionQuery>;
 
     #[pallet::storage]
     pub type ValidatorLockedStake<T: Config> =
-        StorageMap<_, Twox64Concat, ValidatorId, BalanceOf<T>, OptionQuery>;
+        StorageMap<_, Blake2_128, ValidatorId, BalanceOf<T>, OptionQuery>;
 
     #[pallet::storage]
     pub type PendingMinerRequests<T: Config> =
@@ -1278,6 +1279,7 @@ pub mod pallet {
                 .saturating_add(Self::migrate_request_terms_commitments(on_chain))
                 .saturating_add(Self::migrate_identity_signature_challenges(on_chain))
                 .saturating_add(Self::migrate_active_routing_index_keys(on_chain))
+                .saturating_add(Self::migrate_capital_record_storage_keys(on_chain))
                 .saturating_add(Self::rebuild_active_routing_indexes())
                 .saturating_add(Self::migrate_participant_capital_records(on_chain))
                 .saturating_add(Self::rebuild_request_status_counts())
@@ -3988,6 +3990,50 @@ pub mod pallet {
             }
 
             T::DbWeight::get().writes(removed)
+        }
+
+        fn migrate_capital_record_storage_keys(on_chain: StorageVersion) -> Weight {
+            if on_chain >= StorageVersion::new(20) {
+                return Weight::zero();
+            }
+
+            let mut reads = 0_u64;
+            let mut writes = 0_u64;
+            for (miner_id, _) in Miners::<T>::iter() {
+                reads = reads.saturating_add(1);
+                let legacy_key = Self::legacy_twox_storage_map_key(b"MinerLockedBond", miner_id);
+                if let Some(bond) = unhashed::get::<BalanceOf<T>>(&legacy_key) {
+                    reads = reads.saturating_add(1);
+                    MinerLockedBond::<T>::insert(miner_id, bond);
+                    unhashed::kill(&legacy_key);
+                    writes = writes.saturating_add(2);
+                }
+            }
+            for (validator_id, _) in Validators::<T>::iter() {
+                reads = reads.saturating_add(1);
+                let legacy_key =
+                    Self::legacy_twox_storage_map_key(b"ValidatorLockedStake", validator_id);
+                if let Some(stake) = unhashed::get::<BalanceOf<T>>(&legacy_key) {
+                    reads = reads.saturating_add(1);
+                    ValidatorLockedStake::<T>::insert(validator_id, stake);
+                    unhashed::kill(&legacy_key);
+                    writes = writes.saturating_add(2);
+                }
+            }
+
+            T::DbWeight::get().reads_writes(reads, writes)
+        }
+
+        fn legacy_twox_storage_map_key(
+            storage_name: &'static [u8],
+            key: u64,
+        ) -> sp_std::vec::Vec<u8> {
+            [
+                twox_128(b"Qubitum").as_slice(),
+                twox_128(storage_name).as_slice(),
+                Twox64Concat::hash(&key.encode()).as_slice(),
+            ]
+            .concat()
         }
 
         fn rebuild_active_routing_indexes() -> Weight {
