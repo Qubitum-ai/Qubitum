@@ -1691,8 +1691,9 @@ pub mod pallet {
                 params.treasury_fee_bps,
             )?;
             Self::ensure_request_id_can_advance(request_id)?;
-            let assignment = Self::route_assignment(params.subnet_id, request_id)
-                .ok_or(Error::<T>::NoRouteAvailable)?;
+            let assignment =
+                Self::route_assignment(params.subnet_id, request_id, params.assignment_blinding)
+                    .ok_or(Error::<T>::NoRouteAvailable)?;
             Self::open_inference_request(
                 user,
                 request_id,
@@ -1731,8 +1732,9 @@ pub mod pallet {
                 params.treasury_fee_bps,
             )?;
             Self::ensure_request_id_can_advance(request_id)?;
-            let assignment = Self::route_assignment(params.subnet_id, request_id)
-                .ok_or(Error::<T>::NoRouteAvailable)?;
+            let assignment =
+                Self::route_assignment(params.subnet_id, request_id, params.assignment_blinding)
+                    .ok_or(Error::<T>::NoRouteAvailable)?;
             Self::open_inference_request(
                 user,
                 request_id,
@@ -2470,6 +2472,7 @@ pub mod pallet {
         pub(crate) fn route_assignment(
             subnet_id: SubnetId,
             request_id: RequestId,
+            assignment_blinding: Commitment,
         ) -> Option<ChainAssignment> {
             let subnet = Subnets::<T>::get(subnet_id)?;
             if !subnet.active {
@@ -2481,8 +2484,19 @@ pub mod pallet {
                 return None;
             }
 
-            let miner_start = Self::route_index(request_id, miner_ids.len())?;
-            let validator_seed = request_id.rotate_left(32) ^ u64::from(subnet_id);
+            let miner_seed = Self::route_seed(
+                b"qubitum.route.miner.v1",
+                request_id,
+                subnet_id,
+                assignment_blinding,
+            );
+            let miner_start = Self::route_index(miner_seed, miner_ids.len())?;
+            let validator_seed = Self::route_seed(
+                b"qubitum.route.validator.v1",
+                request_id,
+                subnet_id,
+                assignment_blinding,
+            );
 
             for offset in 0..miner_ids.len() {
                 let target = miner_start
@@ -2526,8 +2540,11 @@ pub mod pallet {
         }
 
         #[cfg(test)]
-        pub(crate) fn next_route_assignment(subnet_id: SubnetId) -> Option<ChainAssignment> {
-            Self::route_assignment(subnet_id, RequestCount::<T>::get())
+        pub(crate) fn next_route_assignment(
+            subnet_id: SubnetId,
+            assignment_blinding: Commitment,
+        ) -> Option<ChainAssignment> {
+            Self::route_assignment(subnet_id, RequestCount::<T>::get(), assignment_blinding)
         }
 
         pub fn next_route_availability(_subnet_id: SubnetId) -> ChainRouteAvailability {
@@ -3730,6 +3747,20 @@ pub mod pallet {
             }
 
             None
+        }
+
+        fn route_seed(
+            domain: &'static [u8],
+            request_id: RequestId,
+            subnet_id: SubnetId,
+            assignment_blinding: Commitment,
+        ) -> u64 {
+            let digest =
+                (domain, request_id, subnet_id, assignment_blinding).using_encoded(blake2_256);
+            u64::from_le_bytes([
+                digest[0], digest[1], digest[2], digest[3], digest[4], digest[5], digest[6],
+                digest[7],
+            ])
         }
 
         fn route_index(seed: u64, len: usize) -> Option<usize> {

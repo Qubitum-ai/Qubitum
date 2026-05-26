@@ -1182,7 +1182,7 @@ fn routing_requires_post_quantum_identity_bundles() {
             miner_identity_signature_bundle(0, Some(commitment(120)), Some(commitment(121))),
         ));
         assert!(!Qubitum::next_route_availability(0).available);
-        assert!(Qubitum::next_route_assignment(0).is_none());
+        assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_none());
 
         assert_ok!(Qubitum::set_validator_identity_commitments(
             RuntimeOrigin::signed(3),
@@ -1192,7 +1192,7 @@ fn routing_requires_post_quantum_identity_bundles() {
             validator_identity_signature_bundle(0, Some(commitment(122)), Some(commitment(123))),
         ));
         assert!(!Qubitum::next_route_availability(0).available);
-        assert!(Qubitum::next_route_assignment(0).is_some());
+        assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
         assert_ok!(Qubitum::request_inference(
             RuntimeOrigin::signed(4),
             0,
@@ -2114,7 +2114,7 @@ fn request_id_overflow_does_not_escrow_or_increment_pending() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         RequestCount::<Test>::put(u64::MAX);
-        let assignment = Qubitum::route_assignment(0, u64::MAX).unwrap();
+        let assignment = Qubitum::route_assignment(0, u64::MAX, assignment_blinding()).unwrap();
 
         assert_noop!(
             Qubitum::request_inference(
@@ -2608,7 +2608,7 @@ fn clearing_identity_removes_active_routing_index_until_reattested() {
 
         assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
         assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
-        assert!(Qubitum::next_route_assignment(0).is_some());
+        assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
 
         assert_ok!(Qubitum::set_miner_identity_commitments(
             RuntimeOrigin::signed(2),
@@ -2621,11 +2621,11 @@ fn clearing_identity_removes_active_routing_index_until_reattested() {
         assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
         assert!(MinerIdentityCommitments::<Test>::get(0).is_none());
         assert!(MinerIdentitySignatureBundles::<Test>::get(0).is_none());
-        assert!(Qubitum::next_route_assignment(0).is_none());
+        assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_none());
 
         attest_miner(0, 2, Some(commitment(124)), Some(commitment(125)));
         assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
-        assert!(Qubitum::next_route_assignment(0).is_some());
+        assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
 
         assert_ok!(Qubitum::set_validator_identity_commitments(
             RuntimeOrigin::signed(3),
@@ -2642,7 +2642,7 @@ fn clearing_identity_removes_active_routing_index_until_reattested() {
             Validators::<Test>::get(0).unwrap().status,
             RegistryStatus::Pending
         );
-        assert!(Qubitum::next_route_assignment(0).is_none());
+        assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_none());
 
         attest_validator(0, 3, Some(commitment(126)), Some(commitment(127)));
         assert_eq!(
@@ -2650,7 +2650,7 @@ fn clearing_identity_removes_active_routing_index_until_reattested() {
             RegistryStatus::Active
         );
         assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
-        assert!(Qubitum::next_route_assignment(0).is_some());
+        assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
     });
 }
 
@@ -3314,7 +3314,7 @@ fn identity_signature_commitments_are_not_reported_as_verified() {
             0
         ));
         assert!(!Qubitum::next_route_availability(0).available);
-        assert!(Qubitum::next_route_assignment(0).is_some());
+        assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
         assert!(!params.identity_signature_verification);
         assert!(!params.post_quantum_signature_crypto_verification);
         assert!(
@@ -3678,7 +3678,7 @@ fn routing_and_proof_reject_unbound_identity_signature_bundles() {
         assert!(MinerIdentitySignatureBundles::<Test>::contains_key(0));
         assert!(MinerIdentitySignatureChallenges::<Test>::contains_key(0));
         assert!(!Qubitum::next_route_availability(0).available);
-        assert!(Qubitum::next_route_assignment(0).is_none());
+        assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_none());
         assert_noop!(
             submit_proof(RuntimeOrigin::signed(3), valid_submission(88)),
             Error::<Test>::InvalidSignatureBundle
@@ -3711,7 +3711,7 @@ fn routing_and_proof_reject_stored_non_dilithium_identity_bundles() {
             },
         );
 
-        assert!(Qubitum::next_route_assignment(0).is_none());
+        assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_none());
         assert_noop!(
             submit_proof(RuntimeOrigin::signed(3), valid_submission(89)),
             Error::<Test>::InvalidSignatureBundle
@@ -3736,7 +3736,7 @@ fn routing_and_proof_reject_stored_non_dilithium_identity_bundles() {
             },
         );
 
-        assert!(Qubitum::next_route_assignment(0).is_none());
+        assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_none());
         assert_noop!(
             submit_proof(RuntimeOrigin::signed(3), valid_submission(89)),
             Error::<Test>::InvalidSignatureBundle
@@ -5356,8 +5356,7 @@ fn request_storage_commits_route_assignment_without_raw_participant_ids() {
         ));
 
         RequestCount::<Test>::put(3);
-        let assignment = Qubitum::route_assignment(0, 3).unwrap();
-        assert_eq!(assignment.miner_id, 1);
+        let assignment = Qubitum::route_assignment(0, 3, assignment_blinding()).unwrap();
         assert_ok!(Qubitum::request_inference(
             RuntimeOrigin::signed(4),
             3,
@@ -6139,7 +6138,7 @@ fn request_commitment_call_rejects_unverifiable_committed_payloads_without_state
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         RequestCount::<Test>::put(88);
-        let assignment = Qubitum::route_assignment(0, 88).unwrap();
+        let assignment = Qubitum::route_assignment(0, 88, assignment_blinding()).unwrap();
         let assignment_commitment = Qubitum::request_assignment_commitment(
             88,
             0,
@@ -6204,7 +6203,7 @@ fn request_commitment_call_rejects_before_validating_created_at() {
         register_active_miner_and_validator();
         RequestCount::<Test>::put(89);
         System::set_block_number(5);
-        let assignment = Qubitum::route_assignment(0, 89).unwrap();
+        let assignment = Qubitum::route_assignment(0, 89, assignment_blinding()).unwrap();
 
         assert_noop!(
             Qubitum::request_inference_commitments(
@@ -6772,7 +6771,7 @@ fn route_assignment_returns_active_participants_only() {
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         assert_eq!(
-            Qubitum::route_assignment(0, 42).map(|assignment| {
+            Qubitum::route_assignment(0, 42, assignment_blinding()).map(|assignment| {
                 (
                     assignment.request_id,
                     assignment.subnet_id,
@@ -6787,7 +6786,10 @@ fn route_assignment_returns_active_participants_only() {
 
         assert_ok!(Qubitum::deactivate_miner(RuntimeOrigin::signed(2), 0));
         assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
-        assert_eq!(Qubitum::route_assignment(0, 42), None);
+        assert_eq!(
+            Qubitum::route_assignment(0, 42, assignment_blinding()),
+            None
+        );
     });
 }
 
@@ -6807,7 +6809,7 @@ fn route_assignment_skips_validator_missing_locked_stake_record() {
             ActiveValidatorsBySubnet::<Test>::get(0).to_vec(),
             vec![0, 1]
         );
-        let assignment = Qubitum::route_assignment(0, 0).unwrap();
+        let assignment = Qubitum::route_assignment(0, 0, assignment_blinding()).unwrap();
         assert_eq!(assignment.validator_id, 1);
     });
 }
@@ -6831,7 +6833,7 @@ fn route_assignment_skips_miner_missing_locked_bond_record() {
         MinerLockedBond::<Test>::remove(0);
 
         assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0, 1]);
-        let assignment = Qubitum::route_assignment(0, 0).unwrap();
+        let assignment = Qubitum::route_assignment(0, 0, assignment_blinding()).unwrap();
         assert_eq!(assignment.miner_id, 1);
     });
 }
@@ -6842,7 +6844,7 @@ fn next_route_assignment_uses_chain_next_request_id() {
         register_active_miner_and_validator();
         RequestCount::<Test>::put(42);
 
-        let assignment = Qubitum::next_route_assignment(0).unwrap();
+        let assignment = Qubitum::next_route_assignment(0, assignment_blinding()).unwrap();
         assert_eq!(assignment.request_id, 42);
         assert_eq!(assignment.subnet_id, 0);
         assert_eq!(assignment.miner_id, 0);
@@ -6866,7 +6868,12 @@ fn next_route_assignment_uses_chain_next_request_id() {
         ));
 
         assert_eq!(RequestCount::<Test>::get(), 43);
-        assert_eq!(Qubitum::next_route_assignment(0).unwrap().request_id, 43);
+        assert_eq!(
+            Qubitum::next_route_assignment(0, assignment_blinding())
+                .unwrap()
+                .request_id,
+            43
+        );
     });
 }
 
@@ -6900,14 +6907,115 @@ fn route_selection_is_deterministic_until_private_selection_lands() {
         assert!(params.readiness_blockers.private_route_selection_missing);
         assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0, 1]);
 
-        let request_42 = Qubitum::route_assignment(0, 42).unwrap();
-        let request_43 = Qubitum::route_assignment(0, 43).unwrap();
-        assert_eq!(request_42, Qubitum::route_assignment(0, 42).unwrap());
-        assert_eq!(request_43, Qubitum::route_assignment(0, 43).unwrap());
-        assert_eq!(request_42.miner_id, 0);
-        assert_eq!(request_43.miner_id, 1);
+        let request_42 = Qubitum::route_assignment(0, 42, assignment_blinding()).unwrap();
+        let request_43 = Qubitum::route_assignment(0, 43, assignment_blinding()).unwrap();
+        assert_eq!(
+            request_42,
+            Qubitum::route_assignment(0, 42, assignment_blinding()).unwrap()
+        );
+        assert_eq!(
+            request_43,
+            Qubitum::route_assignment(0, 43, assignment_blinding()).unwrap()
+        );
         assert_eq!(request_42.validator_id, 0);
         assert_eq!(request_43.validator_id, 0);
+    });
+}
+
+#[test]
+fn route_assignment_uses_assignment_blinding_seed_not_raw_request_index() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(12),
+            ProofSystem::RiscZeroStark
+        ));
+        attest_miner(1, 2, Some(commitment(124)), Some(commitment(125)));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            1,
+            MIN_MINER_BOND
+        ));
+
+        let request_id = 42;
+        let miner_index = ActiveMinersBySubnet::<Test>::get(0);
+        let raw_modulo_miner = miner_index
+            .get((request_id as usize) % miner_index.len())
+            .copied()
+            .unwrap();
+        let mut seen_miners = Vec::new();
+
+        for seed in 90..=110 {
+            let assignment = Qubitum::route_assignment(0, request_id, commitment(seed)).unwrap();
+            if !seen_miners.contains(&assignment.miner_id) {
+                seen_miners.push(assignment.miner_id);
+            }
+        }
+
+        assert!(
+            seen_miners.len() > 1,
+            "route selection still ignores assignment blinding"
+        );
+        assert!(
+            seen_miners
+                .iter()
+                .any(|miner_id| *miner_id != raw_modulo_miner),
+            "route selection is still raw request-index modulo"
+        );
+    });
+}
+
+#[test]
+fn request_inference_uses_assignment_blinded_route_seed() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(12),
+            ProofSystem::RiscZeroStark
+        ));
+        attest_miner(1, 2, Some(commitment(124)), Some(commitment(125)));
+        assert_ok!(Qubitum::activate_miner(
+            RuntimeOrigin::signed(2),
+            1,
+            MIN_MINER_BOND
+        ));
+
+        let request_id = 54;
+        let route_blinding = commitment(111);
+        RequestCount::<Test>::put(request_id);
+        let expected_assignment = Qubitum::route_assignment(0, request_id, route_blinding).unwrap();
+
+        assert_ok!(Qubitum::request_inference_auto_route(
+            RuntimeOrigin::signed(4),
+            request_id,
+            AutoRouteInferenceRequestParams {
+                subnet_id: 0,
+                input_commitment: commitment(1),
+                assignment_blinding: route_blinding,
+                timing_blinding: timing_blinding(),
+                terms_blinding: terms_blinding(),
+                payment: 1_000,
+                validator_fee_bps: 250,
+                treasury_fee_bps: 50,
+            },
+        ));
+
+        assert_eq!(
+            InferenceRequests::<Test>::get(request_id)
+                .unwrap()
+                .assignment_commitment,
+            Qubitum::request_assignment_commitment(
+                request_id,
+                0,
+                expected_assignment.miner_id,
+                expected_assignment.validator_id,
+                route_blinding
+            )
+        );
     });
 }
 
@@ -6917,7 +7025,7 @@ fn public_next_route_availability_does_not_expose_participant_assignment_or_futu
         register_active_miner_and_validator();
         RequestCount::<Test>::put(42);
 
-        assert!(Qubitum::next_route_assignment(0).is_some());
+        assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
         assert_eq!(
             Qubitum::next_route_availability(0),
             ChainRouteAvailability { available: false }
@@ -6942,7 +7050,10 @@ fn route_assignment_removes_slashed_participants() {
 
         assert_ok!(Qubitum::slash_miner(RuntimeOrigin::root(), 0, 2, 1_000));
         assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
-        assert_eq!(Qubitum::route_assignment(0, 42), None);
+        assert_eq!(
+            Qubitum::route_assignment(0, 42, assignment_blinding()),
+            None
+        );
 
         assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 3, 1_000));
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
@@ -6975,7 +7086,10 @@ fn route_assignment_rejects_self_validation_operator() {
             MIN_MINER_BOND
         ));
 
-        assert_eq!(Qubitum::route_assignment(0, 42), None);
+        assert_eq!(
+            Qubitum::route_assignment(0, 42, assignment_blinding()),
+            None
+        );
         RequestCount::<Test>::put(42);
         assert_noop!(
             Qubitum::request_inference(
@@ -7052,7 +7166,7 @@ fn route_assignment_skips_self_validation_validator_when_alternative_exists() {
             validator_identity_signature_bundle(1, Some(commitment(124)), Some(commitment(125))),
         ));
 
-        let assignment = Qubitum::route_assignment(0, 42).unwrap();
+        let assignment = Qubitum::route_assignment(0, 42, assignment_blinding()).unwrap();
         assert_eq!(assignment.miner_id, 0);
         assert_eq!(assignment.validator_id, 1);
         RequestCount::<Test>::put(42);
@@ -7117,7 +7231,7 @@ fn route_assignment_scans_to_next_miner_when_seeded_miner_self_validates() {
         assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0, 1]);
         assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).to_vec(), vec![0]);
 
-        let assignment = Qubitum::route_assignment(0, 0).unwrap();
+        let assignment = Qubitum::route_assignment(0, 0, assignment_blinding()).unwrap();
         assert_eq!(assignment.miner_id, 1);
         assert_eq!(assignment.validator_id, 0);
 
@@ -7207,7 +7321,7 @@ fn route_assignment_scans_past_sixteen_self_validation_conflicts() {
         ));
         assert_eq!(ActiveValidatorsBySubnet::<Test>::get(0).len(), 17);
 
-        let assignment = Qubitum::route_assignment(0, 0).unwrap();
+        let assignment = Qubitum::route_assignment(0, 0, assignment_blinding()).unwrap();
         assert_eq!(assignment.miner_id, 0);
         assert_eq!(assignment.validator_id, 16);
 
@@ -7372,7 +7486,10 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         RejectedInferenceRequestCount::<Test>::put(0);
         StorageVersion::new(10).put::<crate::Pallet<Test>>();
 
-        assert_eq!(Qubitum::route_assignment(0, 42), None);
+        assert_eq!(
+            Qubitum::route_assignment(0, 42, assignment_blinding()),
+            None
+        );
         assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
 
@@ -7398,7 +7515,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
                 expired: 0,
             }
         );
-        assert!(Qubitum::route_assignment(0, 42).is_some());
+        assert!(Qubitum::route_assignment(0, 42, assignment_blinding()).is_some());
     });
 }
 
@@ -7470,7 +7587,7 @@ fn runtime_upgrade_does_not_reindex_validator_missing_locked_stake_record() {
         assert_eq!(ActiveMinersBySubnet::<Test>::get(0).to_vec(), vec![0]);
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(LegacyCapitalRecordMigrationFailures::<Test>::get(), 1);
-        assert!(Qubitum::next_route_assignment(0).is_none());
+        assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_none());
     });
 }
 
@@ -7998,8 +8115,7 @@ fn request_inference_rejects_public_participant_ids() {
             MIN_MINER_BOND
         ));
 
-        let assignment = Qubitum::route_assignment(0, 52).unwrap();
-        assert_eq!(assignment.miner_id, 0);
+        let assignment = Qubitum::route_assignment(0, 52, assignment_blinding()).unwrap();
         assert_eq!(assignment.validator_id, 0);
 
         assert_noop!(
@@ -9275,7 +9391,10 @@ fn invalid_proof_slashing_removes_participants_from_routing_but_preserves_pendin
         );
         assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
-        assert_eq!(Qubitum::route_assignment(0, 82), None);
+        assert_eq!(
+            Qubitum::route_assignment(0, 82, assignment_blinding()),
+            None
+        );
         assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
