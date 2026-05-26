@@ -292,7 +292,7 @@ pub mod pallet {
     const LEGACY_ASSIGNMENT_BLINDING: Commitment = [0; 32];
     const LEGACY_TIMING_BLINDING: Commitment = [0; 32];
     const LEGACY_TERMS_BLINDING: Commitment = [0; 32];
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(25);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(26);
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -1273,6 +1273,7 @@ pub mod pallet {
             let weight = Self::migrate_subnet_storage_keys(on_chain)
                 .saturating_add(Self::migrate_registry_storage_keys(on_chain))
                 .saturating_add(Self::migrate_request_and_proof_storage_keys(on_chain))
+                .saturating_add(Self::migrate_inference_accounting_totals(on_chain))
                 .saturating_add(Self::migrate_operator_commitments(on_chain))
                 .saturating_add(Self::migrate_subnet_policy_commitments(on_chain))
                 .saturating_add(Self::migrate_participant_capital_commitments(on_chain))
@@ -2926,12 +2927,9 @@ pub mod pallet {
         }
 
         fn record_inference_escrow(payment: BalanceOf<T>) -> DispatchResult {
-            TotalInferenceEscrowed::<T>::try_mutate(|total| -> DispatchResult {
-                *total = total
-                    .checked_add(&payment)
-                    .ok_or(Error::<T>::ArithmeticOverflow)?;
-                Ok(())
-            })
+            let _ = payment;
+            Self::clear_inference_accounting_totals();
+            Ok(())
         }
 
         fn increment_request_status_count(status: InferenceRequestStatus) -> DispatchResult {
@@ -2998,16 +2996,9 @@ pub mod pallet {
             Ok(())
         }
 
-        fn ensure_accounting_can_add(total: BalanceOf<T>, amount: BalanceOf<T>) -> DispatchResult {
-            ensure!(
-                total.checked_add(&amount).is_some(),
-                Error::<T>::ArithmeticOverflow
-            );
-            Ok(())
-        }
-
         fn ensure_inference_escrow_can_record(payment: BalanceOf<T>) -> DispatchResult {
-            Self::ensure_accounting_can_add(TotalInferenceEscrowed::<T>::get(), payment)
+            let _ = payment;
+            Ok(())
         }
 
         fn ensure_inference_settlement_can_record(
@@ -3015,13 +3006,13 @@ pub mod pallet {
             validator_fee: BalanceOf<T>,
             treasury_fee: BalanceOf<T>,
         ) -> DispatchResult {
-            Self::ensure_accounting_can_add(TotalMinerPayouts::<T>::get(), miner_payment)?;
-            Self::ensure_accounting_can_add(TotalValidatorFees::<T>::get(), validator_fee)?;
-            Self::ensure_accounting_can_add(TotalTreasuryFees::<T>::get(), treasury_fee)
+            let _ = (miner_payment, validator_fee, treasury_fee);
+            Ok(())
         }
 
         fn ensure_inference_refund_can_record(payment: BalanceOf<T>) -> DispatchResult {
-            Self::ensure_accounting_can_add(TotalInferenceRefunded::<T>::get(), payment)
+            let _ = payment;
+            Ok(())
         }
 
         fn record_inference_settlement(
@@ -3029,33 +3020,23 @@ pub mod pallet {
             validator_fee: BalanceOf<T>,
             treasury_fee: BalanceOf<T>,
         ) -> DispatchResult {
-            TotalMinerPayouts::<T>::try_mutate(|total| -> DispatchResult {
-                *total = total
-                    .checked_add(&miner_payment)
-                    .ok_or(Error::<T>::ArithmeticOverflow)?;
-                Ok(())
-            })?;
-            TotalValidatorFees::<T>::try_mutate(|total| -> DispatchResult {
-                *total = total
-                    .checked_add(&validator_fee)
-                    .ok_or(Error::<T>::ArithmeticOverflow)?;
-                Ok(())
-            })?;
-            TotalTreasuryFees::<T>::try_mutate(|total| -> DispatchResult {
-                *total = total
-                    .checked_add(&treasury_fee)
-                    .ok_or(Error::<T>::ArithmeticOverflow)?;
-                Ok(())
-            })
+            let _ = (miner_payment, validator_fee, treasury_fee);
+            Self::clear_inference_accounting_totals();
+            Ok(())
         }
 
         fn record_inference_refund(payment: BalanceOf<T>) -> DispatchResult {
-            TotalInferenceRefunded::<T>::try_mutate(|total| -> DispatchResult {
-                *total = total
-                    .checked_add(&payment)
-                    .ok_or(Error::<T>::ArithmeticOverflow)?;
-                Ok(())
-            })
+            let _ = payment;
+            Self::clear_inference_accounting_totals();
+            Ok(())
+        }
+
+        fn clear_inference_accounting_totals() {
+            TotalInferenceEscrowed::<T>::kill();
+            TotalMinerPayouts::<T>::kill();
+            TotalValidatorFees::<T>::kill();
+            TotalTreasuryFees::<T>::kill();
+            TotalInferenceRefunded::<T>::kill();
         }
 
         fn current_block() -> BlockNumber {
@@ -4147,6 +4128,15 @@ pub mod pallet {
             T::DbWeight::get().reads_writes(reads, writes)
         }
 
+        fn migrate_inference_accounting_totals(on_chain: StorageVersion) -> Weight {
+            if on_chain >= StorageVersion::new(26) {
+                return Weight::zero();
+            }
+
+            Self::clear_inference_accounting_totals();
+            T::DbWeight::get().writes(5)
+        }
+
         fn migrate_capital_record_storage_keys(on_chain: StorageVersion) -> Weight {
             if on_chain >= StorageVersion::new(20) {
                 return Weight::zero();
@@ -4546,17 +4536,8 @@ pub mod pallet {
         }
 
         fn put_inference_accounting(accounting: ChainAccounting<BalanceOf<T>>, failures: u32) {
-            let mut accounting = if failures == 0 {
-                accounting
-            } else {
-                Self::zero_accounting()
-            };
-            accounting.legacy_migration_failures = failures;
-            TotalInferenceEscrowed::<T>::put(accounting.total_inference_escrowed);
-            TotalMinerPayouts::<T>::put(accounting.total_miner_payouts);
-            TotalValidatorFees::<T>::put(accounting.total_validator_fees);
-            TotalTreasuryFees::<T>::put(accounting.total_treasury_fees);
-            TotalInferenceRefunded::<T>::put(accounting.total_inference_refunded);
+            let _ = accounting;
+            Self::clear_inference_accounting_totals();
             LegacyAccountingMigrationFailures::<T>::put(failures);
         }
 

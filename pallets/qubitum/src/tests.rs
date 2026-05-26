@@ -542,6 +542,22 @@ fn request_inference(request_id: u64) {
     ));
 }
 
+fn set_stale_inference_accounting_totals(value: u128) {
+    TotalInferenceEscrowed::<Test>::put(value);
+    TotalMinerPayouts::<Test>::put(value);
+    TotalValidatorFees::<Test>::put(value);
+    TotalTreasuryFees::<Test>::put(value);
+    TotalInferenceRefunded::<Test>::put(value);
+}
+
+fn assert_inference_accounting_totals_cleared() {
+    assert_eq!(TotalInferenceEscrowed::<Test>::get(), 0);
+    assert_eq!(TotalMinerPayouts::<Test>::get(), 0);
+    assert_eq!(TotalValidatorFees::<Test>::get(), 0);
+    assert_eq!(TotalTreasuryFees::<Test>::get(), 0);
+    assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
+}
+
 fn request_terms() -> InferenceRequestTerms<u128> {
     inference_terms(1_000, 250, 50)
 }
@@ -2373,167 +2389,6 @@ fn accounting_overflows_fail_without_state_changes() {
 
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
-        TotalInferenceEscrowed::<Test>::put(u128::MAX);
-
-        assert_noop!(
-            Qubitum::request_inference(
-                RuntimeOrigin::signed(4),
-                0,
-                InferenceRequestParams {
-                    subnet_id: 0,
-                    miner_id: 0,
-                    validator_id: 0,
-                    input_commitment: commitment(1),
-                    assignment_blinding: assignment_blinding(),
-                    timing_blinding: timing_blinding(),
-                    terms_blinding: terms_blinding(),
-                    payment: 1_000,
-                    validator_fee_bps: 250,
-                    treasury_fee_bps: 50,
-                },
-            ),
-            Error::<Test>::ArithmeticOverflow
-        );
-
-        assert!(InferenceRequests::<Test>::get(0).is_none());
-        assert_eq!(RequestCount::<Test>::get(), 0);
-        assert_eq!(
-            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
-            0
-        );
-        assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
-        assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
-        assert_eq!(TotalInferenceEscrowed::<Test>::get(), u128::MAX);
-    });
-
-    new_test_ext().execute_with(|| {
-        register_active_miner_and_validator();
-        request_inference(80);
-        let miner_free_before = Balances::free_balance(2);
-        let validator_free_before = Balances::free_balance(3);
-        let treasury_free_before = Balances::free_balance(99);
-        TotalMinerPayouts::<Test>::put(u128::MAX);
-
-        assert_noop!(
-            submit_proof(RuntimeOrigin::signed(3), valid_submission(80)),
-            Error::<Test>::ArithmeticOverflow
-        );
-
-        assert!(ProofRecords::<Test>::get(80).is_none());
-        assert_eq!(
-            InferenceRequests::<Test>::get(80).unwrap().status,
-            InferenceRequestStatus::Pending
-        );
-        assert_eq!(
-            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
-            1_000
-        );
-        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
-        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
-        assert_eq!(Balances::free_balance(2), miner_free_before);
-        assert_eq!(Balances::free_balance(3), validator_free_before);
-        assert_eq!(Balances::free_balance(99), treasury_free_before);
-        assert_eq!(TotalMinerPayouts::<Test>::get(), u128::MAX);
-    });
-
-    new_test_ext().execute_with(|| {
-        register_active_miner_and_validator();
-        request_inference(83);
-        let miner_free_before = Balances::free_balance(2);
-        let validator_free_before = Balances::free_balance(3);
-        let treasury_free_before = Balances::free_balance(99);
-        TotalValidatorFees::<Test>::put(u128::MAX);
-
-        assert_noop!(
-            submit_proof(RuntimeOrigin::signed(3), valid_submission(83)),
-            Error::<Test>::ArithmeticOverflow
-        );
-
-        assert!(ProofRecords::<Test>::get(83).is_none());
-        assert_eq!(
-            InferenceRequests::<Test>::get(83).unwrap().status,
-            InferenceRequestStatus::Pending
-        );
-        assert_eq!(
-            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
-            1_000
-        );
-        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
-        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
-        assert_eq!(Balances::free_balance(2), miner_free_before);
-        assert_eq!(Balances::free_balance(3), validator_free_before);
-        assert_eq!(Balances::free_balance(99), treasury_free_before);
-        assert_eq!(TotalMinerPayouts::<Test>::get(), 0);
-        assert_eq!(TotalValidatorFees::<Test>::get(), u128::MAX);
-        assert_eq!(TotalTreasuryFees::<Test>::get(), 0);
-    });
-
-    new_test_ext().execute_with(|| {
-        register_active_miner_and_validator();
-        request_inference(84);
-        let miner_free_before = Balances::free_balance(2);
-        let validator_free_before = Balances::free_balance(3);
-        let treasury_free_before = Balances::free_balance(99);
-        TotalTreasuryFees::<Test>::put(u128::MAX);
-
-        assert_noop!(
-            submit_proof(RuntimeOrigin::signed(3), valid_submission(84)),
-            Error::<Test>::ArithmeticOverflow
-        );
-
-        assert!(ProofRecords::<Test>::get(84).is_none());
-        assert_eq!(
-            InferenceRequests::<Test>::get(84).unwrap().status,
-            InferenceRequestStatus::Pending
-        );
-        assert_eq!(
-            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
-            1_000
-        );
-        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
-        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
-        assert_eq!(Balances::free_balance(2), miner_free_before);
-        assert_eq!(Balances::free_balance(3), validator_free_before);
-        assert_eq!(Balances::free_balance(99), treasury_free_before);
-        assert_eq!(TotalMinerPayouts::<Test>::get(), 0);
-        assert_eq!(TotalValidatorFees::<Test>::get(), 0);
-        assert_eq!(TotalTreasuryFees::<Test>::get(), u128::MAX);
-    });
-
-    new_test_ext().execute_with(|| {
-        register_active_miner_and_validator();
-        request_inference(81);
-        TotalInferenceRefunded::<Test>::put(u128::MAX);
-        System::set_block_number(10);
-
-        assert_noop!(
-            Qubitum::cancel_inference(
-                RuntimeOrigin::signed(4),
-                81,
-                0,
-                0,
-                assignment_blinding(),
-                timing_witness(0),
-                request_terms_witness()
-            ),
-            Error::<Test>::ArithmeticOverflow
-        );
-
-        assert_eq!(
-            InferenceRequests::<Test>::get(81).unwrap().status,
-            InferenceRequestStatus::Pending
-        );
-        assert_eq!(
-            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
-            1_000
-        );
-        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
-        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
-        assert_eq!(TotalInferenceRefunded::<Test>::get(), u128::MAX);
-    });
-
-    new_test_ext().execute_with(|| {
-        register_active_miner_and_validator();
         TotalBurned::<Test>::put(u128::MAX);
 
         assert_noop!(
@@ -2619,86 +2474,109 @@ fn accounting_overflows_fail_without_state_changes() {
         assert_eq!(TotalBurned::<Test>::get(), u128::MAX);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
     });
+}
+
+#[test]
+fn stale_inference_accounting_totals_are_cleared_without_blocking_lifecycle() {
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        set_stale_inference_accounting_totals(u128::MAX);
+
+        request_inference(80);
+        assert_eq!(
+            InferenceRequests::<Test>::get(80).unwrap().status,
+            InferenceRequestStatus::Pending
+        );
+        assert_inference_accounting_totals_cleared();
+
+        set_stale_inference_accounting_totals(u128::MAX);
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(80)));
+        assert!(ProofRecords::<Test>::get(80).is_some());
+        assert_eq!(
+            InferenceRequests::<Test>::get(80).unwrap().status,
+            InferenceRequestStatus::Settled
+        );
+        assert_inference_accounting_totals_cleared();
+    });
 
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
-        request_inference(85);
-        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
-        let burned_before = TotalBurned::<Test>::get();
-        TotalInferenceRefunded::<Test>::put(u128::MAX);
+        request_inference(81);
+        set_stale_inference_accounting_totals(u128::MAX);
+        System::set_block_number(10);
 
-        assert_noop!(
-            submit_proof(RuntimeOrigin::signed(3), valid_submission(85)),
-            Error::<Test>::ArithmeticOverflow
-        );
+        assert_ok!(Qubitum::cancel_inference(
+            RuntimeOrigin::signed(4),
+            81,
+            0,
+            0,
+            assignment_blinding(),
+            timing_witness(0),
+            request_terms_witness()
+        ));
 
-        assert!(ProofRecords::<Test>::get(85).is_none());
         assert_eq!(
-            InferenceRequests::<Test>::get(85).unwrap().status,
-            InferenceRequestStatus::Pending
+            InferenceRequests::<Test>::get(81).unwrap().status,
+            InferenceRequestStatus::Cancelled
         );
-        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
-        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
+        assert_inference_accounting_totals_cleared();
+    });
+
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(82);
+        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
+        set_stale_inference_accounting_totals(u128::MAX);
+
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(82)));
+
+        assert!(ProofRecords::<Test>::get(82).is_none());
+        assert_eq!(
+            InferenceRequests::<Test>::get(82).unwrap().status,
+            InferenceRequestStatus::Rejected
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
         assert_eq!(
             Miners::<Test>::get(0).unwrap().status,
-            RegistryStatus::Active
+            RegistryStatus::Slashed
+        );
+        assert_eq!(
+            Validators::<Test>::get(0).unwrap().status,
+            RegistryStatus::Slashed
+        );
+        assert_inference_accounting_totals_cleared();
+    });
+
+    new_test_ext().execute_with(|| {
+        register_active_miner_and_validator();
+        request_inference(83);
+        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
+        set_stale_inference_accounting_totals(u128::MAX);
+
+        assert_ok!(challenge_proof(
+            RuntimeOrigin::signed(4),
+            valid_submission(83)
+        ));
+
+        assert!(ProofRecords::<Test>::get(83).is_none());
+        assert_eq!(
+            InferenceRequests::<Test>::get(83).unwrap().status,
+            InferenceRequestStatus::Rejected
+        );
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
+        assert_eq!(
+            Miners::<Test>::get(0).unwrap().status,
+            RegistryStatus::Slashed
         );
         assert_eq!(
             Validators::<Test>::get(0).unwrap().status,
             RegistryStatus::Active
         );
-        assert_eq!(MinerLockedBond::<Test>::get(0), Some(MIN_MINER_BOND));
-        assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(MIN_MINER_BOND));
-        assert_eq!(
-            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
-            MIN_MINER_BOND
-        );
-        assert_eq!(
-            Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
-            MIN_MINER_BOND
-        );
-        assert_eq!(
-            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
-            1_000
-        );
-        assert_eq!(TotalBurned::<Test>::get(), burned_before);
-        assert_eq!(TotalInferenceRefunded::<Test>::get(), u128::MAX);
-    });
-
-    new_test_ext().execute_with(|| {
-        register_active_miner_and_validator();
-        request_inference(86);
-        set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
-        let burned_before = TotalBurned::<Test>::get();
-        TotalInferenceRefunded::<Test>::put(u128::MAX);
-
-        assert_noop!(
-            challenge_proof(RuntimeOrigin::signed(4), valid_submission(86)),
-            Error::<Test>::ArithmeticOverflow
-        );
-
-        assert!(ProofRecords::<Test>::get(86).is_none());
-        assert_eq!(
-            InferenceRequests::<Test>::get(86).unwrap().status,
-            InferenceRequestStatus::Pending
-        );
-        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
-        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
-        assert_eq!(
-            Miners::<Test>::get(0).unwrap().status,
-            RegistryStatus::Active
-        );
-        assert_eq!(MinerLockedBond::<Test>::get(0), Some(MIN_MINER_BOND));
-        assert_eq!(
-            Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
-            MIN_MINER_BOND
-        );
-        assert_eq!(
-            Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
-            1_000
-        );
-        assert_eq!(TotalBurned::<Test>::get(), burned_before);
-        assert_eq!(TotalInferenceRefunded::<Test>::get(), u128::MAX);
+        assert_inference_accounting_totals_cleared();
     });
 }
 
@@ -3971,10 +3849,10 @@ fn submit_proof_records_commitments_for_active_participants() {
             InferenceRequests::<Test>::get(42).unwrap().status,
             InferenceRequestStatus::Settled
         );
-        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
-        assert_eq!(TotalMinerPayouts::<Test>::get(), 970);
-        assert_eq!(TotalValidatorFees::<Test>::get(), 25);
-        assert_eq!(TotalTreasuryFees::<Test>::get(), 5);
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 0);
+        assert_eq!(TotalMinerPayouts::<Test>::get(), 0);
+        assert_eq!(TotalValidatorFees::<Test>::get(), 0);
+        assert_eq!(TotalTreasuryFees::<Test>::get(), 0);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
         assert_eq!(
             Qubitum::raw_request_status_counts(),
@@ -4762,7 +4640,7 @@ fn runtime_upgrade_migrates_subnet_owner_and_policy_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
     });
 }
@@ -4815,7 +4693,7 @@ fn runtime_upgrade_migrates_identity_signature_challenges() {
         );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
     });
 }
@@ -4882,7 +4760,7 @@ fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
     });
 }
@@ -4952,7 +4830,7 @@ fn runtime_upgrade_migrates_proof_record_routes_to_commitments() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
     });
 }
@@ -5026,7 +4904,7 @@ fn runtime_upgrade_migrates_proof_record_details_to_audit_commitments() {
         }
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
     });
 }
@@ -5105,7 +4983,7 @@ fn runtime_upgrade_migrates_registry_operators_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
     });
 }
@@ -5189,7 +5067,7 @@ fn runtime_upgrade_migrates_participant_capital_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
     });
 }
@@ -5242,7 +5120,7 @@ fn runtime_upgrade_migrates_request_users_to_commitments() {
         assert_eq!(PendingValidatorRequests::<Test>::get(9), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
     });
 }
@@ -5280,7 +5158,7 @@ fn runtime_upgrade_migrates_request_timing_to_commitments() {
         assert_eq!(request.status, InferenceRequestStatus::Pending);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
     });
 }
@@ -5318,12 +5196,30 @@ fn runtime_upgrade_migrates_request_terms_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
-        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 123_456);
-        assert_eq!(TotalValidatorFees::<Test>::get(), 3_086);
-        assert_eq!(TotalTreasuryFees::<Test>::get(), 617);
-        assert_eq!(TotalMinerPayouts::<Test>::get(), 119_753);
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 0);
+        assert_eq!(TotalValidatorFees::<Test>::get(), 0);
+        assert_eq!(TotalTreasuryFees::<Test>::get(), 0);
+        assert_eq!(TotalMinerPayouts::<Test>::get(), 0);
+    });
+}
+
+#[test]
+fn runtime_upgrade_clears_published_inference_accounting_totals() {
+    new_test_ext().execute_with(|| {
+        set_stale_inference_accounting_totals(777);
+        LegacyAccountingMigrationFailures::<Test>::put(3);
+        StorageVersion::new(25).put::<crate::Pallet<Test>>();
+
+        <Qubitum as Hooks<u64>>::on_runtime_upgrade();
+
+        assert_inference_accounting_totals_cleared();
+        assert_eq!(LegacyAccountingMigrationFailures::<Test>::get(), 3);
+        assert_eq!(
+            StorageVersion::get::<crate::Pallet<Test>>(),
+            StorageVersion::new(26)
+        );
     });
 }
 
@@ -5380,7 +5276,7 @@ fn runtime_upgrade_records_legacy_accounting_failures_without_saturated_totals()
         );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
     });
 
@@ -5455,7 +5351,7 @@ fn request_inference_escrows_payment() {
         assert_eq!(RequestCount::<Test>::get(), 8);
         assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
-        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 0);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
         assert_eq!(
             Qubitum::raw_request_status_counts(),
@@ -7836,9 +7732,9 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
-        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 0);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
         assert_eq!(
             Qubitum::raw_request_status_counts(),
@@ -7875,7 +7771,7 @@ fn runtime_upgrade_clears_legacy_reversible_active_route_keys() {
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
     });
 }
@@ -7928,7 +7824,7 @@ fn runtime_upgrade_migrates_legacy_reversible_registry_record_keys() {
         assert_eq!(Validators::<Test>::get(9), Some(validator));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
     });
 }
@@ -7978,7 +7874,7 @@ fn runtime_upgrade_migrates_legacy_reversible_request_and_proof_keys() {
         assert_eq!(ProofRecords::<Test>::get(42), Some(proof_record));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
     });
 }
@@ -8021,7 +7917,7 @@ fn runtime_upgrade_migrates_legacy_reversible_capital_record_keys() {
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
     });
 }
@@ -8160,7 +8056,7 @@ fn runtime_upgrade_migrates_legacy_reversible_identity_record_keys() {
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
         assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
     });
@@ -8580,7 +8476,7 @@ fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_healt
         assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
     });
 }
@@ -8698,7 +8594,7 @@ fn runtime_upgrade_reports_missing_legacy_capital_records() {
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(25)
+            StorageVersion::new(26)
         );
     });
 }
@@ -8859,7 +8755,7 @@ fn cancel_inference_releases_pending_escrow() {
         );
         assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
-        assert_eq!(TotalInferenceRefunded::<Test>::get(), 1_000);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
         assert_eq!(
             Qubitum::raw_request_status_counts(),
             ChainRequestStatusCounts {
@@ -8939,7 +8835,7 @@ fn expire_inference_releases_stale_request_for_any_signed_caller() {
         );
         assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
-        assert_eq!(TotalInferenceRefunded::<Test>::get(), 1_000);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
         assert_eq!(
             Qubitum::raw_request_status_counts(),
             ChainRequestStatusCounts {
@@ -9189,7 +9085,7 @@ fn rejected_proof_refund_requires_terms_witness() {
             InferenceRequests::<Test>::get(63).unwrap().status,
             InferenceRequestStatus::Rejected
         );
-        assert_eq!(TotalInferenceRefunded::<Test>::get(), 1_000);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
     });
 }
 
@@ -9506,10 +9402,10 @@ fn public_accounting_view_redacts_capital_totals() {
             request_terms_witness()
         ));
 
-        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
-        assert_eq!(TotalMinerPayouts::<Test>::get(), 970);
-        assert_eq!(TotalValidatorFees::<Test>::get(), 25);
-        assert_eq!(TotalTreasuryFees::<Test>::get(), 5);
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 0);
+        assert_eq!(TotalMinerPayouts::<Test>::get(), 0);
+        assert_eq!(TotalValidatorFees::<Test>::get(), 0);
+        assert_eq!(TotalTreasuryFees::<Test>::get(), 0);
 
         assert_eq!(
             Qubitum::accounting(),
@@ -9549,10 +9445,11 @@ fn raw_capital_accounting_storage_remains_visible_until_private_accounting_lands
 
         assert_eq!(MinerLockedBond::<Test>::get(0), Some(MIN_MINER_BOND));
         assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(MIN_MINER_BOND));
-        assert_eq!(raw_accounting.total_inference_escrowed, 1_000);
-        assert_eq!(raw_accounting.total_miner_payouts, 970);
-        assert_eq!(raw_accounting.total_validator_fees, 25);
-        assert_eq!(raw_accounting.total_treasury_fees, 5);
+        assert_eq!(raw_accounting.total_inference_escrowed, 0);
+        assert_eq!(raw_accounting.total_miner_payouts, 0);
+        assert_eq!(raw_accounting.total_validator_fees, 0);
+        assert_eq!(raw_accounting.total_treasury_fees, 0);
+        assert_eq!(raw_accounting.total_inference_refunded, 0);
 
         for (encoded_storage_value, exposed_amount) in [
             (
@@ -9567,13 +9464,6 @@ fn raw_capital_accounting_storage_remains_visible_until_private_accounting_lands
                     .to_vec(),
                 MIN_MINER_BOND.encode(),
             ),
-            (
-                TotalInferenceEscrowed::<Test>::get().encode(),
-                1_000_u128.encode(),
-            ),
-            (TotalMinerPayouts::<Test>::get().encode(), 970_u128.encode()),
-            (TotalValidatorFees::<Test>::get().encode(), 25_u128.encode()),
-            (TotalTreasuryFees::<Test>::get().encode(), 5_u128.encode()),
         ] {
             assert!(contains_subsequence(
                 &encoded_storage_value,
@@ -9661,7 +9551,7 @@ fn verifier_error_fails_closed_without_settlement_slash_or_refund_side_effects()
             Validators::<Test>::get(0).unwrap().status,
             RegistryStatus::Active
         );
-        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 0);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
         assert_eq!(TotalMinerPayouts::<Test>::get(), 0);
         assert_eq!(TotalValidatorFees::<Test>::get(), 0);
@@ -9701,7 +9591,7 @@ fn verifier_error_fails_closed_without_settlement_slash_or_refund_side_effects()
             Validators::<Test>::get(0).unwrap().status,
             RegistryStatus::Active
         );
-        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 1_000);
+        assert_eq!(TotalInferenceEscrowed::<Test>::get(), 0);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
         assert_eq!(TotalMinerPayouts::<Test>::get(), 0);
         assert_eq!(TotalValidatorFees::<Test>::get(), 0);
@@ -9823,7 +9713,7 @@ fn verifier_rejection_slashes_and_refunds_request() {
         );
         assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
-        assert_eq!(TotalInferenceRefunded::<Test>::get(), 1_000);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
         assert_eq!(
             Qubitum::raw_request_status_counts(),
             ChainRequestStatusCounts {
@@ -9883,7 +9773,7 @@ fn invalid_proof_challenge_slashes_miner_without_validator_self_slash() {
         );
         assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
-        assert_eq!(TotalInferenceRefunded::<Test>::get(), 1_000);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
 
         let miner = Miners::<Test>::get(0).unwrap();
         assert_eq!(
@@ -10034,7 +9924,7 @@ fn invalid_proof_slashing_removes_participants_from_routing_but_preserves_pendin
             InferenceRequests::<Test>::get(81).unwrap().status,
             InferenceRequestStatus::Expired
         );
-        assert_eq!(TotalInferenceRefunded::<Test>::get(), 2_000);
+        assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
     });
 }
 
