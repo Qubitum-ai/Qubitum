@@ -678,7 +678,7 @@ fn create_subnet_burns_qbt_and_commits_owner_and_policy() {
             &MIN_MINER_BOND.encode()
         ));
         assert_eq!(SubnetCount::<Test>::get(), 1);
-        assert_eq!(TotalBurned::<Test>::get(), subnet_creation_burn());
+        assert_eq!(TotalBurned::<Test>::get(), 0);
         assert_eq!(
             Balances::free_balance(1),
             1_000_000_000_000_000 - subnet_creation_burn()
@@ -1393,10 +1393,7 @@ fn register_and_activate_miner_locks_bond() {
             Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
             MIN_MINER_BOND
         );
-        assert_eq!(
-            TotalBurned::<Test>::get(),
-            subnet_creation_burn() + MINER_REGISTRATION_BURN
-        );
+        assert_eq!(TotalBurned::<Test>::get(), 0);
     });
 }
 
@@ -2344,23 +2341,23 @@ fn request_id_overflow_rejects_before_route_oracle() {
 }
 
 #[test]
-fn accounting_overflows_fail_without_state_changes() {
+fn stale_burned_total_is_cleared_without_blocking_lifecycle() {
     new_test_ext().execute_with(|| {
         TotalBurned::<Test>::put(u128::MAX);
 
-        assert_noop!(
-            Qubitum::create_subnet(
-                RuntimeOrigin::signed(1),
-                SubnetDomain::Code,
-                ProofSystem::RiscZeroStark,
-            ),
-            Error::<Test>::ArithmeticOverflow
-        );
+        assert_ok!(Qubitum::create_subnet(
+            RuntimeOrigin::signed(1),
+            SubnetDomain::Code,
+            ProofSystem::RiscZeroStark,
+        ));
 
-        assert_eq!(SubnetCount::<Test>::get(), 0);
-        assert!(Subnets::<Test>::get(0).is_none());
-        assert_eq!(Balances::free_balance(1), 1_000_000_000_000_000);
-        assert_eq!(TotalBurned::<Test>::get(), u128::MAX);
+        assert_eq!(SubnetCount::<Test>::get(), 1);
+        assert!(Subnets::<Test>::get(0).is_some());
+        assert_eq!(
+            Balances::free_balance(1),
+            1_000_000_000_000_000 - subnet_creation_burn()
+        );
+        assert_eq!(TotalBurned::<Test>::get(), 0);
     });
 
     new_test_ext().execute_with(|| {
@@ -2371,64 +2368,58 @@ fn accounting_overflows_fail_without_state_changes() {
         ));
         TotalBurned::<Test>::put(u128::MAX);
 
-        assert_noop!(
-            Qubitum::register_miner(
-                RuntimeOrigin::signed(2),
-                0,
-                commitment(10),
-                ProofSystem::RiscZeroStark,
-            ),
-            Error::<Test>::ArithmeticOverflow
-        );
+        assert_ok!(Qubitum::register_miner(
+            RuntimeOrigin::signed(2),
+            0,
+            commitment(10),
+            ProofSystem::RiscZeroStark,
+        ));
 
-        assert_eq!(MinerCount::<Test>::get(), 0);
-        assert!(Miners::<Test>::get(0).is_none());
-        assert_eq!(Balances::free_balance(2), 1_000_000_000_000_000);
-        assert_eq!(TotalBurned::<Test>::get(), u128::MAX);
+        assert_eq!(MinerCount::<Test>::get(), 1);
+        assert!(Miners::<Test>::get(0).is_some());
+        assert_eq!(
+            Balances::free_balance(2),
+            1_000_000_000_000_000 - MINER_REGISTRATION_BURN
+        );
+        assert_eq!(TotalBurned::<Test>::get(), 0);
     });
 
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         TotalBurned::<Test>::put(u128::MAX);
 
-        assert_noop!(
-            Qubitum::slash_miner(RuntimeOrigin::root(), 0, 2, 1_000),
-            Error::<Test>::ArithmeticOverflow
-        );
+        assert_ok!(Qubitum::slash_miner(RuntimeOrigin::root(), 0, 2, 1_000));
 
         assert_eq!(
             Miners::<Test>::get(0).unwrap().status,
-            RegistryStatus::Active
+            RegistryStatus::Slashed
         );
-        assert_eq!(MinerLockedBond::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(MinerLockedBond::<Test>::get(0), Some(90_000_000_000));
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
-            MIN_MINER_BOND
+            90_000_000_000
         );
         assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
-        assert_eq!(TotalBurned::<Test>::get(), u128::MAX);
+        assert_eq!(TotalBurned::<Test>::get(), 0);
     });
 
     new_test_ext().execute_with(|| {
         register_active_miner_and_validator();
         TotalBurned::<Test>::put(u128::MAX);
 
-        assert_noop!(
-            Qubitum::slash_validator(RuntimeOrigin::root(), 0, 3, 1_000),
-            Error::<Test>::ArithmeticOverflow
-        );
+        assert_ok!(Qubitum::slash_validator(RuntimeOrigin::root(), 0, 3, 1_000));
 
         assert_eq!(
             Validators::<Test>::get(0).unwrap().status,
-            RegistryStatus::Active
+            RegistryStatus::Slashed
         );
-        assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(90_000_000_000));
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
-            MIN_MINER_BOND
+            90_000_000_000
         );
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
-        assert_eq!(TotalBurned::<Test>::get(), u128::MAX);
+        assert_eq!(TotalBurned::<Test>::get(), 0);
     });
 
     new_test_ext().execute_with(|| {
@@ -2437,41 +2428,38 @@ fn accounting_overflows_fail_without_state_changes() {
         set_verification_outcome(VerificationOutcome::Invalid { slash_bps: 1_000 });
         TotalBurned::<Test>::put(u128::MAX);
 
-        assert_noop!(
-            submit_proof(RuntimeOrigin::signed(3), valid_submission(82)),
-            Error::<Test>::ArithmeticOverflow
-        );
+        assert_ok!(submit_proof(RuntimeOrigin::signed(3), valid_submission(82)));
 
         assert!(ProofRecords::<Test>::get(82).is_none());
         assert_eq!(
             InferenceRequests::<Test>::get(82).unwrap().status,
-            InferenceRequestStatus::Pending
+            InferenceRequestStatus::Rejected
         );
-        assert_eq!(PendingMinerRequests::<Test>::get(0), 1);
-        assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
+        assert_eq!(PendingMinerRequests::<Test>::get(0), 0);
+        assert_eq!(PendingValidatorRequests::<Test>::get(0), 0);
         assert_eq!(
             Miners::<Test>::get(0).unwrap().status,
-            RegistryStatus::Active
+            RegistryStatus::Slashed
         );
         assert_eq!(
             Validators::<Test>::get(0).unwrap().status,
-            RegistryStatus::Active
+            RegistryStatus::Slashed
         );
-        assert_eq!(MinerLockedBond::<Test>::get(0), Some(MIN_MINER_BOND));
-        assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(MIN_MINER_BOND));
+        assert_eq!(MinerLockedBond::<Test>::get(0), Some(90_000_000_000));
+        assert_eq!(ValidatorLockedStake::<Test>::get(0), Some(90_000_000_000));
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::MinerBond.into(), &2),
-            MIN_MINER_BOND
+            90_000_000_000
         );
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::ValidatorStake.into(), &3),
-            MIN_MINER_BOND
+            90_000_000_000
         );
         assert_eq!(
             Balances::balance_on_hold(&HoldReason::InferencePayment.into(), &4),
-            1_000
+            0
         );
-        assert_eq!(TotalBurned::<Test>::get(), u128::MAX);
+        assert_eq!(TotalBurned::<Test>::get(), 0);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
     });
 }
@@ -4679,7 +4667,7 @@ fn runtime_upgrade_migrates_subnet_owner_and_policy_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
     });
 }
@@ -4732,7 +4720,7 @@ fn runtime_upgrade_migrates_identity_signature_challenges() {
         );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
     });
 }
@@ -4799,7 +4787,7 @@ fn runtime_upgrade_migrates_proof_record_acceptance_timestamp() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
     });
 }
@@ -4869,7 +4857,7 @@ fn runtime_upgrade_migrates_proof_record_routes_to_commitments() {
         assert!(!contains_subsequence(&record.encode(), &proof(11).encode()));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
     });
 }
@@ -4943,7 +4931,7 @@ fn runtime_upgrade_migrates_proof_record_details_to_audit_commitments() {
         }
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
     });
 }
@@ -5022,7 +5010,7 @@ fn runtime_upgrade_migrates_registry_operators_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
     });
 }
@@ -5106,7 +5094,7 @@ fn runtime_upgrade_migrates_participant_capital_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
     });
 }
@@ -5159,7 +5147,7 @@ fn runtime_upgrade_migrates_request_users_to_commitments() {
         assert_eq!(PendingValidatorRequests::<Test>::get(9), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
     });
 }
@@ -5197,7 +5185,7 @@ fn runtime_upgrade_migrates_request_timing_to_commitments() {
         assert_eq!(request.status, InferenceRequestStatus::Pending);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
     });
 }
@@ -5235,7 +5223,7 @@ fn runtime_upgrade_migrates_request_terms_to_commitments() {
         ));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 0);
         assert_eq!(TotalValidatorFees::<Test>::get(), 0);
@@ -5257,7 +5245,23 @@ fn runtime_upgrade_clears_published_inference_accounting_totals() {
         assert_eq!(LegacyAccountingMigrationFailures::<Test>::get(), 3);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
+        );
+    });
+}
+
+#[test]
+fn runtime_upgrade_clears_published_burned_total() {
+    new_test_ext().execute_with(|| {
+        TotalBurned::<Test>::put(555);
+        StorageVersion::new(26).put::<crate::Pallet<Test>>();
+
+        <Qubitum as Hooks<u64>>::on_runtime_upgrade();
+
+        assert_eq!(TotalBurned::<Test>::get(), 0);
+        assert_eq!(
+            StorageVersion::get::<crate::Pallet<Test>>(),
+            StorageVersion::new(27)
         );
     });
 }
@@ -5315,7 +5319,7 @@ fn runtime_upgrade_records_legacy_accounting_failures_without_saturated_totals()
         );
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
     });
 
@@ -7771,7 +7775,7 @@ fn runtime_upgrade_rebuilds_active_routing_indexes() {
         assert_eq!(PendingValidatorRequests::<Test>::get(0), 1);
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
         assert_eq!(TotalInferenceEscrowed::<Test>::get(), 0);
         assert_eq!(TotalInferenceRefunded::<Test>::get(), 0);
@@ -7810,7 +7814,7 @@ fn runtime_upgrade_clears_legacy_reversible_active_route_keys() {
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
     });
 }
@@ -7863,7 +7867,7 @@ fn runtime_upgrade_migrates_legacy_reversible_registry_record_keys() {
         assert_eq!(Validators::<Test>::get(9), Some(validator));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
     });
 }
@@ -7913,7 +7917,7 @@ fn runtime_upgrade_migrates_legacy_reversible_request_and_proof_keys() {
         assert_eq!(ProofRecords::<Test>::get(42), Some(proof_record));
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
     });
 }
@@ -7956,7 +7960,7 @@ fn runtime_upgrade_migrates_legacy_reversible_capital_record_keys() {
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
     });
 }
@@ -8095,7 +8099,7 @@ fn runtime_upgrade_migrates_legacy_reversible_identity_record_keys() {
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
         assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
     });
@@ -8515,7 +8519,7 @@ fn runtime_upgrade_demotes_overflow_routing_index_participants_and_reports_healt
         assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
     });
 }
@@ -8633,7 +8637,7 @@ fn runtime_upgrade_reports_missing_legacy_capital_records() {
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert_eq!(
             StorageVersion::get::<crate::Pallet<Test>>(),
-            StorageVersion::new(26)
+            StorageVersion::new(27)
         );
     });
 }

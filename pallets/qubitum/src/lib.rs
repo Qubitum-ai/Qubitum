@@ -292,7 +292,7 @@ pub mod pallet {
     const LEGACY_ASSIGNMENT_BLINDING: Commitment = [0; 32];
     const LEGACY_TIMING_BLINDING: Commitment = [0; 32];
     const LEGACY_TERMS_BLINDING: Commitment = [0; 32];
-    const STORAGE_VERSION: StorageVersion = StorageVersion::new(26);
+    const STORAGE_VERSION: StorageVersion = StorageVersion::new(27);
     #[pallet::pallet]
     #[pallet::without_storage_info]
     #[pallet::storage_version(STORAGE_VERSION)]
@@ -1278,6 +1278,7 @@ pub mod pallet {
                 .saturating_add(Self::migrate_registry_storage_keys(on_chain))
                 .saturating_add(Self::migrate_request_and_proof_storage_keys(on_chain))
                 .saturating_add(Self::migrate_inference_accounting_totals(on_chain))
+                .saturating_add(Self::migrate_burned_total(on_chain))
                 .saturating_add(Self::migrate_operator_commitments(on_chain))
                 .saturating_add(Self::migrate_subnet_policy_commitments(on_chain))
                 .saturating_add(Self::migrate_participant_capital_commitments(on_chain))
@@ -3048,6 +3049,10 @@ pub mod pallet {
             TotalInferenceRefunded::<T>::kill();
         }
 
+        fn clear_burned_total() {
+            TotalBurned::<T>::kill();
+        }
+
         fn deposit_activity_event(event: Event<T>) {
             Self::deposit_activity_events([event]);
         }
@@ -4158,6 +4163,15 @@ pub mod pallet {
 
             Self::clear_inference_accounting_totals();
             T::DbWeight::get().writes(5)
+        }
+
+        fn migrate_burned_total(on_chain: StorageVersion) -> Weight {
+            if on_chain >= StorageVersion::new(27) {
+                return Weight::zero();
+            }
+
+            Self::clear_burned_total();
+            T::DbWeight::get().writes(1)
         }
 
         fn migrate_capital_record_storage_keys(on_chain: StorageVersion) -> Weight {
@@ -5755,19 +5769,14 @@ pub mod pallet {
         }
 
         fn ensure_burned_can_record(amount: BalanceOf<T>) -> DispatchResult {
-            TotalBurned::<T>::get()
-                .checked_add(&amount)
-                .ok_or(Error::<T>::ArithmeticOverflow)?;
+            let _ = amount;
             Ok(())
         }
 
         fn record_burned(amount: BalanceOf<T>) -> DispatchResult {
-            TotalBurned::<T>::try_mutate(|total| -> DispatchResult {
-                *total = total
-                    .checked_add(&amount)
-                    .ok_or(Error::<T>::ArithmeticOverflow)?;
-                Ok(())
-            })
+            let _ = amount;
+            Self::clear_burned_total();
+            Ok(())
         }
     }
 }
