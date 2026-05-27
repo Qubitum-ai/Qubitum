@@ -4,7 +4,8 @@ use crate::{
     ActiveMinersBySubnet, ActiveValidatorsBySubnet, AutoRouteInferenceRequestParams,
     CancelledInferenceRequestCount, ChainIdentityCommitments, ChainInferenceRequest, ChainMiner,
     ChainProofRecord, ChainReadinessBlockers, ChainRequestStatusCounts, ChainRouteAvailability,
-    ChainValidator, Error, FailClosedProofVerifier, HoldReason, IdentitySignatureVerifierMode,
+    ChainValidator, CommitmentBindingIdentitySignatureVerifier, Error, FailClosedProofVerifier,
+    HoldReason, IdentitySignatureVerificationPolicy, IdentitySignatureVerifierMode,
     InferenceRequestCommitmentParams, InferenceRequestParams, InferenceRequestStatus,
     InferenceRequestTerms, InferenceRequestTermsWitness, InferenceRequestTimingWitness,
     InferenceRequests, LegacyAccountingMigrationFailures, LegacyCapitalRecordMigrationFailures,
@@ -880,6 +881,53 @@ fn protocol_params_block_non_full_post_quantum_signature_modes() {
                 .signature_mode_not_full_post_quantum
         );
     });
+}
+
+#[test]
+fn identity_signature_verifier_modes_only_trust_production_crypto() {
+    for mode in [
+        IdentitySignatureVerifierMode::FailClosed,
+        IdentitySignatureVerifierMode::CommitmentBindingOnly,
+        IdentitySignatureVerifierMode::TestOnly,
+    ] {
+        assert!(!mode.production_crypto_verification());
+        assert!(!mode.identity_signature_verification());
+    }
+
+    assert!(IdentitySignatureVerifierMode::ProductionCrypto.production_crypto_verification());
+    assert!(IdentitySignatureVerifierMode::ProductionCrypto.identity_signature_verification());
+}
+
+#[test]
+fn commitment_binding_verifier_accepts_binding_but_not_readiness() {
+    let challenge = commitment(210);
+    let unsigned_signature = SignatureCommitment {
+        algorithm: SignatureAlgorithm::Dilithium3,
+        public_key_commitment: commitment(211),
+        signature_commitment: [0; 32],
+    };
+    let bound_signature = SignatureCommitment {
+        signature_commitment: identity_signature_binding_for_mode(
+            SignatureMode::FullPostQuantum,
+            challenge,
+            unsigned_signature,
+        ),
+        ..unsigned_signature
+    };
+
+    assert!(CommitmentBindingIdentitySignatureVerifier::verify(
+        bound_signature,
+        IdentitySignatureVerificationPolicy {
+            signature_mode: SignatureMode::FullPostQuantum,
+            challenge,
+        },
+    ));
+    assert_eq!(
+        CommitmentBindingIdentitySignatureVerifier::mode(),
+        IdentitySignatureVerifierMode::CommitmentBindingOnly
+    );
+    assert!(!CommitmentBindingIdentitySignatureVerifier::mode().production_crypto_verification());
+    assert!(!CommitmentBindingIdentitySignatureVerifier::mode().identity_signature_verification());
 }
 
 #[test]
