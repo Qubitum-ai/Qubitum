@@ -934,6 +934,27 @@ fn protocol_params_reports_private_route_selection_when_runtime_surface_is_priva
 }
 
 #[test]
+fn mock_ext_resets_shielded_call_execution_between_runs() {
+    new_test_ext().execute_with(|| {
+        ShieldedCallPayloads::set(true);
+        ShieldedCallPayloadExecution::set(true);
+        PrivateEventMetadata::set(true);
+
+        assert!(Qubitum::protocol_params().private_route_selection);
+    });
+
+    new_test_ext().execute_with(|| {
+        ShieldedCallPayloads::set(true);
+        PrivateEventMetadata::set(true);
+
+        let params = Qubitum::protocol_params();
+        assert!(!params.private_route_selection);
+        assert!(params.readiness_blockers.shielded_call_payloads_missing);
+        assert!(params.readiness_blockers.private_route_selection_missing);
+    });
+}
+
+#[test]
 fn storage_keys_hide_linkable_ids_but_track_remaining_privacy_gaps() {
     new_test_ext().execute_with(|| {
         let params = Qubitum::protocol_params();

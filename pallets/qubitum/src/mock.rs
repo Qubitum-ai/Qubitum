@@ -165,6 +165,7 @@ impl pallet_qubitum::Config for Test {
 pub fn new_test_ext() -> sp_io::TestExternalities {
     set_verification_outcome(VerificationOutcome::Valid);
     ShieldedCallPayloads::set(false);
+    ShieldedCallPayloadExecution::set(false);
     PrivateEventMetadata::set(false);
 
     let mut storage = frame_system::GenesisConfig::<Test>::default()
