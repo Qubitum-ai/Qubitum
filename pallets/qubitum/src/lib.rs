@@ -2463,6 +2463,9 @@ pub mod pallet {
             let public_total_burned_redacted = true;
             let public_identity_metadata_redacted = true;
             let private_route_selection = shielded_call_payload_execution
+                && shield_submitter_origin_privacy
+                && shield_key_window_privacy
+                && account_commitment_blinding
                 && private_routing_indexes
                 && private_storage_keys
                 && private_event_metadata

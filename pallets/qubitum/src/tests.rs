@@ -944,7 +944,7 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
 }
 
 #[test]
-fn protocol_params_reports_private_route_selection_when_runtime_surface_is_private() {
+fn protocol_params_keep_route_selection_blocked_until_route_privacy_dependencies_land() {
     new_test_ext().execute_with(|| {
         ShieldedCallPayloads::set(true);
         ShieldedCallPayloadExecution::set(true);
@@ -952,9 +952,20 @@ fn protocol_params_reports_private_route_selection_when_runtime_surface_is_priva
 
         let params = Qubitum::protocol_params();
         assert!(params.shielded_call_payloads);
-        assert!(params.private_route_selection);
+        assert!(!params.private_route_selection);
         assert!(!params.readiness_blockers.shielded_call_payloads_missing);
-        assert!(!params.readiness_blockers.private_route_selection_missing);
+        assert!(
+            params
+                .readiness_blockers
+                .shield_submitter_origin_privacy_missing
+        );
+        assert!(params.readiness_blockers.shield_key_window_privacy_missing);
+        assert!(
+            params
+                .readiness_blockers
+                .account_commitment_blinding_missing
+        );
+        assert!(params.readiness_blockers.private_route_selection_missing);
         assert!(params.private_routing_indexes);
         assert!(params.private_storage_keys);
         assert!(params.public_route_availability_redacted);
@@ -973,7 +984,9 @@ fn mock_ext_resets_shielded_call_execution_between_runs() {
         ShieldedCallPayloadExecution::set(true);
         PrivateEventMetadata::set(true);
 
-        assert!(Qubitum::protocol_params().private_route_selection);
+        let params = Qubitum::protocol_params();
+        assert!(!params.readiness_blockers.shielded_call_payloads_missing);
+        assert!(params.readiness_blockers.private_route_selection_missing);
     });
 
     new_test_ext().execute_with(|| {
