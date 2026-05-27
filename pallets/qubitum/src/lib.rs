@@ -2441,7 +2441,6 @@ pub mod pallet {
                 shielded_call_payloads && T::ShieldedCallPayloadExecution::get();
             let shield_submitter_origin_privacy = false;
             let shield_key_window_privacy = false;
-            let private_route_selection = false;
             let account_commitment_blinding = false;
             let private_routing_indexes = true;
             let private_storage_keys = true;
@@ -2463,6 +2462,13 @@ pub mod pallet {
             let public_registry_counts_redacted = true;
             let public_total_burned_redacted = true;
             let public_identity_metadata_redacted = true;
+            let private_route_selection = shielded_call_payload_execution
+                && private_routing_indexes
+                && private_storage_keys
+                && private_event_metadata
+                && public_route_availability_redacted
+                && public_request_records_redacted
+                && public_proof_records_redacted;
             let post_quantum_account_signatures = false;
             let post_quantum_signature_crypto_verification =
                 identity_signature_verifier_mode.production_crypto_verification();

@@ -18,8 +18,9 @@ use crate::{
     ValidatorIdentitySignatureBundles, ValidatorIdentitySignatureChallenges, ValidatorLockedStake,
     Validators, VerifyIdentitySignature, VerifyProof, identity_signature_binding_for_mode,
     mock::{
-        Balances, PrivateEventMetadata, Qubitum, RuntimeEvent, RuntimeOrigin, ShieldedCallPayloads,
-        System, Test, new_test_ext, set_verification_outcome, test_identity_signature_commitment,
+        Balances, PrivateEventMetadata, Qubitum, RuntimeEvent, RuntimeOrigin,
+        ShieldedCallPayloadExecution, ShieldedCallPayloads, System, Test, new_test_ext,
+        set_verification_outcome, test_identity_signature_commitment,
     },
 };
 use codec::Encode;
@@ -906,6 +907,29 @@ fn protocol_params_flag_public_storage_linkability_gaps() {
         assert!(ActiveMinersBySubnet::<Test>::get(0).is_empty());
         assert!(ActiveValidatorsBySubnet::<Test>::get(0).is_empty());
         assert!(Qubitum::next_route_assignment(0, assignment_blinding()).is_some());
+    });
+}
+
+#[test]
+fn protocol_params_reports_private_route_selection_when_runtime_surface_is_private() {
+    new_test_ext().execute_with(|| {
+        ShieldedCallPayloads::set(true);
+        ShieldedCallPayloadExecution::set(true);
+        PrivateEventMetadata::set(true);
+
+        let params = Qubitum::protocol_params();
+        assert!(params.shielded_call_payloads);
+        assert!(params.private_route_selection);
+        assert!(!params.readiness_blockers.shielded_call_payloads_missing);
+        assert!(!params.readiness_blockers.private_route_selection_missing);
+        assert!(params.private_routing_indexes);
+        assert!(params.private_storage_keys);
+        assert!(params.public_route_availability_redacted);
+        assert!(params.public_request_records_redacted);
+        assert!(params.public_proof_records_redacted);
+        assert!(params.private_event_metadata);
+        assert!(params.readiness_blockers.privacy_blocked());
+        assert!(params.readiness_blockers.private_capital_accounting_missing);
     });
 }
 
