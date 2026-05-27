@@ -95,7 +95,7 @@ parameter_types! {
     pub const MaxProofSizeBytes: u32 = qubitum_protocol::TARGET_PROOF_SIZE_MAX_BYTES;
     pub const MaxVerificationLatencyMs: u32 = qubitum_protocol::TARGET_VERIFICATION_MS;
     pub const MaxProofSubmissionAgeBlocks: u64 = 10;
-    pub const SignatureMode: qubitum_protocol::SignatureMode =
+    pub static SignatureMode: qubitum_protocol::SignatureMode =
         qubitum_protocol::SignatureMode::FullPostQuantum;
     pub static ShieldedCallPayloads: bool = false;
     pub static ShieldedCallPayloadExecution: bool = false;
@@ -164,6 +164,7 @@ impl pallet_qubitum::Config for Test {
 
 pub fn new_test_ext() -> sp_io::TestExternalities {
     set_verification_outcome(VerificationOutcome::Valid);
+    SignatureMode::set(qubitum_protocol::SignatureMode::FullPostQuantum);
     ShieldedCallPayloads::set(false);
     ShieldedCallPayloadExecution::set(false);
     PrivateEventMetadata::set(false);

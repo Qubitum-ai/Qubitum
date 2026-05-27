@@ -19,8 +19,8 @@ use crate::{
     Validators, VerifyIdentitySignature, VerifyProof, identity_signature_binding_for_mode,
     mock::{
         Balances, PrivateEventMetadata, Qubitum, RuntimeEvent, RuntimeOrigin,
-        ShieldedCallPayloadExecution, ShieldedCallPayloads, System, Test, new_test_ext,
-        set_verification_outcome, test_identity_signature_commitment,
+        ShieldedCallPayloadExecution, ShieldedCallPayloads, SignatureMode as MockSignatureMode,
+        System, Test, new_test_ext, set_verification_outcome, test_identity_signature_commitment,
     },
 };
 use codec::Encode;
@@ -845,6 +845,39 @@ fn protocol_params_expose_runtime_policy() {
         assert_eq!(params.miner_exit_cooldown_blocks, 20);
         assert_eq!(params.validator_exit_cooldown_blocks, 20);
         assert_eq!(params.request_cancel_delay_blocks, 10);
+    });
+}
+
+#[test]
+fn protocol_params_block_non_full_post_quantum_signature_modes() {
+    for mode in [
+        SignatureMode::ClassicalEcdsa,
+        SignatureMode::HybridDilithium,
+    ] {
+        new_test_ext().execute_with(|| {
+            MockSignatureMode::set(mode);
+
+            let params = Qubitum::protocol_params();
+            assert_eq!(params.signature_mode, mode);
+            assert!(
+                params
+                    .readiness_blockers
+                    .signature_mode_not_full_post_quantum
+            );
+            assert!(params.readiness_blockers.post_quantum_blocked());
+            assert!(!params.post_quantum_complete);
+            assert!(!params.production_ready);
+        });
+    }
+
+    new_test_ext().execute_with(|| {
+        let params = Qubitum::protocol_params();
+        assert_eq!(params.signature_mode, SignatureMode::FullPostQuantum);
+        assert!(
+            !params
+                .readiness_blockers
+                .signature_mode_not_full_post_quantum
+        );
     });
 }
 
