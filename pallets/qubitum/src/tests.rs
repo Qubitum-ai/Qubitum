@@ -36,6 +36,7 @@ use qubitum_protocol::{
     SignatureCommitment, SignatureMode, SubnetDomain, TARGET_PROOF_SIZE_MAX_BYTES,
     TARGET_PROOF_SIZE_MIN_BYTES, TARGET_VERIFICATION_MS, ValidatorId, VerificationOutcome,
 };
+use scale_info::TypeDef;
 use sp_io::hashing::twox_128;
 
 fn commitment(seed: u8) -> [u8; 32] {
@@ -4157,6 +4158,23 @@ fn public_qubitum_events_remain_payloadless() {
     for event in public_events {
         let encoded = event.encode();
         assert_eq!(encoded.len(), 1);
+    }
+}
+
+#[test]
+fn qubitum_event_metadata_has_no_public_fields() {
+    let ty = <crate::Event<Test> as scale_info::TypeInfo>::type_info();
+    let TypeDef::Variant(variants) = &ty.type_def else {
+        panic!("Qubitum event type must remain an enum");
+    };
+
+    assert!(!variants.variants.is_empty());
+    for variant in variants.variants.iter() {
+        assert!(
+            variant.fields.is_empty(),
+            "{} exposes public event metadata",
+            variant.name
+        );
     }
 }
 
