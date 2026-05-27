@@ -55,11 +55,6 @@ where
         _inherited_implication: &impl Implication,
         _source: TransactionSource,
     ) -> ValidateResult<Self::Val, <T as frame_system::Config>::RuntimeCall> {
-        // Ensure the transaction is signed, else we just skip the extension.
-        let Some(_who) = origin.as_system_origin_signer() else {
-            return Ok((Default::default(), (), origin));
-        };
-
         // Ensure the transaction is a shielded transaction, else we just skip the extension.
         let Some(Call::submit_encrypted { ciphertext }) = IsSubType::<Call<T>>::is_sub_type(call)
         else {
@@ -79,16 +74,11 @@ where
     fn prepare(
         self,
         _val: Self::Val,
-        origin: &<T as frame_system::Config>::RuntimeOrigin,
+        _origin: &<T as frame_system::Config>::RuntimeOrigin,
         call: &<T as frame_system::Config>::RuntimeCall,
         _info: &DispatchInfoOf<<T as frame_system::Config>::RuntimeCall>,
         _len: usize,
     ) -> Result<Self::Pre, TransactionValidityError> {
-        // Ensure the transaction is signed, else we just skip the extension.
-        if origin.as_system_origin_signer().is_none() {
-            return Ok(());
-        }
-
         // Ensure the transaction is a shielded transaction, else we just skip the extension.
         let Some(Call::submit_encrypted { ciphertext }) = IsSubType::<Call<T>>::is_sub_type(call)
         else {
@@ -183,11 +173,26 @@ mod tests {
     }
 
     #[test]
-    fn unsigned_origin_passes_through() {
+    fn unsigned_shield_call_is_validated() {
         new_test_ext().execute_with(|| {
+            let malformed_call = RuntimeCall::MevShield(crate::Call::submit_encrypted {
+                ciphertext: BoundedVec::truncate_from(vec![0u8; 5]),
+            });
+            assert_eq!(
+                validate_ext(None, &malformed_call, TransactionSource::InBlock),
+                Err(CustomTransactionError::FailedShieldedTxParsing.into())
+            );
+
+            install_pending_key();
             let call = make_submit_call([0xFF; 16]);
+            assert_eq!(
+                validate_ext(None, &call, TransactionSource::InBlock),
+                Err(CustomTransactionError::InvalidShieldedTxPubKeyHash.into())
+            );
+
+            let call = make_submit_call(current_key_hash());
             let validity = validate_ext(None, &call, TransactionSource::InBlock).unwrap();
-            assert_eq!(validity.longevity, u64::MAX);
+            assert_eq!(validity, ValidTransaction::default());
         });
     }
 
@@ -231,13 +236,22 @@ mod tests {
     }
 
     #[test]
-    fn prepare_passes_unsigned_and_non_shield_calls_through() {
+    fn prepare_validates_unsigned_shield_calls_and_passes_non_shield() {
         new_test_ext().execute_with(|| {
+            install_pending_key();
+
             let shield_call = make_submit_call([0xFF; 16]);
+            assert_eq!(
+                prepare_ext(None, &shield_call),
+                Err(CustomTransactionError::InvalidShieldedTxPubKeyHash.into())
+            );
+
+            let shield_call = make_submit_call(current_key_hash());
             assert!(prepare_ext(None, &shield_call).is_ok());
 
             let non_shield_call =
                 RuntimeCall::System(frame_system::Call::remark { remark: vec![] });
+            assert!(prepare_ext(None, &non_shield_call).is_ok());
             assert!(prepare_ext(Some(1), &non_shield_call).is_ok());
         });
     }
