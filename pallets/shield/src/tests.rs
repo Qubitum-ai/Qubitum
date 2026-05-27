@@ -39,6 +39,13 @@ fn valid_submit_ciphertext() -> BoundedVec<u8, ConstU32<8192>> {
     ))
 }
 
+fn contains_subsequence(haystack: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty()
+        && haystack
+            .windows(needle.len())
+            .any(|window| window == needle)
+}
+
 /// Simulates a 3-validator round-robin (authors 1, 2, 3) over 5 blocks.
 /// Each block calls `announce_next_key` and verifies the full pipeline:
 /// CurrentKey, PendingKey, NextKey, AuthorKeys, expirations, and
@@ -235,22 +242,18 @@ fn submit_encrypted_emits_event() {
             ciphertext.clone(),
         ));
 
-        let expected_id = <Test as frame_system::Config>::Hashing::hash_of(&ciphertext);
-
-        System::assert_last_event(
-            crate::Event::<Test>::EncryptedSubmitted { id: expected_id }.into(),
-        );
+        System::assert_last_event(crate::Event::<Test>::EncryptedSubmitted.into());
     });
 }
 
 #[test]
-fn submit_encrypted_event_id_is_submitter_independent() {
+fn submit_encrypted_event_redacts_reusable_ciphertext_id() {
     new_test_ext().execute_with(|| {
         System::set_block_number(1);
         install_pending_key();
 
         let ciphertext = valid_submit_ciphertext();
-        let expected_id = <Test as frame_system::Config>::Hashing::hash_of(&ciphertext);
+        let reusable_id = <Test as frame_system::Config>::Hashing::hash_of(&ciphertext).encode();
 
         assert_ok!(MevShield::submit_encrypted(
             RuntimeOrigin::signed(1),
@@ -262,14 +265,18 @@ fn submit_encrypted_event_id_is_submitter_independent() {
         ));
 
         let ids = System::events()
-            .into_iter()
-            .filter_map(|record| match record.event {
-                RuntimeEvent::MevShield(crate::Event::EncryptedSubmitted { id }) => Some(id),
+            .iter()
+            .filter_map(|record| match &record.event {
+                RuntimeEvent::MevShield(crate::Event::EncryptedSubmitted) => {
+                    let encoded_event = record.event.encode();
+                    assert!(!contains_subsequence(&encoded_event, &reusable_id));
+                    Some(())
+                }
                 _ => None,
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(ids, vec![expected_id, expected_id]);
+        assert_eq!(ids, vec![(), ()]);
     });
 }
 
@@ -853,7 +860,7 @@ mod encrypted_extrinsics_tests {
             );
             assert!(System::events().iter().all(|record| !matches!(
                 record.event,
-                RuntimeEvent::MevShield(crate::Event::EncryptedSubmitted { .. })
+                RuntimeEvent::MevShield(crate::Event::EncryptedSubmitted)
             )));
         });
     }

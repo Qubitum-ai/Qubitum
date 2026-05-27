@@ -19,7 +19,7 @@ use ml_kem::{
     kem::{Decapsulate, DecapsulationKey},
 };
 use sp_io::hashing::twox_128;
-use sp_runtime::traits::{Applyable, Block as BlockT, Checkable, Hash};
+use sp_runtime::traits::{Applyable, Block as BlockT, Checkable};
 use sp_runtime::traits::{Dispatchable, Saturating};
 use stp_shield::{
     INHERENT_IDENTIFIER, InherentType, LOG_TARGET, MLKEM768_ENC_KEY_LEN, ShieldEncKey,
@@ -266,7 +266,7 @@ pub mod pallet {
     #[pallet::generate_deposit(pub(super) fn deposit_event)]
     pub enum Event<T: Config> {
         /// Encrypted wrapper accepted.
-        EncryptedSubmitted { id: T::Hash },
+        EncryptedSubmitted,
         /// Encrypted extrinsic was stored for later execution.
         ExtrinsicStored { index: u32 },
         /// Extrinsic decode failed during on_initialize.
@@ -431,9 +431,7 @@ pub mod pallet {
                 Self::is_shielded_using_current_key(&shielded_tx.key_hash),
                 Error::<T>::InvalidShieldedTxPubKeyHash
             );
-            let id: T::Hash = T::Hashing::hash_of(&ciphertext);
-
-            Self::deposit_event(Event::EncryptedSubmitted { id });
+            Self::deposit_event(Event::EncryptedSubmitted);
             Ok(())
         }
 
