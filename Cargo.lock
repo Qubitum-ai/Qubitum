@@ -10331,6 +10331,7 @@ name = "pallet-qubitum-rpc"
 version = "0.1.0"
 dependencies = [
  "jsonrpsee",
+ "pallet-qubitum",
  "pallet-qubitum-runtime-api",
  "parity-scale-codec",
  "qubitum-protocol",

@@ -18,6 +18,9 @@ sp-blockchain.workspace = true
 sp-runtime.workspace = true
 subtensor-runtime-common.workspace = true
 
+[dev-dependencies]
+pallet-qubitum = { workspace = true, features = ["std"] }
+
 [features]
 default = ["std"]
 std = [

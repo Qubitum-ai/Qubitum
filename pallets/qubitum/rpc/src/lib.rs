@@ -117,6 +117,10 @@ where
     }
 }
 
+fn encode_rpc_payload<T: Encode>(payload: T) -> Vec<u8> {
+    payload.encode()
+}
+
 impl<C, Block> QubitumRpcApiServer<<Block as BlockT>::Hash> for Qubitum<C, Block>
 where
     Block: BlockT,
@@ -132,7 +136,7 @@ where
         let at = self.at_or_best(at);
 
         api.qubitum_subnet(at, subnet_id)
-            .map(|result| result.encode())
+            .map(encode_rpc_payload)
             .map_err(|e| Error::RuntimeError(format!("Unable to get Qubitum subnet: {e:?}")).into())
     }
 
@@ -145,7 +149,7 @@ where
         let at = self.at_or_best(at);
 
         api.qubitum_miner(at, miner_id)
-            .map(|result| result.encode())
+            .map(encode_rpc_payload)
             .map_err(|e| Error::RuntimeError(format!("Unable to get Qubitum miner: {e:?}")).into())
     }
 
@@ -158,7 +162,7 @@ where
         let at = self.at_or_best(at);
 
         api.qubitum_validator(at, validator_id)
-            .map(|result| result.encode())
+            .map(encode_rpc_payload)
             .map_err(|e| {
                 Error::RuntimeError(format!("Unable to get Qubitum validator: {e:?}")).into()
             })
@@ -173,7 +177,7 @@ where
         let at = self.at_or_best(at);
 
         api.qubitum_miner_identity(at, miner_id)
-            .map(|result| result.encode())
+            .map(encode_rpc_payload)
             .map_err(|e| {
                 Error::RuntimeError(format!("Unable to get Qubitum miner identity: {e:?}")).into()
             })
@@ -188,7 +192,7 @@ where
         let at = self.at_or_best(at);
 
         api.qubitum_validator_identity(at, validator_id)
-            .map(|result| result.encode())
+            .map(encode_rpc_payload)
             .map_err(|e| {
                 Error::RuntimeError(format!("Unable to get Qubitum validator identity: {e:?}"))
                     .into()
@@ -204,7 +208,7 @@ where
         let at = self.at_or_best(at);
 
         api.qubitum_proof_record(at, request_id)
-            .map(|result| result.encode())
+            .map(encode_rpc_payload)
             .map_err(|e| {
                 Error::RuntimeError(format!("Unable to get Qubitum proof record: {e:?}")).into()
             })
@@ -219,7 +223,7 @@ where
         let at = self.at_or_best(at);
 
         api.qubitum_inference_request(at, request_id)
-            .map(|result| result.encode())
+            .map(encode_rpc_payload)
             .map_err(|e| {
                 Error::RuntimeError(format!("Unable to get Qubitum inference request: {e:?}"))
                     .into()
@@ -235,7 +239,7 @@ where
         let at = self.at_or_best(at);
 
         api.qubitum_next_route_availability(at, subnet_id)
-            .map(|result| result.encode())
+            .map(encode_rpc_payload)
             .map_err(|e| {
                 Error::RuntimeError(format!(
                     "Unable to get next Qubitum route availability: {e:?}"
@@ -258,7 +262,7 @@ where
         let at = self.at_or_best(at);
 
         api.qubitum_counts(at)
-            .map(|result| result.encode())
+            .map(encode_rpc_payload)
             .map_err(|e| Error::RuntimeError(format!("Unable to get Qubitum counts: {e:?}")).into())
     }
 
@@ -276,7 +280,7 @@ where
         let at = self.at_or_best(at);
 
         api.qubitum_accounting(at)
-            .map(|result| result.encode())
+            .map(encode_rpc_payload)
             .map_err(|e| {
                 Error::RuntimeError(format!("Unable to get Qubitum accounting: {e:?}")).into()
             })
@@ -287,7 +291,7 @@ where
         let at = self.at_or_best(at);
 
         api.qubitum_migration_health(at)
-            .map(|result| result.encode())
+            .map(encode_rpc_payload)
             .map_err(|e| {
                 Error::RuntimeError(format!("Unable to get Qubitum migration health: {e:?}")).into()
             })
@@ -298,7 +302,7 @@ where
         let at = self.at_or_best(at);
 
         api.qubitum_protocol_params(at)
-            .map(|result| result.encode())
+            .map(encode_rpc_payload)
             .map_err(|e| {
                 Error::RuntimeError(format!("Unable to get Qubitum protocol params: {e:?}")).into()
             })
@@ -309,12 +313,85 @@ where
         let at = self.at_or_best(at);
 
         api.qubitum_request_status_counts(at)
-            .map(|result| result.encode())
+            .map(encode_rpc_payload)
             .map_err(|e| {
                 Error::RuntimeError(format!(
                     "Unable to get Qubitum request status counts: {e:?}"
                 ))
                 .into()
             })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::encode_rpc_payload;
+    use codec::Encode;
+    use pallet_qubitum::{
+        ChainAccounting, ChainMigrationHealth, ChainPublicIdentity, ChainPublicInferenceRequest,
+        ChainPublicMiner, ChainPublicProofRecord, ChainPublicSubnet, ChainPublicValidator,
+        ChainRequestStatusCounts, ChainRouteAvailability,
+    };
+    use subtensor_runtime_common::TaoBalance;
+
+    #[test]
+    fn rpc_payload_encoding_preserves_redacted_public_boundaries() {
+        assert_eq!(
+            encode_rpc_payload(None::<ChainPublicSubnet>),
+            None::<ChainPublicSubnet>.encode()
+        );
+        assert_eq!(
+            encode_rpc_payload(None::<ChainPublicMiner>),
+            None::<ChainPublicMiner>.encode()
+        );
+        assert_eq!(
+            encode_rpc_payload(None::<ChainPublicValidator>),
+            None::<ChainPublicValidator>.encode()
+        );
+        assert_eq!(
+            encode_rpc_payload(None::<ChainPublicIdentity>),
+            None::<ChainPublicIdentity>.encode()
+        );
+        assert_eq!(
+            encode_rpc_payload(None::<ChainPublicInferenceRequest>),
+            None::<ChainPublicInferenceRequest>.encode()
+        );
+        assert_eq!(
+            encode_rpc_payload(None::<ChainPublicProofRecord>),
+            None::<ChainPublicProofRecord>.encode()
+        );
+
+        let route = ChainRouteAvailability { available: false };
+        assert_eq!(encode_rpc_payload(route), vec![0]);
+        assert_eq!(encode_rpc_payload((0u16, 0u64, 0u64)), vec![0; 18]);
+        assert_eq!(
+            encode_rpc_payload(ChainAccounting {
+                total_inference_escrowed: TaoBalance::new(0),
+                total_miner_payouts: TaoBalance::new(0),
+                total_validator_fees: TaoBalance::new(0),
+                total_treasury_fees: TaoBalance::new(0),
+                total_inference_refunded: TaoBalance::new(0),
+                legacy_migration_failures: 0,
+            }),
+            vec![0; 44]
+        );
+        assert_eq!(
+            encode_rpc_payload(ChainMigrationHealth {
+                legacy_accounting_failures: 0,
+                legacy_routing_index_failures: 0,
+                legacy_capital_record_failures: 0,
+            }),
+            vec![0; 12]
+        );
+        assert_eq!(
+            encode_rpc_payload(ChainRequestStatusCounts {
+                pending: 0,
+                settled: 0,
+                cancelled: 0,
+                rejected: 0,
+                expired: 0,
+            }),
+            vec![0; 40]
+        );
     }
 }
